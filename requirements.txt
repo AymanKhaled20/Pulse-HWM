@@ -1,0 +1,14 @@
+# Pulse-HWM runtime dependencies
+PySide6>=6.7,<7
+pyqtgraph>=0.13.7
+psutil>=5.9.0
+httpx>=0.27.0
+python-dotenv>=1.0.0
+
+# GPU (NVIDIA) — graceful N/A if not present
+nvidia-ml-py>=12.535
+
+# Windows-specific
+wmi>=1.5.1 ; sys_platform == "win32"
+pywin32>=306 ; sys_platform == "win32"
+winotify>=1.1.0 ; sys_platform == "win32"
