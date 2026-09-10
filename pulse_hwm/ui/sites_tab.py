@@ -51,7 +51,7 @@ class SiteDialog(QDialog):
 
         self.name_edit = QLineEdit(site.get("name", "") if site else "")
         self.url_edit = QLineEdit(site.get("url", "") if site else "")
-        self.url_edit.setPlaceholderText("https://example.com")
+        self.url_edit.setPlaceholderText("https://example.com  (name optional, filled from URL)")
         self.method_box = QComboBox()
         self.method_box.addItems(["GET", "HEAD"])
         self.method_box.setCurrentText((site.get("method") or "GET").upper() if site else "GET")
@@ -223,10 +223,13 @@ class SitesTab(QWidget):
         dlg = SiteDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             values = dlg.values()
-            if not values["name"] or not values["url"]:
+            if not values["url"]:
                 return
             if not values["url"].startswith(("http://", "https://")):
                 values["url"] = "https://" + values["url"]
+            if not values["name"]:
+                from urllib.parse import urlsplit
+                values["name"] = (urlsplit(values["url"]).hostname or values["url"]).removeprefix("www.")
             self._db.add_site(**values)
             self.reload_sites()
             self._monitor.run_cycle_now()

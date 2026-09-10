@@ -5,6 +5,8 @@ import traceback
 
 
 def run() -> int:
+    if "--selftest" in sys.argv:
+        return _selftest()
     from pulse_hwm import config
 
     config.ensure_dirs()
@@ -93,3 +95,30 @@ def run() -> int:
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("[pulse] system tray unavailable")
     return app.exec()
+
+
+def _selftest() -> int:
+    """Headless check: report whether temp sources resolve. No GUI."""
+    import ctypes
+    import json
+
+    admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+    from pulse_hwm.collectors.lhm import is_available, LibreSensors
+
+    report = {"admin": admin, "lhm_runtime": is_available(), "sensors": []}
+    if is_available():
+        sensors = LibreSensors()
+        rows = sensors.read()
+        if rows:
+            report["sensors"] = [{"label": r["label"], "temp": round(r["temp"], 1)} for r in rows]
+        else:
+            report["lhm_error"] = sensors.last_error or "no temperature sensors returned"
+    rows = report["sensors"]
+    cpu_temps = [r for r in rows if "CPU" in r["label"]]
+    gpu_temps = [r for r in rows if "GPU" in r["label"]]
+    print(json.dumps({
+        **report,
+        "cpu_temps": len(cpu_temps),
+        "gpu_temps": len(gpu_temps),
+    }, indent=2))
+    return 0 if rows else 2

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QPushButton,
     QSpinBox, QVBoxLayout, QWidget,
@@ -91,6 +91,14 @@ class SettingsTab(QWidget):
         data_panel.body().addWidget(credit)
         outer.addWidget(data_panel)
 
+        self.test_banner = QLabel("TEST ALERT DISPATCHED")
+        self.test_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.test_banner.setVisible(False)
+        self.test_result = QLabel("")
+        self.test_result.setObjectName("muted")
+        outer.addWidget(self.test_banner)
+        outer.addWidget(self.test_result)
+
         outer.addStretch(1)
         self.load_from(app_settings.load(db))
 
@@ -129,9 +137,32 @@ class SettingsTab(QWidget):
             desktop=values.desktop_enabled,
             webhooks=values.webhooks_enabled,
         ))
-        self._prune(values.retention_days)
+        self._prune_values(values)
+
+    def _prune_values(self, values: AppSettings) -> None:
+        try:
+            self._db.prune(values.retention_days)
+        except Exception:
+            pass
 
     def _test_alert(self) -> None:
-        self._alerts.notify(
+        sent = self._alerts.notify(
             "info", "PULSE-HWM TEST", "This is what an alert looks like.", play_sound=True,
         )
+        parts = []
+        if sent.get("sound_requested"):
+            parts.append("SOUND")
+        if sent.get("desktop"):
+            parts.append("TOAST")
+        hooks = sent.get("webhooks") or 0
+        if hooks:
+            parts.append(f"{hooks} WEBHOOK(S)")
+        self.test_result.setText(
+            "fired: " + (", ".join(parts) if parts else "no channels enabled (toggles above)")
+        )
+        self.test_banner.setVisible(True)
+        self.test_banner.setStyleSheet(
+            "background-color: #FFD400; color: #0A0A0A;"
+            "font-family: 'Silkscreen'; font-size: 14px; padding: 10px;"
+        )
+        QTimer.singleShot(2500, lambda: self.test_banner.setVisible(False))
