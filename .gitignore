@@ -1,0 +1,38 @@
+# ── Secrets ─────────────────────────────────────────────
+.env
+.env.local
+*.pem
+*.key
+
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# ── Build / packaging output ────────────────────────────
+build/
+dist/
+release/
+installer/output/
+
+# ── Local runtime data (portable mode fallback) ─────────
+data/
+*.db
+*.sqlite3
+
+# ── Editors / OS ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# ── Logs ────────────────────────────────────────────────
+*.log

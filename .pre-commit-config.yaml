@@ -1,0 +1,21 @@
+# Pulse-HWM pre-commit: two independent secret scanners run before EVERY commit.
+# Install once:  pre-commit install   (or: py -m pre_commit install)
+# Re-run manually on all files:  pre-commit run --all-files
+repos:
+  - repo: local
+    hooks:
+      - id: pulse-secret-scan
+        name: pulse custom secret scan (staged)
+        entry: py scripts/scan_secrets.py --staged
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        always_run: true
+
+      - id: gitleaks-staged
+        name: gitleaks (staged, via resolver guard)
+        entry: py scripts/gitleaks_guard.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        always_run: true
