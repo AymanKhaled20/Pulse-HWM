@@ -5,7 +5,8 @@ import socket
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QGridLayout, QHeaderView, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QGridLayout, QHeaderView, QLabel, QScrollArea, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from pulse_hwm.collectors.hardware import HardwareCollector
@@ -124,8 +125,15 @@ class DashboardTab(QWidget):
         self.temp_na.setObjectName("muted")
         self.temp_na.setWordWrap(True)
         self.temp_rows_container = QVBoxLayout()
+        inner = QWidget()
+        inner.setLayout(self.temp_rows_container)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(inner)
         body = panel.body()
-        body.addLayout(self.temp_rows_container)
+        body.addWidget(scroll, 1)
         body.addWidget(self.temp_na)
         return panel
 
@@ -330,6 +338,35 @@ class DashboardTab(QWidget):
         temp = d.get("temp_c")
         self.gpu_temp.set_value(f"{temp:.0f} °C" if temp is not None else "N/A")
 
+    @staticmethod
+    def _categorize_temps(temps: list[dict]) -> list[dict]:
+        """Curate + rename + order: CPU, GPU, SSD, then board/misc."""
+        rows = []
+        for t in temps:
+            label = str(t["label"])
+            if " — " in label:
+                _hw, sensor = label.split(" — ", 1)
+            else:
+                _hw, sensor = label, label
+            sensor = sensor.strip()
+            if ("Distance to TjMax" in sensor or sensor in
+                    ("Warning Temperature", "Critical Temperature", "Core Max")):
+                continue
+            if "Core Average" in sensor:
+                continue
+            if sensor == "CPU Package":
+                rows.append({**t, "name": "CPU", "prio": 0})
+            elif sensor == "Composite Temperature":
+                rows.append({**t, "name": "SSD", "prio": 2})
+            elif sensor.startswith("GPU"):
+                rows.append({**t, "name": sensor, "prio": 1})
+            elif "Nuvoton" in _hw or "Super I/O" in _hw or "Winbond" in _hw or "ITE" in _hw:
+                rows.append({**t, "name": f"M/B {sensor}", "prio": 3})
+            else:
+                rows.append({**t, "name": sensor[:30], "prio": 8})
+        rows.sort(key=lambda r: (r["prio"], r["name"]))
+        return rows
+
     def _refresh_temps(self, temps: list[dict] | None) -> None:
         while self.temp_rows_container.count():
             item = self.temp_rows_container.takeAt(0)
@@ -338,12 +375,11 @@ class DashboardTab(QWidget):
         self.temp_na.setVisible(not temps)
         if not temps:
             return
-        for t in temps[:6]:
-            row = StatRow(str(t["label"])[:34])
+        for t in self._categorize_temps(temps):
+            row = StatRow(str(t["name"])[:38])
             value = t.get("temp")
             row.set_value(f"{value:.0f} °C" if value is not None else "N/A")
             self.temp_rows_container.addWidget(row)
-        self.temp_rows_container.addStretch(1)
 
     def _refresh_battery(self, battery: dict | None) -> None:
         if not battery:
