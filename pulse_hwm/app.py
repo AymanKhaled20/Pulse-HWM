@@ -9,7 +9,7 @@ def run() -> int:
 
     config.ensure_dirs()
 
-    from PySide6.QtCore import Qt, QThread
+    from PySide6.QtCore import Qt, QThread, QTimer
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
@@ -32,21 +32,30 @@ def run() -> int:
     db = open_default()
     db.seed_default_sites()
 
+    from pulse_hwm import app_settings
+    settings = app_settings.load(db)
+
     hardware_thread = QThread()
     hardware_thread.setObjectName("hardware-collector")
-    collector = HardwareThreadBridge().attach(hardware_thread, 1000)
+    collector = HardwareThreadBridge().attach(hardware_thread, settings.hardware_interval_ms)
 
     from pulse_hwm.collectors.websites import WebsiteThreadBridge
     websites_thread = QThread()
     websites_thread.setObjectName("websites-monitor")
-    monitor = WebsiteThreadBridge().attach(websites_thread, db, interval_s=30, timeout_s=10.0, ssl_warn_days=14)
+    monitor = WebsiteThreadBridge().attach(
+        websites_thread, db,
+        interval_s=settings.website_interval_s,
+        timeout_s=settings.website_timeout_s,
+        ssl_warn_days=settings.ssl_warn_days,
+    )
 
     def excepthook(etype, value, tb) -> None:
         traceback.print_exception(etype, value, tb)
 
     sys.excepthook = excepthook
 
-    window = MainWindow(hardware_collector=collector, websites_monitor=monitor)
+    window = MainWindow(hardware_collector=collector, websites_monitor=monitor,
+                        db=db, alerts=alerts)
     window.show()
 
     from pulse_hwm.alerts.notifier import AlertManager, AlertChannels
@@ -58,6 +67,15 @@ def run() -> int:
     alerts.attach_tray(window.tray)
     monitor.site_state_changed.connect(alerts.handle_site_transition)
     monitor.checked.connect(window.on_site_checked)
+
+    def prune_now() -> dict:
+        kept = app_settings.load(db)
+        return db.prune(kept.retention_days)
+
+    prune_timer = QTimer()
+    prune_timer.timeout.connect(prune_now)
+    prune_timer.start(24 * 3600 * 1000)
+    prune_now()
 
     hardware_thread.start()
     websites_thread.start()

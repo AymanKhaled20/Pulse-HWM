@@ -13,7 +13,7 @@ from pulse_hwm.ui.theme import app_icon, status_icon
 class MainWindow(QMainWindow):
     """Top-level window: 4 tabs + system-tray behavior."""
 
-    def __init__(self, hardware_collector=None, websites_monitor=None):
+    def __init__(self, hardware_collector=None, websites_monitor=None, db=None, alerts=None):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
@@ -34,8 +34,16 @@ class MainWindow(QMainWindow):
         else:
             self._sites_tab = None
             self.tabs.addTab(StdoutPlaceholder("WEBSITES — monitor unavailable"), "WEBSITES")
-        self.tabs.addTab(StdoutPlaceholder("HISTORY — event log + charts (phase 5)"), "HISTORY")
-        self.tabs.addTab(StdoutPlaceholder("SETTINGS — intervals, alerts, retention (phase 5)"), "SETTINGS")
+        if db is not None:
+            from pulse_hwm.ui.history_tab import HistoryTab
+            self.tabs.addTab(HistoryTab(db), "HISTORY")
+        else:
+            self.tabs.addTab(StdoutPlaceholder("HISTORY — db unavailable"), "HISTORY")
+        if db is not None and alerts is not None and websites_monitor is not None:
+            from pulse_hwm.ui.settings_tab import SettingsTab
+            self.tabs.addTab(SettingsTab(db, websites_monitor, alerts), "SETTINGS")
+        else:
+            self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
         self.setCentralWidget(self.tabs)
 
         self._build_tray()
