@@ -101,6 +101,9 @@ APP_ICON_PALETTES = {PRIMARY: "X"}
 
 
 def app_icon() -> QIcon:
+    icon_file = FONTS_DIR.parent / "icons" / "pulse.ico"
+    if icon_file.exists():
+        return QIcon(str(icon_file))
     px = pixel_pixmap(64, _grid_draw(HEARTBEAT_GRID, {"X": PRIMARY}))
     return QIcon(px)
 
