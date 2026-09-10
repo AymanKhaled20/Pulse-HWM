@@ -40,6 +40,16 @@ class MainWindow(QMainWindow):
 
         self._build_tray()
         self._first_close = True
+        self._down_sites: set[int] = set()
+
+    # ── overall state LED ──────────────────────────────────
+    def on_site_checked(self, result: dict) -> None:
+        site_id = int(result["site_id"])
+        if result["ok"]:
+            self._down_sites.discard(site_id)
+        else:
+            self._down_sites.add(site_id)
+        self.tray.setIcon(status_icon("error" if self._down_sites else "ok"))
 
     # ── tray ───────────────────────────────────────────────
     def _build_tray(self) -> None:

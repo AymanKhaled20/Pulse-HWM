@@ -168,26 +168,22 @@ class WebsiteMonitor(QObject):
             self._fail_streaks[site_id] = 0
         else:
             self._fail_streaks[site_id] = self._fail_streaks.get(site_id, 0) + 1
-        first_time = site_id not in self._states_safe()
         self._states[site_id] = result["ok"]
-        if previous is not False and not result["ok"]:
-            result = dict(result)
-            result["transition"] = "down"
-            result["streak"] = self._fail_streaks[site_id]
-            if not first_time:
-                self.site_state_changed.emit(result)
+        notify_down = (previous is not False) and not result["ok"]
+        if notify_down:
+            payload = dict(result)
+            payload["transition"] = "down"
+            payload["streak"] = self._fail_streaks[site_id]
+            self.site_state_changed.emit(payload)
         elif previous is False and result["ok"]:
-            result = dict(result)
-            result["transition"] = "recovered"
-            self.site_state_changed.emit(result)
+            payload = dict(result)
+            payload["transition"] = "recovered"
+            self.site_state_changed.emit(payload)
         self.checked.emit(result)
 
         count = self._check_counts[site_id]
         if count % 10 == 1 or count == 1:
             self._refresh_ssl(site)
-
-    def _states_safe(self) -> dict:
-        return self._states
 
     def _refresh_ssl(self, site: dict) -> None:
         days = ssl_expiry_days(site["url"], timeout_s=self._timeout_s)

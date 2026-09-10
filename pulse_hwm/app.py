@@ -49,6 +49,16 @@ def run() -> int:
     window = MainWindow(hardware_collector=collector, websites_monitor=monitor)
     window.show()
 
+    from pulse_hwm.alerts.notifier import AlertManager, AlertChannels
+    alerts = AlertManager(db, AlertChannels(
+        sound=config.env().alert_sound_enabled,
+        desktop=True,
+        webhooks=True,
+    ))
+    alerts.attach_tray(window.tray)
+    monitor.site_state_changed.connect(alerts.handle_site_transition)
+    monitor.checked.connect(window.on_site_checked)
+
     hardware_thread.start()
     websites_thread.start()
 

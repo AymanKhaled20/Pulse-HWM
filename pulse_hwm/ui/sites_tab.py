@@ -151,7 +151,6 @@ class SitesTab(QWidget):
         self.table.cellClicked.connect(self._on_row_clicked)
         self._monitor.checked.connect(self._on_checked)
         self._monitor.ssl_updated.connect(self._on_ssl)
-        self._monitor.site_state_changed.connect(self._log_transition)
         self.reload_sites()
 
     # ── table management ──────────────────────────────────
@@ -311,16 +310,6 @@ class SitesTab(QWidget):
         else:
             item.setText(f"{days}d")
             self._tint(item, T.MUTED)
-
-    def _log_transition(self, result: dict) -> None:
-        if result["transition"] == "down":
-            level, etype = "ERROR", "site_down"
-            reason = result.get("error") or f"status {result.get('status_code')}"
-            message = f"{result['name']} ({result['url']}) is DOWN — {reason}"
-        else:
-            level, etype = "INFO", "site_recovered"
-            message = f"{result['name']} ({result['url']}) recovered — {result['latency_ms']:.0f} ms"
-        self._db.insert_event(time.time(), level, etype, message)
 
     def _load_latency_chart(self, site_id: int) -> None:
         rows = self._db.checks_since(site_id, time.time() - 86400)
