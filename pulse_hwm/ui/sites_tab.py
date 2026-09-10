@@ -48,13 +48,14 @@ class SiteDialog(QDialog):
         self.setWindowTitle("EDIT SITE" if site else "ADD SITE")
         self.setMinimumWidth(420)
         form = QFormLayout(self)
+        site = site or {}
 
-        self.name_edit = QLineEdit(site.get("name", "") if site else "")
-        self.url_edit = QLineEdit(site.get("url", "") if site else "")
+        self.name_edit = QLineEdit(site.get("name", ""))
+        self.url_edit = QLineEdit(site.get("url", ""))
         self.url_edit.setPlaceholderText("https://example.com  (name optional, filled from URL)")
         self.method_box = QComboBox()
         self.method_box.addItems(["GET", "HEAD"])
-        self.method_box.setCurrentText((site.get("method") or "GET").upper() if site else "GET")
+        self.method_box.setCurrentText((site.get("method") or "GET").upper())
         self.timeout_spin = QDoubleSpinBox()
         self.timeout_spin.setRange(1.0, 120.0)
         self.timeout_spin.setSuffix(" s")
@@ -63,7 +64,7 @@ class SiteDialog(QDialog):
         self.expected_spin.setDecimals(0)
         self.expected_spin.setRange(100, 599)
         self.expected_spin.setValue(float(site.get("expected_status") or 200))
-        self.keyword_edit = QLineEdit(site.get("keyword", "") if site else "")
+        self.keyword_edit = QLineEdit(site.get("keyword", ""))
         self.keyword_edit.setPlaceholderText("optional — text that must appear in body")
 
         form.addRow("NAME", self.name_edit)
