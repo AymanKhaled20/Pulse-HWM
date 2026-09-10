@@ -8,6 +8,9 @@ python-dotenv>=1.0.0
 # GPU (NVIDIA) — graceful N/A if not present
 nvidia-ml-py>=12.535
 
+# Hardware temps (in-process LibreHardwareMonitorLib bridge; MPL-2.0, see THIRD_PARTY.md)
+pythonnet>=3.1.0
+
 # Windows-specific
 wmi>=1.5.1 ; sys_platform == "win32"
 pywin32>=306 ; sys_platform == "win32"

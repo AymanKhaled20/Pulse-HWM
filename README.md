@@ -16,8 +16,10 @@ Not a website. A native Windows desktop app.
 - RAM + swap usage
 - Disk usage and read/write throughput
 - Network up/down throughput
-- GPU utilization / VRAM (NVIDIA via `nvidia-smi` ecosystem; others show N/A)
-- Temperatures (best-effort via LibreHardwareMonitor WMI; graceful N/A otherwise)
+- GPU utilization / VRAM / temps (NVIDIA NVML), CPU/GPU temps via an
+  in-process **LibreHardwareMonitorLib** bridge — run
+  `py scripts/lhm.py fetch` once to install the sensor runtime, and
+  `py scripts/lhm.py run` (as Administrator) for full CPU core temps
 - Battery status
 - Top processes by CPU / memory
 
@@ -120,6 +122,13 @@ Everything else (intervals, retention, site list, toggles) lives in the app's
 - Secrets are never printed/logged, not even for debugging.
 
 Install gitleaks (one-time): `winget install gitleaks.gitleaks`
+
+## Credits
+
+Temperature monitoring wouldn't exist without
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+— licensed **MPL-2.0** (not MIT), vendored as unmodified release binaries with
+notice. See [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Project structure
 

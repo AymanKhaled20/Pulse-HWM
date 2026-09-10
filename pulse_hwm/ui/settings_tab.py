@@ -82,6 +82,13 @@ class SettingsTab(QWidget):
         note.setWordWrap(True)
         data_panel.body().addLayout(data_form)
         data_panel.body().addWidget(note)
+        credit = QLabel(
+            'Temp sensors via LibreHardwareMonitorLib 0.9.6 (MPL-2.0) — '
+            'librehardwaremonitor.org — see THIRD_PARTY.md'
+        )
+        credit.setObjectName("muted")
+        credit.setWordWrap(True)
+        data_panel.body().addWidget(credit)
         outer.addWidget(data_panel)
 
         outer.addStretch(1)

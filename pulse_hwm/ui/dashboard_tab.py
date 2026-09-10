@@ -119,7 +119,7 @@ class DashboardTab(QWidget):
     def _make_temp_panel(self) -> PixelPanel:
         panel = PixelPanel("TEMPERATURES")
         self.temp_na = QLabel(
-            "N/A — run LibreHardwareMonitor for full sensor readout"
+            "N/A — run  py scripts/lhm.py fetch  once for hardware temps"
         )
         self.temp_na.setObjectName("muted")
         self.temp_na.setWordWrap(True)

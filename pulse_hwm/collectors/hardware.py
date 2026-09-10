@@ -34,6 +34,7 @@ class HardwareCollector(QObject):
         self.interval_ms = max(250, interval_ms)
         self.persist_every = max(1, persist_every)
         self._tick = 0
+        self._lhm = None
         self._last_io: Optional[tuple[int, int, float]] = None   # (read, write, ts)
         self._last_nic: Optional[tuple[int, int, float]] = None  # (rx, tx, ts)
         self._gpu_state: dict = {"tried": False, "handles": [], "fail_count": 0}
@@ -59,6 +60,11 @@ class HardwareCollector(QObject):
     def stop(self) -> None:
         if getattr(self, "_timer", None):
             self._timer.stop()
+        if isinstance(getattr(self, "_lhm", None), object) and self._lhm not in (None, False):
+            try:
+                self._lhm.close()
+            except Exception:
+                pass
 
     # -- core snapshot ------------------------------------------------------
     def _collect_core(self) -> dict:
@@ -214,9 +220,24 @@ class HardwareCollector(QObject):
         now = time.time()
         if self._temp_cache[0] and now - self._temp_cache[0] < TEMP_REFRESH:
             return self._temp_cache[1]
-        temps = self._temps_lhm() or self._temps_acpi()
+        temps = self._temps_lhm_lib() or self._temps_lhm() or self._temps_acpi()
         self._temp_cache = (now, temps)
         return temps
+
+    def _temps_lhm_lib(self) -> list[dict] | None:
+        """In-process LibreHardwareMonitorLib (one-time runtime fetch)."""
+        if self._lhm is None:
+            try:
+                from pulse_hwm.collectors.lhm import LibreSensors, is_available
+                if not is_available():
+                    return None
+                self._lhm = LibreSensors()
+            except Exception:
+                self._lhm = False
+                return None
+        if self._lhm is False:
+            return None
+        return self._lhm.read()
 
     def _temps_lhm(self) -> list[dict] | None:
         if wmi_module is None:

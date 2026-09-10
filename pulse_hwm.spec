@@ -2,15 +2,22 @@
 # Pulse-HWM — PyInstaller spec (onedir, windowed)
 # Build:  .venv\Scripts\pyinstaller.exe pulse_hwm.spec
 
+import os
+from glob import glob
+
+datas = [
+    ("pulse_hwm\\assets\\fonts", "pulse_hwm\\assets\\fonts"),
+    ("pulse_hwm\\assets\\icons", "pulse_hwm\\assets\\icons"),
+    ("pulse_hwm\\ui\\theme.qss", "pulse_hwm\\ui"),
+]
+if os.path.isdir("pulse_hwm\\assets\\lhm_runtime"):
+    datas.append(("pulse_hwm\\assets\\lhm_runtime", "pulse_hwm\\assets\\lhm_runtime"))
+
 a = Analysis(
     ["pulse_hwm\\__main__.py"],
     pathex=[],
     binaries=[],
-    datas=[
-        ("pulse_hwm\\assets\\fonts", "pulse_hwm\\assets\\fonts"),
-        ("pulse_hwm\\assets\\icons", "pulse_hwm\\assets\\icons"),
-        ("pulse_hwm\\ui\\theme.qss", "pulse_hwm\\ui"),
-    ],
+    datas=datas,
     hiddenimports=[
         "wmi",
         "win32api",

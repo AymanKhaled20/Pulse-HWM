@@ -16,6 +16,9 @@ venv/
 htmlcov/
 .coverage
 
+# ── Vendored runtime bundles (fetched via scripts/lhm.py fetch) ────
+pulse_hwm/assets/lhm_runtime/
+
 # ── Build / packaging output ────────────────────────────
 build/
 dist/
