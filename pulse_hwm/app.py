@@ -154,6 +154,29 @@ def _selftest() -> int:
             report["sensors"] = [{"label": r["label"], "temp": round(r["temp"], 1)} for r in rows]
         else:
             report["lhm_error"] = sensors.last_error or "no temperature sensors returned"
+        import time as _time
+        _time.sleep(3)
+        rows2 = sensors.read()
+        report["sensors_second_read"] = [
+            {"label": r["label"], "temp": round(r["temp"], 1)} for r in (rows2 or [])
+        ]
+        if getattr(sensors, "_obj", None) is not None:
+            hw_list = []
+            for hw in list(sensors._obj.Hardware):
+                entry = {
+                    "name": hw.Name,
+                    "type": str(hw.HardwareType),
+                    "n_sensors": len(list(hw.Sensors)),
+                    "temps": [s.Name for s in hw.Sensors if s.SensorType.ToString() == "Temperature"][:6],
+                }
+                try:
+                    rep = hw.GetReport()
+                    if rep:
+                        entry["report"] = str(rep)[:20000]
+                except Exception as exc:
+                    entry["report_exc"] = str(exc)
+                hw_list.append(entry)
+            report["hardware"] = hw_list
     rows = report["sensors"]
     cpu_temps = [r for r in rows if "CPU" in r["label"]]
     gpu_temps = [r for r in rows if "GPU" in r["label"]]
