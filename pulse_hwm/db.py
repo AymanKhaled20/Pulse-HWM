@@ -86,6 +86,10 @@ class Database:
             cls._instance = cls(path)
         return cls._instance
 
+    @classmethod
+    def current(cls) -> "Database | None":
+        return cls._instance
+
     # -- sites ----------------------------------------------------------
     def add_site(self, name: str, url: str, method: str = "GET",
                  timeout_s: float = 10.0, expected_status: int = 200,

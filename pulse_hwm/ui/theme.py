@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFontDatabase, QIcon, QPainter, QPixmap, QPen
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap, QPen
 
 FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 QSS_PATH = Path(__file__).resolve().parent / "theme.qss"
@@ -36,6 +36,10 @@ def load_fonts(logger=print) -> list[str]:
         if family.upper() not in known and f"{family.split()[0].upper()}" not in known:
             logger(f"[fonts] WARNING: family '{family}' not available — fallback font in use")
     return loaded
+
+
+def tick_font() -> QFont:
+    return QFont("VT323", 10)
 
 
 def load_theme(app) -> None:
