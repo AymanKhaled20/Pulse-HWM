@@ -36,18 +36,26 @@ def run() -> int:
     hardware_thread.setObjectName("hardware-collector")
     collector = HardwareThreadBridge().attach(hardware_thread, 1000)
 
+    from pulse_hwm.collectors.websites import WebsiteThreadBridge
+    websites_thread = QThread()
+    websites_thread.setObjectName("websites-monitor")
+    monitor = WebsiteThreadBridge().attach(websites_thread, db, interval_s=30, timeout_s=10.0, ssl_warn_days=14)
+
     def excepthook(etype, value, tb) -> None:
         traceback.print_exception(etype, value, tb)
 
     sys.excepthook = excepthook
 
-    window = MainWindow(hardware_collector=collector)
+    window = MainWindow(hardware_collector=collector, websites_monitor=monitor)
     window.show()
 
     hardware_thread.start()
+    websites_thread.start()
 
     def shutdown() -> None:
+        websites_thread.quit()
         hardware_thread.quit()
+        websites_thread.wait(3000)
         hardware_thread.wait(2500)
         db.close()
 

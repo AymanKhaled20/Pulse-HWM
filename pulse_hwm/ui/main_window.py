@@ -13,22 +13,27 @@ from pulse_hwm.ui.theme import app_icon, status_icon
 class MainWindow(QMainWindow):
     """Top-level window: 4 tabs + system-tray behavior."""
 
-    def __init__(self, hardware_collector=None):
+    def __init__(self, hardware_collector=None, websites_monitor=None):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(1180, 720)
         self.setMinimumSize(900, 600)
 
+        from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
         self.tabs = QTabWidget()
         if hardware_collector is not None:
             from pulse_hwm.ui.dashboard_tab import DashboardTab
             self.tabs.addTab(DashboardTab(hardware_collector), "DASHBOARD")
         else:
-            from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
             self.tabs.addTab(StdoutPlaceholder("DASHBOARD — hardware collector unavailable"), "DASHBOARD")
-        from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
-        self.tabs.addTab(StdoutPlaceholder("WEBSITES — uptime checker lands in phase 3"), "WEBSITES")
+        if websites_monitor is not None:
+            from pulse_hwm.ui.sites_tab import SitesTab
+            self._sites_tab = SitesTab(websites_monitor.db, websites_monitor)
+            self.tabs.addTab(self._sites_tab, "WEBSITES")
+        else:
+            self._sites_tab = None
+            self.tabs.addTab(StdoutPlaceholder("WEBSITES — monitor unavailable"), "WEBSITES")
         self.tabs.addTab(StdoutPlaceholder("HISTORY — event log + charts (phase 5)"), "HISTORY")
         self.tabs.addTab(StdoutPlaceholder("SETTINGS — intervals, alerts, retention (phase 5)"), "SETTINGS")
         self.setCentralWidget(self.tabs)
