@@ -31,9 +31,14 @@ def human_uptime(seconds: int) -> str:
     return f"{m}m"
 
 
+_CPU_JUNK = ("Family", "GenuineIntel", "GenuineArm", "AuthenticAMD", "arm64")
+
+
 def short_cpu_name(name: str | None) -> str:
-    """Prefer the marketing name from the registry; fall back to platform."""
-    if getattr(sys, "platform", "").startswith("win"):
+    """Registry marketing name only when the input is a WMI-style junk string,
+    or nothing is provided."""
+    needs_source = not name or any(marker in name for marker in _CPU_JUNK)
+    if needs_source and sys.platform.startswith("win"):
         try:
             import winreg
             key = winreg.OpenKey(

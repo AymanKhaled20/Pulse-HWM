@@ -42,7 +42,7 @@ PLACEHOLDER_SUBSTRINGS = {
 SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("OpenAI-style key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
     ("Anthropic-style key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b")),
-    ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{30,}")),
     ("GitHub token (classic)", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")),
     ("GitHub fine-grained token", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}\b")),
     ("GitLab token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
@@ -62,6 +62,10 @@ HIGH_ENTROPY_RE = re.compile(r"\b[A-Za-z0-9+/_=-]{40,}\b")
 
 # lines that look like code but never carry secrets
 SAFE_LINE_RE = re.compile(r"^\s*(#|//|<!--|\"\"\"|\'\'\')")
+
+
+# lines ending with this marker are explicitly whitelisted (test fixtures etc.)
+ALLOW_MARKER = "# pulse-scan:allow"
 
 
 def shannon_entropy(value: str) -> float:
@@ -123,6 +127,7 @@ def scan_file(rel_path: str) -> list[tuple[int, str, str]]:
     for line_no, line in iter_candidate_lines(raw):
         stripped = line.strip()
         safe_to_skip = SAFE_LINE_RE.match(stripped) is not None
+        allow_marker = ALLOW_MARKER in line
         content = stripped if stripped else line
 
         if is_env_file:
@@ -132,6 +137,9 @@ def scan_file(rel_path: str) -> list[tuple[int, str, str]]:
             if path.name != ".env.example":
                 hits.append((line_no, "committed .env file", "<blocked>"))
                 break
+
+        if allow_marker:
+            continue
 
         for kind, pattern in SECRET_PATTERNS:
             m = pattern.search(content)

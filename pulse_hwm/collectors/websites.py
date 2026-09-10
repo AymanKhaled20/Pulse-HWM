@@ -23,8 +23,9 @@ class SiteCheckResult(dict):
         return self["ok"]
 
 
-def check_site(site: dict) -> SiteCheckResult:
-    """Blocking single-website check. Runs on worker threads."""
+def check_site(site: dict, client: httpx.Client | None = None) -> SiteCheckResult:
+    """Blocking single-website check. Runs on worker threads.
+    `client` injectable for tests (httpx.MockTransport)."""
     url = site["url"]
     method = (site.get("method") or "GET").upper()
     timeout_s = float(site.get("timeout_s") or 10.0)
@@ -35,7 +36,7 @@ def check_site(site: dict) -> SiteCheckResult:
     error = ""
     ok = False
     try:
-        response = httpx.request(method, url, timeout=timeout_s, follow_redirects=True)
+        response = (client or httpx).request(method, url, timeout=timeout_s, follow_redirects=True)
         status_code = response.status_code
         ok = response.status_code == expected
         if ok and keyword:
