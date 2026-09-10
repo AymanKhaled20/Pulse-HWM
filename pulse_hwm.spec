@@ -12,7 +12,7 @@ datas = [
     ("pulse_hwm\\ui\\theme.qss", "pulse_hwm\\ui"),
 ]
 if os.path.isdir("pulse_hwm\\assets\\lhm_runtime"):
-    datas.append(("pulse_hwm\\assets\\lhm_runtime", "pulse_hwm\\assets\\lhm_runtime"))
+    datas.append(("pulse_hwm\\assets\\lhm_runtime", "lhm_runtime"))
 
 # pythonnet / .NET Framework runtime needs its native bootstrap pieces
 clr_datas, clr_binaries, clr_hidden = collect_all("clr_loader")

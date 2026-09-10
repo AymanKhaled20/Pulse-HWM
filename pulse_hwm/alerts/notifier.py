@@ -34,9 +34,10 @@ def synth_beep() -> bytes:
 
 
 _WIN_SND = None
-# winsound(SND_ASYNC) reads the buffer AFTER PlaySound returns — keep a
-# module-level reference or the sound gets GC'd mid-playback.
+# PlaySound(SND_MEMORY) blocked (kept alive via _LAST_WAV_BYTES) runs on a
+# daemon thread so notify() never stalls; buffer must outlive the call.
 _LAST_WAV_BYTES: bytes | None = None
+last_sound_error: str | None = None
 
 
 def _win_sound():
@@ -45,22 +46,35 @@ def _win_sound():
         try:
             import winsound as snd
             _WIN_SND = snd
-        except Exception:
+        except Exception as exc:
             _WIN_SND = False
+            last_sound_error = f"import: {exc}"
     return _WIN_SND
 
 
+def _play_blocking(snd, data: bytes) -> None:
+    global last_sound_error
+    try:
+        snd.PlaySound(data, snd.SND_MEMORY)
+    except Exception as exc:
+        last_sound_error = f"play: {exc}"
+
+
 def play_alert_sound() -> bool:
-    """Non-blocking in-memory WAV playback. Returns True when dispatched."""
-    global _LAST_WAV_BYTES
+    """Background in-memory WAV playback. Returns True when dispatched."""
+    global _LAST_WAV_BYTES, last_sound_error
     snd = _win_sound()
     if not snd:
         return False
     try:
         _LAST_WAV_BYTES = synth_beep()
-        snd.PlaySound(_LAST_WAV_BYTES, snd.SND_MEMORY | snd.SND_ASYNC)
+        threading.Thread(
+            target=_play_blocking, args=(snd, _LAST_WAV_BYTES), daemon=True
+        ).start()
+        last_sound_error = None
         return True
-    except Exception:
+    except Exception as exc:
+        last_sound_error = f"play: {exc}"
         return False
 
 

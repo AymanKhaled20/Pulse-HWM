@@ -53,6 +53,14 @@ def run() -> int:
 
     def excepthook(etype, value, tb) -> None:
         traceback.print_exception(etype, value, tb)
+        try:
+            log = config.data_dir() / "error.log"
+            with log.open("a", encoding="utf-8") as fh:
+                import time
+                fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+                traceback.print_exception(etype, value, tb, file=fh)
+        except Exception:
+            pass
 
     sys.excepthook = excepthook
 
@@ -98,14 +106,47 @@ def run() -> int:
 
 
 def _selftest() -> int:
-    """Headless check: report whether temp sources resolve. No GUI."""
+    """Headless check: temp sources + safe-DB probe + sound probe. No GUI."""
     import ctypes
     import json
 
     admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+    probes = {}
+
+    # ── sound probe ──────────────────────────────────────
+    try:
+        from pulse_hwm.alerts import notifier as _notifier
+        probes["sound_played"] = _notifier.play_alert_sound()
+        if not probes["sound_played"] and _notifier.last_sound_error:
+            probes["sound_played"] = f"FAILED: {_notifier.last_sound_error}"
+    except Exception:
+        probes["sound_played"] = f"EXC: {traceback.format_exc(limit=2)}"
+
+    # ── add-site probe against the real DB ───────────────
+    name = "pulse-selftest-probe"
+    added = None
+    try:
+        from pulse_hwm.db import open_default
+        db = open_default()
+        stale = [s for s in db.get_sites(include_disabled=True) if s["name"] == name]
+        for s in stale:
+            db.remove_site(int(s["id"]))
+        db.add_site(name=name, url="https://example.com/")
+        for s in db.get_sites(include_disabled=True):
+            if s["name"] == name:
+                added = dict(s)
+                break
+        for s in db.get_sites(include_disabled=True):
+            if s["name"] == name:
+                db.remove_site(int(s["id"]))
+        db.close()
+        probes["add_site"] = "OK (row created)" if added else "FAILED: row not found"
+    except Exception:
+        probes["add_site"] = f"EXC: {traceback.format_exc(limit=3)}"
+
     from pulse_hwm.collectors.lhm import is_available, LibreSensors
 
-    report = {"admin": admin, "lhm_runtime": is_available(), "sensors": []}
+    report = {"admin": admin, "lhm_runtime": is_available(), "sensors": [], **probes}
     if is_available():
         sensors = LibreSensors()
         rows = sensors.read()
@@ -116,9 +157,16 @@ def _selftest() -> int:
     rows = report["sensors"]
     cpu_temps = [r for r in rows if "CPU" in r["label"]]
     gpu_temps = [r for r in rows if "GPU" in r["label"]]
-    print(json.dumps({
+
+    out = {
         **report,
         "cpu_temps": len(cpu_temps),
         "gpu_temps": len(gpu_temps),
-    }, indent=2))
-    return 0 if rows else 2
+    }
+    rendered = json.dumps(out, indent=2)
+    print(rendered)
+    if "--selftest-out" in sys.argv:
+        path = sys.argv[sys.argv.index("--selftest-out") + 1]
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(rendered)
+    return 0 if (rows or added) else 2

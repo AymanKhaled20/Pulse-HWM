@@ -16,11 +16,13 @@ DLL_NAME = "LibreHardwareMonitorLib.dll"
 
 
 def runtime_dir() -> Path:
-    """Dev: pulse_hwm/assets/lhm_runtime. Packaged: <exe dir>/lhm_runtime."""
-    here = Path(__file__).resolve().parent
+    """Dev: pulse_hwm/assets/lhm_runtime. Packaged: _MEIPASS/lhm_runtime."""
     if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass and (Path(meipass) / RUNTIME_DIRNAME / DLL_NAME).exists():
+            return Path(meipass) / RUNTIME_DIRNAME
         return Path(sys.executable).parent / RUNTIME_DIRNAME
-    return here.parent / "assets" / RUNTIME_DIRNAME
+    return Path(__file__).resolve().parent.parent / "assets" / RUNTIME_DIRNAME
 
 
 def lib_path() -> Path:
