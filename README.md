@@ -142,12 +142,21 @@ Pulse-HWM/
 ## Roadmap
 
 - [x] Phase 0 — repo hygiene, secret scanners, git hooks, README
-- [ ] Phase 1 — scaffold: themed window + tray
-- [ ] Phase 2 — hardware collectors + dashboard widgets
-- [ ] Phase 3 — website monitor + sites tab
-- [ ] Phase 4 — alerts (tray, sound, webhooks)
-- [ ] Phase 5 — history + settings, persistence + retention
-- [ ] Phase 6 — pixel theme polish + icons
-- [ ] Phase 7 — test suite
-- [ ] Phase 8 — packaging: installer
-- [ ] Beyond — autostart on login, CPU per-core history export, macOS/Linux builds
+- [x] Phase 1 — scaffold: themed window + tray
+- [x] Phase 2 — hardware collectors + dashboard widgets
+- [x] Phase 3 — website monitor + sites tab
+- [x] Phase 4 — alerts (tray, sound, webhooks)
+- [x] Phase 5 — history + settings, persistence + retention
+- [x] Phase 6 — pixel theme polish + icons
+- [x] Phase 7 — test suite (34 tests)
+- [x] Phase 8 — packaging: PyInstaller exe (verified) + Inno Setup script
+- [ ] Beyond — autostart on login (installer option exists), history export, macOS/Linux builds
+
+### Build the installer
+
+```powershell
+.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm          # → dist\PulseHWM\
+python scripts\build_icon.py                                      # regenerate icon
+# optional, requires Inno Setup 6:
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\pulse-hwm.iss
+```
