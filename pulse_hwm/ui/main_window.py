@@ -17,8 +17,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
-        self.resize(1180, 720)
-        self.setMinimumSize(900, 600)
+        self.resize(1280, 840)
+        self.setMinimumSize(960, 640)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
         self.tabs = QTabWidget()
@@ -46,9 +46,18 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
         self.setCentralWidget(self.tabs)
 
+        from pulse_hwm.ui.widgets.scanline import ScanlineOverlay
+        self._scanlines = ScanlineOverlay(self)
+        self._scanlines.raise_()
+
         self._build_tray()
         self._first_close = True
         self._down_sites: set[int] = set()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_scanlines"):
+            self._scanlines.setGeometry(0, 0, self.width(), self.height())
 
     # ── overall state LED ──────────────────────────────────
     def on_site_checked(self, result: dict) -> None:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import sys
+
 
 def human_bytes(n: float | None) -> str:
     if n is None:
@@ -26,6 +29,35 @@ def human_uptime(seconds: int) -> str:
     if h:
         return f"{h}h {m}m"
     return f"{m}m"
+
+
+def short_cpu_name(name: str | None) -> str:
+    """Prefer the marketing name from the registry; fall back to platform."""
+    if getattr(sys, "platform", "").startswith("win"):
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
+            )
+            value, _kind = winreg.QueryValueEx(key, "ProcessorNameString")
+            winreg.CloseKey(key)
+            if value:
+                return _clean_cpu(value)
+        except OSError:
+            pass
+    return _clean_cpu(name)
+
+
+def _clean_cpu(name: str | None) -> str:
+    import re
+    if not name:
+        return "Unknown CPU"
+    cleaned = name.replace("(R)", "").replace("(r)", "").replace("(TM)", "").replace("(tm)", "")
+    cleaned = re.sub(r"\s+CPU\s+@\s+.*$", "", cleaned)
+    cleaned = re.sub(r"\s+@\s+.*$", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or "Unknown CPU"
 
 
 def str_to_bool(value: str, default: bool = True) -> bool:

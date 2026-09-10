@@ -13,7 +13,7 @@ from pulse_hwm.ui import theme as T
 from pulse_hwm.ui.widgets.charts import PixelPlot
 from pulse_hwm.ui.widgets.gauges import CpuCoreGrid, GaugeBar, StatRow
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
-from pulse_hwm.util import human_bytes, human_rate, human_uptime
+from pulse_hwm.util import human_bytes, human_rate, human_uptime, short_cpu_name
 
 
 class Caption(QWidget):
@@ -54,6 +54,12 @@ class DashboardTab(QWidget):
         # row 2 — disks / network
         grid.addWidget(self._make_disk_panel(), 2, 0)
         grid.addWidget(self._make_net_panel(), 2, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
+        grid.setRowStretch(0, 0)
+        grid.setRowStretch(1, 1)
+        grid.setRowStretch(2, 1)
 
         # row 3 — history charts
         history = PixelPanel("HISTORY")
@@ -231,14 +237,14 @@ class DashboardTab(QWidget):
     # ── per-sample update ──────────────────────────────────
     def _on_sample(self, snap: dict) -> None:
         cpu = snap["cpu"]
+        if not self.cpu_model.text():
+            self.cpu_model.setText(short_cpu_name(cpu["name"]))
         self.cpu_gauge.set_value(cpu["total"] / 100)
         self.cpu_pct.setText(f"{cpu['total']:.0f}%")
         self.core_grid.set_values(cpu["cores"])
         freq = cpu.get("freq_mhz")
         self.cpu_freq_stat.setText(f"{freq / 1000:.2f} GHz" if freq else "N/A")
         self.uptime_row.set_value(human_uptime(cpu["uptime_s"]))
-        if not self.cpu_model.text():
-            self.cpu_model.setText(cpu["name"])
         self.cpu_chart.add_sample(snap["ts"], cpu["total"])
         self.led.set_state(True, T.SUCCESS if cpu["total"] < 80 else T.DANGER)
 
