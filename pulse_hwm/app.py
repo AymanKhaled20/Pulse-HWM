@@ -23,6 +23,15 @@ def run() -> int:
 
     QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
+    # single-instance: a login-link click re-launches the exe while we
+    # may already be running. If an instance exists, hand the URL over
+    # and exit BEFORE creating QApplication (QLocalSocket works pre-loop;
+    # waitFor* calls are synchronous).
+    from pulse_hwm.single_instance import try_handoff
+
+    if not try_handoff(sys.argv[1:]):
+        return 0
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
@@ -99,6 +108,17 @@ def run() -> int:
         ),
     )
 
+    # ── accounts / cloud sync wiring ──────────────────────────────────
+    from pulse_hwm.auth.config import auth_config
+    from pulse_hwm.auth.oauth import OauthCoordinator, parse_callback_url
+    from pulse_hwm.auth.rest import SupabaseClient
+    from pulse_hwm.auth.session import SessionManager
+
+    auth_cfg = auth_config()
+    supa = SupabaseClient(auth_cfg.base_url, auth_cfg.publishable_key)
+    session = SessionManager(supa)
+    coordinator = OauthCoordinator(supa)
+
     window = MainWindow(
         hardware_collector=collector,
         websites_monitor=monitor,
@@ -106,8 +126,59 @@ def run() -> int:
         alerts=alerts,
         processes_collector=processes_collector,
         theme_manager=theme_manager,
+        session_manager=session,
+        oauth_coordinator=coordinator,
+        auth_configured=auth_cfg.is_configured(),
     )
     window.show()
+
+    # ── incoming auth callbacks (pulsehwm:// handoff from a relaunched process)
+    from pulse_hwm.single_instance import SingleInstance
+
+    single = SingleInstance()
+
+    def handle_incoming_url(url: str) -> None:
+        callback = parse_callback_url(url)
+        if not callback.ok:
+            window.show_account_feedback(f"login link problem: {callback.error}")
+            return
+        pending = coordinator.pending
+        if pending is None:
+            window.show_account_feedback("no sign-in in progress — link expired")
+            return
+        result = session.adopt_pkce_result(
+            callback.code, pending.flow_id, pending.provider
+        )
+        coordinator.pending = None  # verifier already consumed (single-use)
+        window.on_oauth_result(result.ok, result.error)
+        if result.ok:
+            session_started()
+
+    single.url_received.connect(handle_incoming_url)
+
+    # silent session restore from Credential Manager on boot
+    def resume_session() -> None:
+        resumed = session.try_resume()
+        if resumed:
+            window.on_oauth_result(True, "")
+
+    QTimer.singleShot(20, resume_session)
+
+    def session_started() -> None:
+        """Phase 7 hook: the sync engine connects here after sign-in."""
+
+    def shutdown() -> None:
+        websites_thread.quit()
+        hardware_thread.quit()
+        processes_thread.quit()
+        websites_thread.wait(3000)
+        hardware_thread.wait(2500)
+        processes_thread.wait(2500)
+        single.close()
+        supa.close()
+        db.close()
+
+    app.aboutToQuit.connect(shutdown)
 
     # being a good citizen: apply boot-time resource mode from settings
     set_low_priority_mode(settings.limit_resources)
@@ -138,17 +209,6 @@ def run() -> int:
     hardware_thread.start()
     websites_thread.start()
     processes_thread.start()
-
-    def shutdown() -> None:
-        websites_thread.quit()
-        hardware_thread.quit()
-        processes_thread.quit()
-        websites_thread.wait(3000)
-        hardware_thread.wait(2500)
-        processes_thread.wait(2500)
-        db.close()
-
-    app.aboutToQuit.connect(shutdown)
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("[pulse] system tray unavailable")

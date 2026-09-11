@@ -33,6 +33,14 @@ Name: "startupicon"; Description: "Start Pulse-HWM at login"; Flags: unchecked
 [Files]
 Source: "..\dist\PulseHWM\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+; pulsehwm:// URL scheme (auth callbacks from Google/GitHub/reset emails).
+; HKCU = per-user, no admin needed; uninstall removes the registration.
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\pulsehwm"; ValueType: string; ValueData: "URL:Pulse-HWM Auth Protocol"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\pulsehwm"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\pulsehwm\DefaultIcon"; ValueType: string; ValueData: "{app}\{#AppExeName},0"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\pulsehwm\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1"""; Flags: uninsdeletekey
+
 [Icons]
 Name: "{group}\PulseHWM"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\PulseHWM"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
