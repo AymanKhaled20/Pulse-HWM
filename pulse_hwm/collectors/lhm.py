@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import sys
 import threading
 import zipfile
@@ -41,7 +40,9 @@ def download_to(destdir: Path, on_progress=None) -> tuple[bool, str]:
     zip_path = destdir / "LibreHardwareMonitor.zip"
     try:
         total = 0
-        with httpx.stream("GET", LHM_ZIP_URL, timeout=120.0, follow_redirects=True) as resp:
+        with httpx.stream(
+            "GET", LHM_ZIP_URL, timeout=120.0, follow_redirects=True
+        ) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length") or 0)
             with zip_path.open("wb") as fh:
@@ -86,10 +87,12 @@ class LibreSensors:
             return None
         try:
             from pythonnet import load
+
             load("netfx")
             import clr
-            from System.Reflection import Assembly
             from System import Activator
+            from System.Reflection import Assembly
+
             dll_dir = runtime_dir()
             if str(dll_dir) not in sys.path:
                 sys.path.insert(0, str(dll_dir))

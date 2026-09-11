@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
 import httpx
-
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from pulse_hwm.db import Database
@@ -36,7 +35,9 @@ def check_site(site: dict, client: httpx.Client | None = None) -> SiteCheckResul
     error = ""
     ok = False
     try:
-        response = (client or httpx).request(method, url, timeout=timeout_s, follow_redirects=True)
+        response = (client or httpx).request(
+            method, url, timeout=timeout_s, follow_redirects=True
+        )
         status_code = response.status_code
         ok = response.status_code == expected
         if ok and keyword:
@@ -85,8 +86,9 @@ def ssl_expiry_days(url: str, timeout_s: float = 6.0) -> int | None:
         not_after = cert.get("notAfter") if cert else None
         if not not_after:
             return None
-        from email.utils import parsedate_to_datetime
         from datetime import datetime, timezone
+        from email.utils import parsedate_to_datetime
+
         expires = parsedate_to_datetime(not_after)
         if not isinstance(expires, datetime):
             return None
@@ -100,12 +102,18 @@ SITES_REFRESH_ROWS = 5
 
 
 class WebsiteMonitor(QObject):
-    checked = Signal(dict)                      # every finished check
-    site_state_changed = Signal(dict)           # down↔recovery transition
-    ssl_updated = Signal(int, int)              # site_id, days_left
+    checked = Signal(dict)  # every finished check
+    site_state_changed = Signal(dict)  # down↔recovery transition
+    ssl_updated = Signal(int, int)  # site_id, days_left
 
-    def __init__(self, db: Database, interval_s: int = 30, timeout_s: float = 10.0,
-                 ssl_warn_days: int = 14, parent: QObject | None = None):
+    def __init__(
+        self,
+        db: Database,
+        interval_s: int = 30,
+        timeout_s: float = 10.0,
+        ssl_warn_days: int = 14,
+        parent: QObject | None = None,
+    ):
         super().__init__(parent)
         self.db = db
         self._db = db
@@ -118,11 +126,18 @@ class WebsiteMonitor(QObject):
         self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pulse-site")
 
     def config(self) -> dict:
-        return {"interval_s": self._interval_s, "timeout_s": self._timeout_s,
-                "ssl_warn_days": self._ssl_warn_days}
+        return {
+            "interval_s": self._interval_s,
+            "timeout_s": self._timeout_s,
+            "ssl_warn_days": self._ssl_warn_days,
+        }
 
-    def reconfigure(self, interval_s: int | None = None, timeout_s: float | None = None,
-                    ssl_warn_days: int | None = None) -> None:
+    def reconfigure(
+        self,
+        interval_s: int | None = None,
+        timeout_s: float | None = None,
+        ssl_warn_days: int | None = None,
+    ) -> None:
         if interval_s is not None:
             self._interval_s = max(5, int(interval_s))
         if timeout_s is not None:
@@ -152,6 +167,14 @@ class WebsiteMonitor(QObject):
             self._check_counts[site["id"]] = self._check_counts.get(site["id"], 0) + 1
         for future in pending:
             future.add_done_callback(lambda _f: None)
+        self._prune_state({site["id"] for site in sites})
+
+    def _prune_state(self, live_ids: set[int]) -> None:
+        """Drop per-site state for removed sites so these dicts stay bounded
+        by the live site count (a removed site used to leak its entries)."""
+        for cache in (self._states, self._fail_streaks, self._check_counts):
+            for key in [k for k in cache if k not in live_ids]:
+                del cache[key]
 
     def run_cycle_now(self) -> None:
         self.run_cycle()
@@ -161,8 +184,12 @@ class WebsiteMonitor(QObject):
         result = check_site(site)
         site_id = result["site_id"]
         self._db.insert_check(
-            site_id, result["ts"], result["status_code"], result["latency_ms"],
-            result["ok"], result["error"],
+            site_id,
+            result["ts"],
+            result["status_code"],
+            result["latency_ms"],
+            result["ok"],
+            result["error"],
         )
         previous = self._states.get(site_id)
         if result["ok"]:
@@ -194,10 +221,16 @@ class WebsiteMonitor(QObject):
 
 class WebsiteThreadBridge:
     @staticmethod
-    def attach(thread: QThread, db: Database, interval_s: int, timeout_s: float,
-               ssl_warn_days: int) -> WebsiteMonitor:
-        monitor = WebsiteMonitor(db, interval_s=interval_s, timeout_s=timeout_s,
-                                 ssl_warn_days=ssl_warn_days)
+    def attach(
+        thread: QThread,
+        db: Database,
+        interval_s: int,
+        timeout_s: float,
+        ssl_warn_days: int,
+    ) -> WebsiteMonitor:
+        monitor = WebsiteMonitor(
+            db, interval_s=interval_s, timeout_s=timeout_s, ssl_warn_days=ssl_warn_days
+        )
         monitor.moveToThread(thread)
         thread.started.connect(monitor.start)
         thread.finished.connect(monitor.stop)

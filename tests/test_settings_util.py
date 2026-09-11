@@ -4,7 +4,13 @@ import pytest
 
 from pulse_hwm import app_settings
 from pulse_hwm.db import Database
-from pulse_hwm.util import human_bytes, human_uptime, short_cpu_name, str_to_bool
+from pulse_hwm.util import (
+    human_bytes,
+    human_uptime,
+    restart_command,
+    short_cpu_name,
+    str_to_bool,
+)
 
 
 @pytest.fixture
@@ -69,3 +75,49 @@ def test_cpu_name_clean():
     assert short_cpu_name("Intel(R) Core(TM) i7 CPU @ 2.60GHz") == "Intel Core i7"
     name = short_cpu_name("")
     assert isinstance(name, str) and len(name) > 0
+
+
+def test_restart_command_frozen_execution(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", r"C:\\Apps\\PulseHWM.exe")
+    assert restart_command() == (r"C:\\Apps\\PulseHWM.exe", "")
+
+
+def test_restart_command_dev_mode_runs_module(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(sys, "executable", r"C:\\fake\\python.exe")
+    # pythonw.exe never exists next to the fake path → falls back to it, but
+    # the important invariant is: relaunch boots the same module
+    exe, args = restart_command()
+    assert args == "-m pulse_hwm"
+    assert exe.endswith(("pythonw.exe", "python.exe"))
+
+
+def test_shell_runas_none_on_non_windows(monkeypatch):
+    import pulse_hwm.util as util_mod
+
+    monkeypatch.setattr(util_mod.os, "name", "posix")
+    assert util_mod.shell_runas("anything.exe", "") is False
+
+
+def test_shell_runas_accepts_cwd_argument(monkeypatch):
+    """The new `cwd` seam (dev-mode relaunch) must not change the non-Windows
+    path — it short-circuits to False no matter what cwd is passed."""
+    import pulse_hwm.util as util_mod
+
+    monkeypatch.setattr(util_mod.os, "name", "posix")
+    assert util_mod.shell_runas("anything.exe", "-m pulse_hwm", cwd=r"C:\tmp") is False
+
+
+def test_app_root_is_project_root():
+    from pathlib import Path
+
+    from pulse_hwm.util import app_root
+
+    # The package's parent must contain the package itself — that's the
+    # working directory `-m pulse_hwm` needs to resolve from.
+    assert (Path(app_root()) / "pulse_hwm" / "util.py").is_file()

@@ -4,7 +4,7 @@ from collections import deque
 
 import pyqtgraph as pg
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QWidget
 
 from pulse_hwm.ui import theme as T
 
@@ -34,7 +34,9 @@ class PixelPlot(QWidget):
         self._plot.hideButtons()
         self._plot.getPlotItem().setContentsMargins(0, 0, 0, 0)
 
-        pen = pg.mkPen(QColor(pen_color), width=1, style=pg.QtCore.Qt.PenStyle.SolidLine)
+        pen = pg.mkPen(
+            QColor(pen_color), width=1, style=pg.QtCore.Qt.PenStyle.SolidLine
+        )
         self._curve = self._plot.plot([], [], pen=pen, fillLevel=0.0 if fill else None)
         if fill:
             brush_color = QColor(pen_color)
@@ -61,7 +63,7 @@ class PixelPlot(QWidget):
 
     def set_series(self, series: list[tuple[float, float]]) -> None:
         self._data.clear()
-        self._data.extend(series[-self.MAX_POINTS:])
+        self._data.extend(series[-self.MAX_POINTS :])
         if series:
             xs = [x for x, _ in self._data]
             ys = [y for _, y in self._data]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from pulse_hwm.ui import theme as T
@@ -85,7 +85,11 @@ class CpuCoreGrid(QWidget):
                 y = h - (r + 1) * row_h
                 rect = QRectF(x, y, col_w, max(1.0, row_h - 1))
                 if r < filled:
-                    color = T.DANGER if r >= rows - 1 else T.PRIMARY if r < rows - 3 else T.HIGHLIGHT
+                    color = (
+                        T.DANGER
+                        if r >= rows - 1
+                        else T.PRIMARY if r < rows - 3 else T.HIGHLIGHT
+                    )
                     p.fillRect(rect, QColor(color))
                 else:
                     p.fillRect(rect, QColor(T.PANEL_ALT))
@@ -126,7 +130,13 @@ class Led(QWidget):
         p.fillRect(self.rect(), QColor(T.PANEL))
         if self._on:
             p.fillRect(2, 2, self.width() - 4, self.height() - 4, QColor(self._color))
-            p.fillRect(2, 2, (self.width() - 4) // 2, (self.height() - 4) // 5, QColor(T.HIGHLIGHT))
+            p.fillRect(
+                2,
+                2,
+                (self.width() - 4) // 2,
+                (self.height() - 4) // 5,
+                QColor(T.HIGHLIGHT),
+            )
         else:
             p.fillRect(2, 2, self.width() - 4, self.height() - 4, QColor(T.LINE))
         p.setPen(QPen(QColor(T.LINE), 1))
@@ -140,6 +150,7 @@ class StatRow(QWidget):
     def __init__(self, label: str, parent=None):
         super().__init__(parent)
         from PySide6.QtWidgets import QHBoxLayout, QLabel
+
         self._label = QLabel(label)
         self._label.setObjectName("muted")
         self._value = QLabel("—")

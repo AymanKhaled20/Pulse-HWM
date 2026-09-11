@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from pulse_hwm.db import Database
 from pulse_hwm.collectors.websites import uptime_percent
+from pulse_hwm.db import Database
 
 
 @pytest.fixture

@@ -1,0 +1,25 @@
+[project]
+# Minimal metadata; the real app lives in pulse_hwm/.
+# Also serves as the repo-root marker used by pulse_hwm/config.py.
+name = "pulse-hwm"
+version = "0.1.0"
+description = "Glorified hardware monitor - a small pixel desktop app"
+requires-python = ">=3.13"
+
+[tool.black]
+line-length = 88
+target-version = ["py313"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+# Start permissive: only catch real bugs/runway-killers.
+# E501 (line length) is left to black.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# scripts/lhm.py inserts the repo root on sys.path before importing — deliberate.
+"scripts/lhm.py" = ["E402"]

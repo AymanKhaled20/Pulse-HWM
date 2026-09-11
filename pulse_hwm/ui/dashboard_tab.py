@@ -5,7 +5,16 @@ import socket
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QGridLayout, QHeaderView, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from pulse_hwm.collectors.hardware import HardwareCollector
@@ -34,6 +43,10 @@ class DashboardTab(QWidget):
         self._collector = collector
 
         self._disk_rows: dict[str, tuple[GaugeBar, QLabel]] = {}
+        # temperature row widgets keyed by sensor name (rebuilt only when the
+        # sensor set changes; otherwise updated in place — see _refresh_temps)
+        self._temp_rows: dict[str, StatRow] = {}
+        self._temp_names: tuple[str, ...] = ()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -42,10 +55,10 @@ class DashboardTab(QWidget):
         grid.setSpacing(10)
         outer.addLayout(grid)
 
-        # row 0 — system / gpu / temps
+        # row 0 — system / gpu / temps (temps panel spans down the right rail)
         grid.addWidget(self._make_system_panel(), 0, 0)
         grid.addWidget(self._make_gpu_panel(), 0, 1)
-        grid.addWidget(self._make_temp_panel(), 0, 2)
+        grid.addWidget(self._make_temp_panel(), 0, 2, 3, 1)
 
         # row 1 — cpu / memory
         grid.addWidget(self._make_cpu_panel(), 1, 0)
@@ -84,7 +97,9 @@ class DashboardTab(QWidget):
         body = panel.body()
         host = QLabel(socket.gethostname())
         host.setObjectName("stat")
-        self.os_label = QLabel(f"{platform.system()} {platform.release()} · {platform.machine()}")
+        self.os_label = QLabel(
+            f"{platform.system()} {platform.release()} · {platform.machine()}"
+        )
         self.os_label.setObjectName("muted")
         self.cpu_model = QLabel("")
         self.cpu_model.setObjectName("muted")
@@ -124,8 +139,15 @@ class DashboardTab(QWidget):
         self.temp_na.setObjectName("muted")
         self.temp_na.setWordWrap(True)
         self.temp_rows_container = QVBoxLayout()
+        inner = QWidget()
+        inner.setLayout(self.temp_rows_container)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(inner)
         body = panel.body()
-        body.addLayout(self.temp_rows_container)
+        body.addWidget(scroll, 1)
         body.addWidget(self.temp_na)
         return panel
 
@@ -195,7 +217,9 @@ class DashboardTab(QWidget):
         body = panel.body()
         self.net_down_gauge = GaugeBar()
         self.net_down_label = QLabel("0 B/s")
-        body.addLayout(self._gauge_row("DOWN", self.net_down_gauge, self.net_down_label))
+        body.addLayout(
+            self._gauge_row("DOWN", self.net_down_gauge, self.net_down_label)
+        )
         self.net_up_gauge = GaugeBar()
         self.net_up_label = QLabel("0 B/s")
         body.addLayout(self._gauge_row("UP", self.net_up_gauge, self.net_up_label))
@@ -207,7 +231,9 @@ class DashboardTab(QWidget):
         self.proc_table = QTableWidget(0, 4)
         self.proc_table.setHorizontalHeaderLabels(["PROCESS", "CPU %", "MEM %", "PID"])
         self.proc_table.verticalHeader().setVisible(False)
-        self.proc_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.proc_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
         self.proc_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.proc_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.proc_table.setShowGrid(False)
@@ -330,20 +356,74 @@ class DashboardTab(QWidget):
         temp = d.get("temp_c")
         self.gpu_temp.set_value(f"{temp:.0f} °C" if temp is not None else "N/A")
 
+    @staticmethod
+    def _categorize_temps(temps: list[dict]) -> list[dict]:
+        """Curate + rename + order: CPU, GPU, SSD, then board/misc."""
+        rows = []
+        for t in temps:
+            label = str(t["label"])
+            if " — " in label:
+                _hw, sensor = label.split(" — ", 1)
+            else:
+                _hw, sensor = label, label
+            sensor = sensor.strip()
+            if "Distance to TjMax" in sensor or sensor in (
+                "Warning Temperature",
+                "Critical Temperature",
+                "Core Max",
+            ):
+                continue
+            if "Core Average" in sensor:
+                continue
+            if sensor == "CPU Package":
+                rows.append({**t, "name": "CPU", "prio": 0})
+            elif sensor == "Composite Temperature":
+                rows.append({**t, "name": "SSD", "prio": 2})
+            elif sensor.startswith("GPU"):
+                rows.append({**t, "name": sensor, "prio": 1})
+            elif (
+                "Nuvoton" in _hw
+                or "Super I/O" in _hw
+                or "Winbond" in _hw
+                or "ITE" in _hw
+            ):
+                rows.append({**t, "name": f"M/B {sensor}", "prio": 3})
+            else:
+                rows.append({**t, "name": sensor[:30], "prio": 8})
+        rows.sort(key=lambda r: (r["prio"], r["name"]))
+        return rows
+
     def _refresh_temps(self, temps: list[dict] | None) -> None:
+        # fast path: same sensor set as last time -> touch only value labels.
+        # Rebuilding the row widgets every 5s created constant widget churn.
+        if temps and len(self._temp_rows) == len(temps):
+            categorized = self._categorize_temps(temps)
+            if tuple(str(t["name"])[:38] for t in categorized) == self._temp_names:
+                for t in categorized:
+                    name = str(t["name"])[:38]
+                    value = t.get("temp")
+                    self._temp_rows[name].set_value(
+                        f"{value:.0f} °C" if value is not None else "N/A"
+                    )
+                return
         while self.temp_rows_container.count():
             item = self.temp_rows_container.takeAt(0)
             if item and item.widget():
                 item.widget().deleteLater()
         self.temp_na.setVisible(not temps)
+        self._temp_rows.clear()
         if not temps:
+            self._temp_names = ()
             return
-        for t in temps[:6]:
-            row = StatRow(str(t["label"])[:34])
+        for t in self._categorize_temps(temps):
+            name = str(t["name"])[:38]
             value = t.get("temp")
+            row = StatRow(name)
             row.set_value(f"{value:.0f} °C" if value is not None else "N/A")
+            self._temp_rows[name] = row
             self.temp_rows_container.addWidget(row)
-        self.temp_rows_container.addStretch(1)
+        # remember the set so later refreshes only update values in place
+        self._temp_names = tuple(self._temp_rows)
 
     def _refresh_battery(self, battery: dict | None) -> None:
         if not battery:
@@ -359,11 +439,18 @@ class DashboardTab(QWidget):
             return
         self.proc_table.setRowCount(len(procs))
         for r, proc in enumerate(procs):
-            cells = (proc["name"][:40], f"{proc['cpu']:.1f}", f"{proc['mem']:.1f}", str(proc["pid"]))
+            cells = (
+                proc["name"][:40],
+                f"{proc['cpu']:.1f}",
+                f"{proc['mem']:.1f}",
+                str(proc["pid"]),
+            )
             for c, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 if c:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                 self.proc_table.setItem(r, c, item)
 
 
@@ -379,6 +466,7 @@ class GaugeLed(QWidget):
 
     def paintEvent(self, ev) -> None:
         from PySide6.QtGui import QColor, QPainter, QPen
+
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(T.PANEL))
         color = T.SUCCESS if self.property("ok") else T.DANGER

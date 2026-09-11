@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QMainWindow, QTabWidget, QSystemTrayIcon, QMenu, QApplication, QLabel,
+    QApplication,
+    QMainWindow,
+    QMenu,
+    QSystemTrayIcon,
+    QTabWidget,
 )
 
 from pulse_hwm import APP_NAME, __version__
@@ -13,7 +16,14 @@ from pulse_hwm.ui.theme import app_icon, status_icon
 class MainWindow(QMainWindow):
     """Top-level window: 4 tabs + system-tray behavior."""
 
-    def __init__(self, hardware_collector=None, websites_monitor=None, db=None, alerts=None):
+    def __init__(
+        self,
+        hardware_collector=None,
+        websites_monitor=None,
+        db=None,
+        alerts=None,
+        processes_collector=None,
+    ):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
@@ -21,32 +31,63 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(960, 640)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
+
         self.tabs = QTabWidget()
         if hardware_collector is not None:
             from pulse_hwm.ui.dashboard_tab import DashboardTab
+
             self.tabs.addTab(DashboardTab(hardware_collector), "DASHBOARD")
         else:
-            self.tabs.addTab(StdoutPlaceholder("DASHBOARD — hardware collector unavailable"), "DASHBOARD")
+            self.tabs.addTab(
+                StdoutPlaceholder("DASHBOARD — hardware collector unavailable"),
+                "DASHBOARD",
+            )
+        if processes_collector is not None:
+            from pulse_hwm.ui.processes_tab import ProcessesTab
+
+            # the tab toggles collector scans on visibility, so the full scan
+            # only costs CPU while the user is actually looking at it
+            self._processes_tab = ProcessesTab(processes_collector)
+            self.tabs.addTab(self._processes_tab, "PROCESSES")
+        else:
+            self._processes_tab = None
+            self.tabs.addTab(
+                StdoutPlaceholder("PROCESSES — collector unavailable"), "PROCESSES"
+            )
         if websites_monitor is not None:
             from pulse_hwm.ui.sites_tab import SitesTab
+
             self._sites_tab = SitesTab(websites_monitor.db, websites_monitor)
             self.tabs.addTab(self._sites_tab, "WEBSITES")
         else:
             self._sites_tab = None
-            self.tabs.addTab(StdoutPlaceholder("WEBSITES — monitor unavailable"), "WEBSITES")
+            self.tabs.addTab(
+                StdoutPlaceholder("WEBSITES — monitor unavailable"), "WEBSITES"
+            )
         if db is not None:
             from pulse_hwm.ui.history_tab import HistoryTab
+
             self.tabs.addTab(HistoryTab(db), "HISTORY")
         else:
             self.tabs.addTab(StdoutPlaceholder("HISTORY — db unavailable"), "HISTORY")
         if db is not None and alerts is not None and websites_monitor is not None:
             from pulse_hwm.ui.settings_tab import SettingsTab
-            self.tabs.addTab(SettingsTab(db, websites_monitor, alerts), "SETTINGS")
+
+            self.tabs.addTab(
+                SettingsTab(
+                    db,
+                    websites_monitor,
+                    alerts,
+                    processes_collector=processes_collector,
+                ),
+                "SETTINGS",
+            )
         else:
             self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
         self.setCentralWidget(self.tabs)
 
         from pulse_hwm.ui.widgets.scanline import ScanlineOverlay
+
         self._scanlines = ScanlineOverlay(self)
         self._scanlines.raise_()
 

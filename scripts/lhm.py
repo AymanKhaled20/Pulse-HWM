@@ -38,13 +38,17 @@ def fetch() -> int:
     def progress(done: int, total: int) -> None:
         if total:
             pct = 100 * done // total
-            sys.stdout.write(f"\r[lhm] {pct:3d}%  {done / 1e6:.1f} MB / {total / 1e6:.1f} MB")
+            sys.stdout.write(
+                f"\r[lhm] {pct:3d}%  {done / 1e6:.1f} MB / {total / 1e6:.1f} MB"
+            )
             sys.stdout.flush()
 
     ok, message = _download(progress)
     print()
     if ok:
-        print("[lhm] installed — Pulse-HWM will use LibreHardwareMonitor sensors in-process")
+        print(
+            "[lhm] installed — Pulse-HWM will use LibreHardwareMonitor sensors in-process"
+        )
         return 0
     print(f"[lhm] FAILED: {message}")
     return 2
@@ -52,6 +56,7 @@ def fetch() -> int:
 
 def _download(progress) -> tuple[bool, str]:
     from pulse_hwm.collectors.lhm import download_to
+
     return download_to(runtime_dir(), on_progress=progress)
 
 
@@ -68,7 +73,9 @@ def probe() -> int:
         return 2
     for row in rows:
         print(f"  {row['temp']:6.1f} C   {row['label']}")
-    note = "" if _is_admin() else "  (run app/scripts as ADMIN for CPU core temp access)"
+    note = (
+        "" if _is_admin() else "  (run app/scripts as ADMIN for CPU core temp access)"
+    )
     print(f"[lhm] {len(rows)} temperature sensor(s) read{note}")
     return 0
 
@@ -88,6 +95,7 @@ def run() -> int:
 def _is_admin() -> bool:
     try:
         import ctypes
+
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
         return False

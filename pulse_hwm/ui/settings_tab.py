@@ -1,26 +1,44 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+import sys
+
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
-from pulse_hwm import config
 from pulse_hwm import app_settings
 from pulse_hwm.alerts.notifier import AlertChannels
 from pulse_hwm.app_settings import AppSettings
 from pulse_hwm.db import Database
+from pulse_hwm.processes import set_low_priority_mode, trim_working_set
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 
 
 class SettingsTab(QWidget):
-    def __init__(self, db: Database, sites_monitor, alerts, parent=None):
+    # queued: the processes collector lives on its worker thread, so turning
+    # settings changes into interval/row updates must cross threads safely
+    processes_reconfigure = Signal(float, int)
+
+    def __init__(
+        self, db: Database, sites_monitor, alerts, processes_collector=None, parent=None
+    ):
         super().__init__(parent)
         self.setObjectName("root")
         self._db = db
         self._monitor = sites_monitor
         self._alerts = alerts
+        self._processes = processes_collector
+        if processes_collector is not None:
+            self.processes_reconfigure.connect(processes_collector.reconfigure)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -66,6 +84,47 @@ class SettingsTab(QWidget):
         body.addLayout(test_row)
         outer.addWidget(alerts_panel)
 
+        resources_panel = PixelPanel("RESOURCES")
+        resources_form = QFormLayout()
+        self.proc_interval = QSpinBox()
+        self.proc_interval.setRange(1, 60)
+        self.proc_interval.setSuffix(" s")
+        self.proc_interval.setToolTip(
+            "How often the PROCESSES tab rescans (only while visible)"
+        )
+        self.proc_max_rows = QSpinBox()
+        self.proc_max_rows.setRange(50, 2_000)
+        self.proc_max_rows.setSuffix(" rows")
+        self.proc_max_rows.setToolTip(
+            "Cap on rendered process rows, ranked heaviest-first"
+        )
+        self.limit_resources_box = QCheckBox("LIMIT PULSE RESOURCES")
+        self.limit_resources_box.setToolTip(
+            "Run below normal CPU priority + trim cold memory every 15 minutes"
+        )
+        resources_form.addRow("PROCESS SCAN EVERY", self.proc_interval)
+        resources_form.addRow("MAX PROCESS ROWS", self.proc_max_rows)
+        resources_form.addRow(self.limit_resources_box)
+        trim_btn = QPushButton("TRIM MEMORY NOW")
+        trim_btn.clicked.connect(self._trim_now)
+        resources_form.addRow(trim_btn)
+        admin_btn = QPushButton("RESTART AS ADMIN")
+        self._admin_btn = admin_btn
+        admin_btn.setToolTip(
+            "Quit and relaunch elevated — needed for some temperature sensors"
+        )
+        admin_btn.clicked.connect(self._restart_as_admin)
+        resources_form.addRow(admin_btn)
+        resources_note = QLabel(
+            "PROCESSES tab only scans while visible; caches evict dead processes "
+            "every scan so memory stays bounded."
+        )
+        resources_note.setObjectName("muted")
+        resources_note.setWordWrap(True)
+        resources_panel.body().addLayout(resources_form)
+        resources_panel.body().addWidget(resources_note)
+        outer.addWidget(resources_panel)
+
         data_panel = PixelPanel("DATA")
         data_form = QFormLayout()
         self.retention = QSpinBox()
@@ -83,8 +142,8 @@ class SettingsTab(QWidget):
         data_panel.body().addLayout(data_form)
         data_panel.body().addWidget(note)
         credit = QLabel(
-            'Temp sensors via LibreHardwareMonitorLib 0.9.6 (MPL-2.0) — '
-            'librehardwaremonitor.org — see THIRD_PARTY.md'
+            "Temp sensors via LibreHardwareMonitorLib 0.9.6 (MPL-2.0) — "
+            "librehardwaremonitor.org — see THIRD_PARTY.md"
         )
         credit.setObjectName("muted")
         credit.setWordWrap(True)
@@ -111,6 +170,9 @@ class SettingsTab(QWidget):
         self.sound_box.setChecked(values.sound_enabled)
         self.desktop_box.setChecked(values.desktop_enabled)
         self.webhook_box.setChecked(values.webhooks_enabled)
+        self.proc_interval.setValue(values.process_interval_s)
+        self.proc_max_rows.setValue(values.process_max_rows)
+        self.limit_resources_box.setChecked(values.limit_resources)
 
     def collect(self) -> AppSettings:
         return AppSettings(
@@ -122,6 +184,9 @@ class SettingsTab(QWidget):
             sound_enabled=self.sound_box.isChecked(),
             desktop_enabled=self.desktop_box.isChecked(),
             webhooks_enabled=self.webhook_box.isChecked(),
+            process_interval_s=self.proc_interval.value(),
+            process_max_rows=self.proc_max_rows.value(),
+            limit_resources=self.limit_resources_box.isChecked(),
         )
 
     def _apply(self) -> None:
@@ -132,11 +197,18 @@ class SettingsTab(QWidget):
             timeout_s=values.website_timeout_s,
             ssl_warn_days=values.ssl_warn_days,
         )
-        self._alerts.set_channels(AlertChannels(
-            sound=values.sound_enabled,
-            desktop=values.desktop_enabled,
-            webhooks=values.webhooks_enabled,
-        ))
+        self._alerts.set_channels(
+            AlertChannels(
+                sound=values.sound_enabled,
+                desktop=values.desktop_enabled,
+                webhooks=values.webhooks_enabled,
+            )
+        )
+        if self._processes is not None:
+            self.processes_reconfigure.emit(
+                float(values.process_interval_s), int(values.process_max_rows)
+            )
+        set_low_priority_mode(values.limit_resources)
         self._prune_values(values)
 
     def _prune_values(self, values: AppSettings) -> None:
@@ -145,9 +217,41 @@ class SettingsTab(QWidget):
         except Exception:
             pass
 
+    def _trim_now(self) -> None:
+        trim_working_set()
+
+    def _restart_as_admin(self) -> None:
+        """Quit clean, then Windows relaunches Pulse with the UAC runas verb.
+
+        The current process must exit AFTER Windows accepts the elevation
+        request, otherwise the UAC dialog would pop up over a dead app.
+        We show the status and wait a moment so the user can actually read
+        it, and disable the button so a double-click can't start two
+        elevated instances competing over the same SQLite database.
+        """
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication
+
+        from pulse_hwm.util import app_root, restart_command, shell_runas
+
+        exe, args = restart_command()
+        # Dev mode needs the project root as cwd (python -m resolves from
+        # there); the frozen exe is self-contained so any cwd works.
+        cwd = None if getattr(sys, "frozen", False) else app_root()
+        self._admin_btn.setEnabled(False)
+        if shell_runas(exe, args, cwd):
+            self.test_result.setText("relaunching as ADMIN…")
+            QTimer.singleShot(200, QApplication.quit)
+        else:
+            self.test_result.setText("restart failed or cancelled")
+            self._admin_btn.setEnabled(True)
+
     def _test_alert(self) -> None:
         sent = self._alerts.notify(
-            "info", "PULSE-HWM TEST", "This is what an alert looks like.", play_sound=True,
+            "info",
+            "PULSE-HWM TEST",
+            "This is what an alert looks like.",
+            play_sound=True,
         )
         parts = []
         if sent.get("sound_requested"):
@@ -158,7 +262,8 @@ class SettingsTab(QWidget):
         if hooks:
             parts.append(f"{hooks} WEBHOOK(S)")
         self.test_result.setText(
-            "fired: " + (", ".join(parts) if parts else "no channels enabled (toggles above)")
+            "fired: "
+            + (", ".join(parts) if parts else "no channels enabled (toggles above)")
         )
         self.test_banner.setVisible(True)
         self.test_banner.setStyleSheet(

@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-    QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from pulse_hwm.collectors.websites import WebsiteMonitor, uptime_percent
@@ -16,7 +26,9 @@ from pulse_hwm.ui.widgets.charts import PixelPlot
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 
 COLUMNS = 8
-COL_LED, COL_NAME, COL_URL, COL_STATUS, COL_LATENCY, COL_UPTIME, COL_SSL, COL_LAST = range(COLUMNS)
+COL_LED, COL_NAME, COL_URL, COL_STATUS, COL_LATENCY, COL_UPTIME, COL_SSL, COL_LAST = (
+    range(COLUMNS)
+)
 
 REFRESH_UPTIME_EVERY = 5
 SPARK_POINTS = 120
@@ -35,7 +47,9 @@ class _LedWidget(QWidget):
     def paintEvent(self, ev) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        color = {"ok": T.SUCCESS, "down": T.DANGER, "pending": T.LINE}.get(self._state, T.LINE)
+        color = {"ok": T.SUCCESS, "down": T.DANGER, "pending": T.LINE}.get(
+            self._state, T.LINE
+        )
         p.fillRect(3, 3, self.width() - 6, self.height() - 6, QColor(color))
         p.setPen(QPen(QColor(T.LINE), 1))
         p.drawRect(0, 0, self.width() - 1, self.height() - 1)
@@ -48,13 +62,16 @@ class SiteDialog(QDialog):
         self.setWindowTitle("EDIT SITE" if site else "ADD SITE")
         self.setMinimumWidth(420)
         form = QFormLayout(self)
+        site = site or {}
 
-        self.name_edit = QLineEdit(site.get("name", "") if site else "")
-        self.url_edit = QLineEdit(site.get("url", "") if site else "")
-        self.url_edit.setPlaceholderText("https://example.com  (name optional, filled from URL)")
+        self.name_edit = QLineEdit(site.get("name", ""))
+        self.url_edit = QLineEdit(site.get("url", ""))
+        self.url_edit.setPlaceholderText(
+            "https://example.com  (name optional, filled from URL)"
+        )
         self.method_box = QComboBox()
         self.method_box.addItems(["GET", "HEAD"])
-        self.method_box.setCurrentText((site.get("method") or "GET").upper() if site else "GET")
+        self.method_box.setCurrentText((site.get("method") or "GET").upper())
         self.timeout_spin = QDoubleSpinBox()
         self.timeout_spin.setRange(1.0, 120.0)
         self.timeout_spin.setSuffix(" s")
@@ -63,7 +80,7 @@ class SiteDialog(QDialog):
         self.expected_spin.setDecimals(0)
         self.expected_spin.setRange(100, 599)
         self.expected_spin.setValue(float(site.get("expected_status") or 200))
-        self.keyword_edit = QLineEdit(site.get("keyword", "") if site else "")
+        self.keyword_edit = QLineEdit(site.get("keyword", ""))
         self.keyword_edit.setPlaceholderText("optional — text that must appear in body")
 
         form.addRow("NAME", self.name_edit)
@@ -229,7 +246,10 @@ class SitesTab(QWidget):
                 values["url"] = "https://" + values["url"]
             if not values["name"]:
                 from urllib.parse import urlsplit
-                values["name"] = (urlsplit(values["url"]).hostname or values["url"]).removeprefix("www.")
+
+                values["name"] = (
+                    urlsplit(values["url"]).hostname or values["url"]
+                ).removeprefix("www.")
             self._db.add_site(**values)
             self.reload_sites()
             self._monitor.run_cycle_now()
@@ -255,8 +275,15 @@ class SitesTab(QWidget):
             self._db._conn.execute(
                 "UPDATE sites SET name=?, url=?, method=?, timeout_s=?,"
                 " expected_status=?, keyword=? WHERE id=?",
-                (values["name"], values["url"], values["method"], values["timeout_s"],
-                 values["expected_status"], values["keyword"], site_id),
+                (
+                    values["name"],
+                    values["url"],
+                    values["method"],
+                    values["timeout_s"],
+                    values["expected_status"],
+                    values["keyword"],
+                    site_id,
+                ),
             )
             self._db._conn.commit()
         self.reload_sites()
@@ -291,7 +318,9 @@ class SitesTab(QWidget):
         self.table.item(row, COL_LAST).setText(
             time.strftime("%H:%M:%S", time.localtime(result["ts"]))
         )
-        self._tint(self.table.item(row, COL_STATUS), T.SUCCESS if result["ok"] else T.DANGER)
+        self._tint(
+            self.table.item(row, COL_STATUS), T.SUCCESS if result["ok"] else T.DANGER
+        )
         selected = self._selected_site_id()
         if selected == site_id:
             self._load_latency_chart(site_id)
@@ -326,7 +355,9 @@ class SitesTab(QWidget):
             if row is None:
                 continue
             pct = uptime_percent(self._db, site_id, 86400)
-            self.table.item(row, COL_UPTIME).setText(f"{pct:.1f}%" if pct is not None else "—")
+            self.table.item(row, COL_UPTIME).setText(
+                f"{pct:.1f}%" if pct is not None else "—"
+            )
 
     def _tint(self, item: QTableWidgetItem, color: str) -> None:
         item.setForeground(QBrush(QColor(color)))
