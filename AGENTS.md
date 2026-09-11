@@ -90,6 +90,11 @@ pytest.ini                  # pytest config
 - Every new feature gets its own branch — never commit feature work straight to
   `main`. Use `feature/<short-name>` (e.g. `feature/processes-tab`), `fix/<name>`
   for fixes, and `docs/` or `chore/` for everything else.
+- NO pull requests for small changes (palette tweaks, version bumps, minor
+  fixes): commit straight to the feature branch and merge to `main` only after
+  the user gives the OK.
+- When a PR IS used (real multi-file features), never merge it until the user
+  explicitly says so. Always open PRs in draft-like fashion and wait for approval.
 - Before every commit, run the hooks: `pre-commit run --all-files`.
 - All hooks must pass. If a formatter rewrites files, re-stage and re-run until
   the run is clean.
