@@ -43,10 +43,10 @@ class DashboardTab(QWidget):
         grid.setSpacing(10)
         outer.addLayout(grid)
 
-        # row 0 — system / gpu / temps
+        # row 0 — system / gpu / temps (temps panel spans down the right rail)
         grid.addWidget(self._make_system_panel(), 0, 0)
         grid.addWidget(self._make_gpu_panel(), 0, 1)
-        grid.addWidget(self._make_temp_panel(), 0, 2)
+        grid.addWidget(self._make_temp_panel(), 0, 2, 3, 1)
 
         # row 1 — cpu / memory
         grid.addWidget(self._make_cpu_panel(), 1, 0)
