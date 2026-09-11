@@ -299,8 +299,21 @@ class AccountTab(QWidget):
             self.password.clear()
 
     def apply_cloud_offline(self, message: str) -> None:
-        """Sync engine reports connectivity problems here (phase 7)."""
+        """Sync engine / config reports problems here."""
         self._set_feedback(message)
+
+    def set_configured(self, on: bool) -> None:
+        """No Supabase keys configured → auth is inert, clearly."""
+        for w in (
+            self.email,
+            self.password,
+            self.btn_sign_in,
+            self.btn_sign_up,
+            self.btn_forgot,
+            self.btn_google,
+            self.btn_github,
+        ):
+            w.setEnabled(on)
 
     def persist_enabled(self) -> bool:
         """Whether accounts are usable at all (public keys configured)."""

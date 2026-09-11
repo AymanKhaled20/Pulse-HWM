@@ -95,6 +95,9 @@ class MainWindow(QMainWindow):
                 self._account_tab.apply_cloud_offline(
                     "accounts disabled — no Supabase project configured"
                 )
+                self._account_tab.set_configured(False)
+            else:
+                self._account_tab.set_configured(True)
             self.tabs.addTab(self._account_tab, "ACCOUNT")
         else:
             self._account_tab = None
