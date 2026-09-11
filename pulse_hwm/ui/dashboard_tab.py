@@ -86,8 +86,10 @@ class DashboardTab(QWidget):
         tracker = PixelPanel("TOP PROCESSES")
         tracker.body().addWidget(self._make_proc_table())
 
-        outer.addWidget(history, 1)
-        outer.addWidget(tracker, 1)
+        # charts read better than a wall of rows: give HISTORY ~60/40 over
+        # TOP PROCESSES so the plots keep their height
+        outer.addWidget(history, 3)
+        outer.addWidget(tracker, 2)
 
         collector.updated.connect(self._on_sample)
 

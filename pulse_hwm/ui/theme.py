@@ -85,11 +85,11 @@ def tick_font() -> QFont:
 
 
 def table_font(theme: FontTheme | None = None) -> QFont:
-    """Tables/trees read bigger than body text (dense monospace rows at 14px
-    were the '#1 too small' complaint on the processes tab)."""
+    """Tables/trees read much bigger than body text: dense monospace rows at
+    14px were unreadable on the processes tab."""
     t = theme or _sizes
     f = QFont(t.body)
-    f.setPixelSize(max(16, t.body_px))
+    f.setPixelSize(max(24, t.body_px))
     return f
 
 
@@ -138,8 +138,8 @@ def render_qss(color: ColorTheme, fonts: FontTheme) -> str:
         "DISPLAY_PX": max(MIN_FONT_PX, fonts.display_px),
         "BODY_FONT": fonts.body,
         "BODY_PX": max(MIN_FONT_PX, fonts.body_px),
-        # tables/trees get a dedicated, slightly larger size
-        "TABLE_PX": max(16, fonts.body_px),
+        # tables/trees get a dedicated, much larger size
+        "TABLE_PX": max(24, fonts.body_px),
         "HEADER_PX": max(MIN_FONT_PX, fonts.header_px),
     }
     return string.Template(template).substitute(subs)
