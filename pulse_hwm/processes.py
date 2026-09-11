@@ -208,6 +208,95 @@ def cap_rows(
 # ── CPU math ────────────────────────────────────────────────────────────────
 
 
+# ── Task-Manager memory formula ("Working Set - Private") ────────────────
+
+
+def private_working_set_map(debug_log=None) -> Optional[dict[int, int]]:
+    """pid -> private working-set bytes for every process in one PDH pass.
+
+    This is the SAME formula Task Manager's Memory column uses: the
+    "Working Set - Private" performance counter, cross-referenced per
+    process instance via its "ID Process" counter. PDH instance names are
+    the exe image name without .exe; duplicates get a #k suffix. Wildcards
+    merge same-name instances, so counters are added EXPLICITLY per
+    instance and the query is primed with two collects (PDH needs a
+    baseline sample before values become valid). Returns None on failure
+    so callers fall back to USS/RSS.
+    """
+    try:
+        import win32pdh
+    except Exception:
+        return None
+    query = None
+    counters = []
+    result: dict[int, int] = {}
+    try:
+        try:
+            _, instances = win32pdh.EnumObjectItems(
+                None, None, "Process", win32pdh.PERF_DETAIL_WIZARD
+            )
+        except ValueError:  # pywin32 version differences in tuple shape
+            instances = win32pdh.EnumObjectItems(
+                None, None, "Process", win32pdh.PERF_DETAIL_WIZARD
+            )[1]
+        # rebuild dedup suffixes PDH expects: first keep plain, subsequent
+        # occurrences of the same image name become name#1, name#2, ...
+        seen_count: dict[str, int] = {}
+        paths: list[str] = []
+        for inst in instances:
+            stem = inst.lower()
+            n = seen_count.get(stem, 0)
+            seen_count[stem] = n + 1
+            paths.append(inst if n == 0 else f"{inst}#{n}")
+
+        query = win32pdh.OpenQuery()
+        for path in paths:
+            base = f"\\Process({path})"
+            try:
+                counters.append(
+                    (
+                        win32pdh.AddCounter(query, base + "\\ID Process"),
+                        win32pdh.AddCounter(query, base + "\\Working Set - Private"),
+                    )
+                )
+            except Exception:
+                continue  # one unusable instance must not kill the rest
+        win32pdh.CollectQueryData(query)  # baseline (values come on #2)
+        try:
+            win32pdh.CollectQueryData(query)
+        except Exception:
+            pass  # a mid-scan process death can abort pass two; pass 1 cached
+        for cid, cw in counters:
+            try:
+                status_pid, pid = win32pdh.GetFormattedCounterValue(
+                    cid, win32pdh.PDH_FMT_LARGE
+                )
+                status_ws, ws = win32pdh.GetFormattedCounterValue(
+                    cw, win32pdh.PDH_FMT_LARGE
+                )
+            except Exception:
+                continue
+            # 0x10000 = PDH_CSTATUS_VALID_DATA (often ORed with the 0x100
+            # format flag by pywin32); the low bits are counter metadata
+
+            def valid(s: int) -> bool:
+                return bool(s & 0x10000) and (s & 0xFF) == 0
+
+            if valid(status_pid) and valid(status_ws) and int(pid) > 0 and int(ws) >= 0:
+                result[int(pid)] = int(ws)
+        return result
+    except Exception as exc:
+        if debug_log is not None:
+            debug_log(f"private_working_set_map failed: {exc!r}")
+        return None
+    finally:
+        if query is not None:
+            try:
+                win32pdh.CloseQuery(query)
+            except Exception:
+                pass
+
+
 def cpu_percent_from_delta(
     prev_cpu_s: float, now_cpu_s: float, wall_dt: float
 ) -> float:
@@ -407,10 +496,15 @@ class ProcessScanner:
         self._cache: dict[int, dict] = {}  # pid -> static info
         self._cpu_prev: dict[int, tuple[float, float]] = {}  # pid -> (cpu s, wall ts)
         self.last_error: str | None = None
+        self._priv_map: dict[int, int] | None = None  # pid -> private WS bytes
 
     def scan(self) -> list[ProcessRow]:
         now = self._clock()
         visible = visible_window_pids()
+        # PDH pass BEFORE rows exist: exact Task-Manager private working set
+        # per PID ("Working Set - Private" perf counter), independent of the
+        # psutil iteration below
+        self._priv_map = private_working_set_map()
         rows: list[ProcessRow] = []
         seen: set[int] = set()
         self.last_error = None
@@ -432,17 +526,23 @@ class ProcessScanner:
             self.last_error = "no readable processes this scan"
         return rows
 
-    def _private_mem(self, proc, info: dict) -> tuple[int, float]:
-        """Task-Manager-accurate memory: PRIVATE WORKING SET, not RSS.
+    def _private_mem(self, proc, info: dict, pid: int) -> tuple[int, float]:
+        """Task-Manager-identical memory: PRIVATE WORKING SET ("Working set
+        - private" perf counter), read per PID by the PDH pass in scan().
 
-        On Windows many processes (especially Chromium-style apps) share
-        the same mapped DLLs; summing RSS across a 15-process app therefore
-        reports about twice what Task Manager says (double-counting every
-        shared page). The USS/private bytes from memory_full_info() are the
-        unique, rightfully-attributed pages — a 0.3-0.5s VirtualQueryEx
-        pass on the worker thread, measured live. Falls back to RSS when
-        the OS refuses or a fake process object (tests) lacks the call.
+        That counter is exactly what the Task Manager Memory column shows.
+        Fallbacks, in order: psutil USS (still correct, slightly higher),
+        then RSS when even that is refused (tests / access-denied). RSS is
+        only a last resort because Windows DLLs are SHARED between sibling
+        processes — summing it reads roughly 2x Task Manager.
         """
+        total = psutil.virtual_memory().total or 1
+
+        if self._priv_map is not None:
+            priv = self._priv_map.get(pid)
+            if priv and priv > 0:
+                return int(priv), min(100.0, 100.0 * priv / total)
+
         full = None
         full_fn = getattr(proc, "memory_full_info", None)
         if callable(full_fn):
@@ -453,7 +553,6 @@ class ProcessScanner:
             if full is not None:
                 uss = int(getattr(full, "uss", 0) or 0)
                 if uss > 0:
-                    total = psutil.virtual_memory().total or 1
                     return uss, min(100.0, 100.0 * uss / total)
         # fallback: RSS (tests / access-denied)
         mem_info = info.get("memory_info")
@@ -466,7 +565,7 @@ class ProcessScanner:
     ) -> Optional[ProcessRow]:
         try:
             static = self._static(proc, info, pid)
-            mem_rss, mem_pct = self._private_mem(proc, info)
+            mem_rss, mem_pct = self._private_mem(proc, info, pid)
             # empty `visible` (pywin32 missing / non-Windows) means "unknown",
             # not "no window" — keep those rows in BACKGROUND rather than
             # pretending we probed them.
