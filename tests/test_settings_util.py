@@ -25,6 +25,19 @@ def test_defaults_when_empty(db):
     assert values.retention_days == 30
 
 
+def test_save_field_roundtrip_survives_reload(db):
+    """The whole point of save_field: flip the toggle, 'restart', it's still on."""
+    app_settings.save_field(db, "limit_resources", True)
+    assert app_settings.load(db).limit_resources is True
+    app_settings.save_field(db, "limit_resources", False)
+    assert app_settings.load(db).limit_resources is False
+
+
+def test_save_field_rejects_unknown_key(db):
+    with pytest.raises(ValueError):
+        app_settings.save_field(db, "not_a_real_key", True)
+
+
 def test_roundtrip(db):
     values = app_settings.AppSettings(
         hardware_interval_ms=500,

@@ -28,6 +28,9 @@ class SettingsTab(QWidget):
     # queued: the processes collector lives on its worker thread, so turning
     # settings changes into interval/row updates must cross threads safely
     processes_reconfigure = Signal(float, int)
+    # the PROCESSES tab mirrors this toggle (its LOW PRIORITY button is the
+    # same preference) — emitted only after the OS accepted and the DB saved
+    limit_resources_changed = Signal(bool)
 
     def __init__(
         self, db: Database, sites_monitor, alerts, processes_collector=None, parent=None
@@ -103,6 +106,9 @@ class SettingsTab(QWidget):
         self.limit_resources_box.setToolTip(
             "Run below normal CPU priority + trim cold memory every 15 minutes"
         )
+        # clicked (not toggled) so the automatic load_from() fill at startup
+        # can't trigger a save — only real user clicks do
+        self.limit_resources_box.clicked.connect(self._on_limit_resources_clicked)
         resources_form.addRow("PROCESS SCAN EVERY", self.proc_interval)
         resources_form.addRow("MAX PROCESS ROWS", self.proc_max_rows)
         resources_form.addRow(self.limit_resources_box)
@@ -225,6 +231,29 @@ class SettingsTab(QWidget):
 
     def _trim_now(self) -> None:
         trim_working_set()
+
+    def _on_limit_resources_clicked(self, on: bool) -> None:
+        """Persist the preference the moment it is clicked, so it survives a
+        restart without hunting for the APPLY button in the DATA panel."""
+        if not set_low_priority_mode(bool(on)):
+            # OS refused (nice level not granted): snap back, save nothing —
+            # persisting a state the OS didn't grant would be a lie.
+            self.limit_resources_box.blockSignals(True)
+            self.limit_resources_box.setChecked(not on)
+            self.limit_resources_box.blockSignals(False)
+            return
+        app_settings.save_field(self._db, "limit_resources", bool(on))
+        self.limit_resources_changed.emit(bool(on))
+
+    def set_limit_resources_state(self, on: bool) -> None:
+        """Mirror a change that came from elsewhere (PROCESSES tab button).
+
+        The source already applied and persisted; here we only move the
+        checkbox without re-saving or re-emitting (blocks any signal loops).
+        """
+        self.limit_resources_box.blockSignals(True)
+        self.limit_resources_box.setChecked(bool(on))
+        self.limit_resources_box.blockSignals(False)
 
     def _restart_as_admin(self) -> None:
         """Quit clean, then Windows relaunches Pulse with the UAC runas verb.

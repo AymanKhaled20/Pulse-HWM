@@ -105,6 +105,19 @@ def save(db: Database, values: AppSettings) -> None:
         db.set_setting(key, str(int(raw)) if isinstance(raw, bool) else str(raw))
 
 
+def save_field(db: Database, key: str, value) -> None:
+    """Persist ONE setting immediately (booleans become "1"/"0").
+
+    Used by toggles that must survive a restart all by themselves — the
+    LIMIT PULSE RESOURCES checkbox should stick the instant it is clicked,
+    without the user having to find the APPLY button in another panel.
+    Raises ValueError on an unknown key so a typo can't silently no-op.
+    """
+    if key not in _ALL_KEYS:
+        raise ValueError(f"unknown setting key: {key}")
+    db.set_setting(key, str(int(value)) if isinstance(value, bool) else str(value))
+
+
 def clamp(key: str, value: float) -> float:
     low, high = LIMITS.get(key, (0, 1e9))
     return max(low, min(high, value))

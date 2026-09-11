@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
 
             # the tab toggles collector scans on visibility, so the full scan
             # only costs CPU while the user is actually looking at it
-            self._processes_tab = ProcessesTab(processes_collector)
+            self._processes_tab = ProcessesTab(processes_collector, db=db)
             self.tabs.addTab(self._processes_tab, "PROCESSES")
         else:
             self._processes_tab = None
@@ -73,17 +73,26 @@ class MainWindow(QMainWindow):
         if db is not None and alerts is not None and websites_monitor is not None:
             from pulse_hwm.ui.settings_tab import SettingsTab
 
-            self.tabs.addTab(
-                SettingsTab(
-                    db,
-                    websites_monitor,
-                    alerts,
-                    processes_collector=processes_collector,
-                ),
-                "SETTINGS",
+            self._settings_tab = SettingsTab(
+                db,
+                websites_monitor,
+                alerts,
+                processes_collector=processes_collector,
             )
+            self.tabs.addTab(self._settings_tab, "SETTINGS")
         else:
+            self._settings_tab = None
             self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
+        # LIMIT PULSE RESOURCES has two controls (Settings checkbox + PROCESSES
+        # LOW PRIORITY button). Both persist the same key; these connections
+        # keep the two controls visually in sync the moment one changes.
+        if self._settings_tab is not None and self._processes_tab is not None:
+            self._settings_tab.limit_resources_changed.connect(
+                self._processes_tab.set_low_priority_state
+            )
+            self._processes_tab.priority_changed.connect(
+                self._settings_tab.set_limit_resources_state
+            )
         self.setCentralWidget(self.tabs)
 
         from pulse_hwm.ui.widgets.scanline import ScanlineOverlay

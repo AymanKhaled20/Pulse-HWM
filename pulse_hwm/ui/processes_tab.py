@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pulse_hwm import app_settings
 from pulse_hwm.processes import (
     CATEGORY_LABELS,
     PROTECTED_PIDS,
@@ -69,11 +70,15 @@ class ProcessesTab(QWidget):
     # through queued signals — never called directly from the UI thread
     # (QTimer.start() from the wrong thread is undefined behavior)
     active_changed = Signal(bool)
+    # the SETTINGS checkbox is the same preference — emitted only after the
+    # OS accepted the priority change and the DB saved it
+    priority_changed = Signal(bool)
 
-    def __init__(self, collector, parent=None):
+    def __init__(self, collector, db=None, parent=None):
         super().__init__(parent)
         self.setObjectName("root")
         self._collector = collector
+        self._db = db  # optional: persisted LOW PRIORITY needs the settings DB
         self._pool = QThreadPool.globalInstance()
         # signals object must outlive the QRunnable, so it lives here
         self._terminate_signals = _TerminateSignals()
@@ -101,9 +106,19 @@ class ProcessesTab(QWidget):
         bar.addWidget(trim_btn)
         self.prio_btn = QPushButton("LOW PRIORITY")
         self.prio_btn.setCheckable(True)
-        self.prio_btn.setToolTip("Run Pulse below normal CPU priority")
+        self.prio_btn.setToolTip(
+            "Run Pulse below normal CPU priority (same preference as the"
+            " LIMIT PULSE RESOURCES checkbox in Settings)"
+        )
         self.prio_btn.toggled.connect(self._toggle_priority)
         bar.addWidget(self.prio_btn)
+        # start from the persisted preference so the button reflects reality
+        # after a restart (blocked: programmatic fill must not apply/save)
+        if self._db is not None:
+            on = app_settings.load(self._db).limit_resources
+            self.prio_btn.blockSignals(True)
+            self.prio_btn.setChecked(on)
+            self.prio_btn.blockSignals(False)
         outer.addLayout(bar)
 
         self.status = QLabel("")
@@ -309,6 +324,20 @@ class ProcessesTab(QWidget):
             self.prio_btn.blockSignals(True)
             self.prio_btn.setChecked(False)
             self.prio_btn.blockSignals(False)
+            return
+        # same preference as Settings' LIMIT PULSE RESOURCES: persist it so it
+        # survives a restart, then let the Settings tab mirror the control
+        if self._db is not None:
+            app_settings.save_field(self._db, "limit_resources", bool(enabled))
+        self.priority_changed.emit(bool(enabled))
+
+    def set_low_priority_state(self, on: bool) -> None:
+        """Mirror a change that came from the Settings checkbox (already
+        applied + persisted there). Blocked so it can't re-enter
+        _toggle_priority and double-save."""
+        self.prio_btn.blockSignals(True)
+        self.prio_btn.setChecked(bool(on))
+        self.prio_btn.blockSignals(False)
 
     def _set_status(self, text: str) -> None:
         self.status.setText(text)
