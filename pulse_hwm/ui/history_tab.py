@@ -5,8 +5,14 @@ import time
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
-    QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from pulse_hwm.db import Database
@@ -14,7 +20,12 @@ from pulse_hwm.ui import theme as T
 from pulse_hwm.ui.widgets.charts import PixelPlot
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 
-LEVEL_COLOR = {"ERROR": T.DANGER, "WARN": T.PRIMARY, "INFO": T.SUCCESS, "DEBUG": T.MUTED}
+LEVEL_COLOR = {
+    "ERROR": T.DANGER,
+    "WARN": T.PRIMARY,
+    "INFO": T.SUCCESS,
+    "DEBUG": T.MUTED,
+}
 
 
 class HistoryTab(QWidget):
@@ -78,11 +89,17 @@ class HistoryTab(QWidget):
         events = self._db.events_since(now - 7 * 86400, limit=300)
         self.table.setRowCount(len(events))
         for r, ev in enumerate(events):
-            time_item = QTableWidgetItem(time.strftime("%m-%d %H:%M:%S", time.localtime(ev["ts"])))
+            time_item = QTableWidgetItem(
+                time.strftime("%m-%d %H:%M:%S", time.localtime(ev["ts"]))
+            )
             level_item = QTableWidgetItem(ev["level"])
             message_item = QTableWidgetItem(ev["message"])
-            level_item.setForeground(QBrush(QColor(LEVEL_COLOR.get(ev["level"], T.TEXT))))
+            level_item.setForeground(
+                QBrush(QColor(LEVEL_COLOR.get(ev["level"], T.TEXT)))
+            )
             for c, item in enumerate((time_item, level_item, message_item)):
                 if c < 2:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                 self.table.setItem(r, c, item)

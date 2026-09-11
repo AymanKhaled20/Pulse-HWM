@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap, QPen
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPen, QPixmap
 
 FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 QSS_PATH = Path(__file__).resolve().parent / "theme.qss"
@@ -34,7 +34,9 @@ def load_fonts(logger=print) -> list[str]:
     known = {f.split()[0].upper() for f in loaded}
     for family in FONT_FAMILIES:
         if family.upper() not in known and f"{family.split()[0].upper()}" not in known:
-            logger(f"[fonts] WARNING: family '{family}' not available — fallback font in use")
+            logger(
+                f"[fonts] WARNING: family '{family}' not available — fallback font in use"
+            )
     return loaded
 
 
@@ -70,8 +72,14 @@ def _grid_draw(grid: list[str], palette: dict[str, str]):
                 color = palette.get(ch)
                 if color is None:
                     continue
-                painter.fillRect(int(x * cell), int(y * cell),
-                                 max(1, int(cell)), max(1, int(cell)), QColor(color))
+                painter.fillRect(
+                    int(x * cell),
+                    int(y * cell),
+                    max(1, int(cell)),
+                    max(1, int(cell)),
+                    QColor(color),
+                )
+
     return painter_fn
 
 
@@ -115,6 +123,7 @@ def status_icon(state: str) -> QIcon:
         painter.setPen(QPen(QColor(PRIMARY), 2))
         painter.drawRect(1, 1, size - 2, size - 2)
         painter.fillRect(4, 4, size - 8, size - 8, QColor(color))
+
     px = pixel_pixmap(32, fill)
     return QIcon(px)
 
@@ -127,4 +136,5 @@ def led_pixmap(on: bool, color: str, size: int = 20) -> QPixmap:
         else:
             p.fillRect(2, 2, s - 4, s - 4, QColor(PANEL_ALT))
             p.fillRect(2, 2, s - 4, s - 4, QColor(LINE))
+
     return pixel_pixmap(size, paint)

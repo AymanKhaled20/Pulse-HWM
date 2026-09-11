@@ -91,9 +91,15 @@ class Database:
         return cls._instance
 
     # -- sites ----------------------------------------------------------
-    def add_site(self, name: str, url: str, method: str = "GET",
-                 timeout_s: float = 10.0, expected_status: int = 200,
-                 keyword: str = "") -> int:
+    def add_site(
+        self,
+        name: str,
+        url: str,
+        method: str = "GET",
+        timeout_s: float = 10.0,
+        expected_status: int = 200,
+        keyword: str = "",
+    ) -> int:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO sites (name, url, method, timeout_s, expected_status, keyword, enabled, created_at)"
@@ -125,7 +131,9 @@ class Database:
 
     def seed_default_sites(self) -> None:
         with self._lock:
-            count = self._conn.execute("SELECT COUNT(*) AS n FROM sites").fetchone()["n"]
+            count = self._conn.execute("SELECT COUNT(*) AS n FROM sites").fetchone()[
+                "n"
+            ]
             if count == 0:
                 for name, url in DEFAULT_SITES:
                     self._conn.execute(
@@ -135,8 +143,15 @@ class Database:
                 self._conn.commit()
 
     # -- checks ---------------------------------------------------------
-    def insert_check(self, site_id: int, ts: float, status_code: int | None,
-                     latency_ms: float, ok: bool, error: str = "") -> None:
+    def insert_check(
+        self,
+        site_id: int,
+        ts: float,
+        status_code: int | None,
+        latency_ms: float,
+        ok: bool,
+        error: str = "",
+    ) -> None:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO checks (site_id, ts, status_code, latency_ms, ok, error)"
@@ -163,7 +178,8 @@ class Database:
             return
         with self._lock:
             self._conn.executemany(
-                "INSERT INTO hardware_samples (ts, metric, value) VALUES (?, ?, ?)", samples
+                "INSERT INTO hardware_samples (ts, metric, value) VALUES (?, ?, ?)",
+                samples,
             )
             self._conn.commit()
 
@@ -199,7 +215,9 @@ class Database:
             self._conn.commit()
 
     def get_setting(self, key: str, default: str = "") -> str:
-        row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        row = self._conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
         return row["value"] if row else default
 
     # -- retention -----------------------------------------------------------

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from pulse_hwm.collectors.websites import check_site, ssl_expiry_days
 
 
 def make_site(**overrides) -> dict:
     site = {
-        "id": 1, "name": "Test", "url": "https://example.test/", "method": "GET",
-        "timeout_s": 5.0, "expected_status": 200, "keyword": "",
+        "id": 1,
+        "name": "Test",
+        "url": "https://example.test/",
+        "method": "GET",
+        "timeout_s": 5.0,
+        "expected_status": 200,
+        "keyword": "",
     }
     site.update(overrides)
     return site

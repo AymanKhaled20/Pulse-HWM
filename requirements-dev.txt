@@ -6,3 +6,5 @@ pytest-timeout>=2.3
 PyInstaller>=6.10 ; sys_platform == "win32"
 pillow>=10.0
 pre-commit>=3.7
+black>=24.0
+ruff>=0.4

@@ -20,7 +20,10 @@ class AppSettings:
 
 
 _INT_KEYS = {
-    "hardware_interval_ms", "website_interval_s", "ssl_warn_days", "retention_days",
+    "hardware_interval_ms",
+    "website_interval_s",
+    "ssl_warn_days",
+    "retention_days",
 }
 _FLOAT_KEYS = {"website_timeout_s"}
 _BOOL_KEYS = {"sound_enabled", "desktop_enabled", "webhooks_enabled"}
@@ -52,14 +55,29 @@ def load(db: Database) -> AppSettings:
         except (TypeError, ValueError):
             return default
 
-    values.hardware_interval_ms = int(read("hardware_interval_ms", int, values.hardware_interval_ms))
-    values.website_interval_s = int(read("website_interval_s", int, values.website_interval_s))
-    values.website_timeout_s = float(read("website_timeout_s", float, values.website_timeout_s))
+    values.hardware_interval_ms = int(
+        read("hardware_interval_ms", int, values.hardware_interval_ms)
+    )
+    values.website_interval_s = int(
+        read("website_interval_s", int, values.website_interval_s)
+    )
+    values.website_timeout_s = float(
+        read("website_timeout_s", float, values.website_timeout_s)
+    )
     values.ssl_warn_days = int(read("ssl_warn_days", int, values.ssl_warn_days))
     values.retention_days = int(read("retention_days", int, values.retention_days))
-    values.sound_enabled = bool(read("sound_enabled", str_to_bool, values.sound_enabled) in (True, "true", "True", 1))
-    values.desktop_enabled = bool(read("desktop_enabled", str_to_bool, values.desktop_enabled) in (True, "true", "True", 1))
-    values.webhooks_enabled = bool(read("webhooks_enabled", str_to_bool, values.webhooks_enabled) in (True, "true", "True", 1))
+    values.sound_enabled = bool(
+        read("sound_enabled", str_to_bool, values.sound_enabled)
+        in (True, "true", "True", 1)
+    )
+    values.desktop_enabled = bool(
+        read("desktop_enabled", str_to_bool, values.desktop_enabled)
+        in (True, "true", "True", 1)
+    )
+    values.webhooks_enabled = bool(
+        read("webhooks_enabled", str_to_bool, values.webhooks_enabled)
+        in (True, "true", "True", 1)
+    )
     return values
 
 

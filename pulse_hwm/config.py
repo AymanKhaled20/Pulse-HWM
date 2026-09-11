@@ -29,7 +29,6 @@ REPO_ROOT = _repo_root()
 
 def data_dir() -> Path:
     """Database/config home. %LOCALAPPDATA%/PulseHWM, or ./data when portable."""
-    local = Path("data")
     if _portable_mode():
         return repo_next_to_exe_or_primary() / "data"
     base = os.environ.get("LOCALAPPDATA")
@@ -76,7 +75,10 @@ class EnvConfig:
         return cls(
             discord_webhook_url=os.environ.get("DISCORD_WEBHOOK_URL", "").strip(),
             slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL", "").strip(),
-            alert_sound_enabled=os.environ.get("ALERT_SOUND_ENABLED", "true").strip().lower() != "false",
+            alert_sound_enabled=os.environ.get("ALERT_SOUND_ENABLED", "true")
+            .strip()
+            .lower()
+            != "false",
         )
 
 

@@ -39,7 +39,9 @@ def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         if stream.encoding and stream.encoding.lower() not in ("utf-8", "utf8"):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    requested_required = os.environ.get("PULSE_GITLEAKS_REQUIRED", "true").lower() != "false"
+    requested_required = (
+        os.environ.get("PULSE_GITLEAKS_REQUIRED", "true").lower() != "false"
+    )
     binary = resolve_gitleaks()
 
     if binary is None:

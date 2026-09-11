@@ -3,9 +3,8 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from PySide6.QtCore import QObject, QTimer, Signal
-
 import psutil
+from PySide6.QtCore import QObject, QTimer, Signal
 
 try:
     import pynvml
@@ -29,13 +28,18 @@ class HardwareCollector(QObject):
     updated = Signal(dict)
     persisted = Signal(int)  # rows written
 
-    def __init__(self, interval_ms: int = 1000, persist_every: int = 10, parent: QObject | None = None):
+    def __init__(
+        self,
+        interval_ms: int = 1000,
+        persist_every: int = 10,
+        parent: QObject | None = None,
+    ):
         super().__init__(parent)
         self.interval_ms = max(250, interval_ms)
         self.persist_every = max(1, persist_every)
         self._tick = 0
         self._lhm = None
-        self._last_io: Optional[tuple[int, int, float]] = None   # (read, write, ts)
+        self._last_io: Optional[tuple[int, int, float]] = None  # (read, write, ts)
         self._last_nic: Optional[tuple[int, int, float]] = None  # (rx, tx, ts)
         self._gpu_state: dict = {"tried": False, "handles": [], "fail_count": 0}
         self._temp_cache: tuple[float, list[dict]] = (0.0, [])
@@ -60,7 +64,10 @@ class HardwareCollector(QObject):
     def stop(self) -> None:
         if getattr(self, "_timer", None):
             self._timer.stop()
-        if isinstance(getattr(self, "_lhm", None), object) and self._lhm not in (None, False):
+        if isinstance(getattr(self, "_lhm", None), object) and self._lhm not in (
+            None,
+            False,
+        ):
             try:
                 self._lhm.close()
             except Exception:
@@ -81,9 +88,13 @@ class HardwareCollector(QObject):
         vm = psutil.virtual_memory()
         sw = psutil.swap_memory()
         mem = {
-            "total": vm.total, "used": vm.used, "available": vm.available,
+            "total": vm.total,
+            "used": vm.used,
+            "available": vm.available,
             "pct": vm.percent,
-            "swap_total": sw.total, "swap_used": sw.used, "swap_pct": sw.percent,
+            "swap_total": sw.total,
+            "swap_used": sw.used,
+            "swap_pct": sw.percent,
         }
 
         disks = []
@@ -92,26 +103,40 @@ class HardwareCollector(QObject):
                 usage = psutil.disk_usage(part.mountpoint)
             except (OSError, PermissionError):
                 continue
-            disks.append({
-                "mount": part.mountpoint, "fs": part.fstype,
-                "total": usage.total, "used": usage.used, "free": usage.free,
-                "pct": usage.percent,
-            })
+            disks.append(
+                {
+                    "mount": part.mountpoint,
+                    "fs": part.fstype,
+                    "total": usage.total,
+                    "used": usage.used,
+                    "free": usage.free,
+                    "pct": usage.percent,
+                }
+            )
 
         diskio = self._disk_rate(ts)
         net = self._net_rate(ts)
 
         cpu = {
-            "total": cpu_total, "cores": cores, "freq_mhz": freq,
-            "name": _cpu_name(), "logical": psutil.cpu_count(),
+            "total": cpu_total,
+            "cores": cores,
+            "freq_mhz": freq,
+            "name": _cpu_name(),
+            "logical": psutil.cpu_count(),
             "physical": psutil.cpu_count(logical=False),
             "uptime_s": max(0, int(time.time() - psutil.boot_time())),
         }
         return {
-            "ts": ts, "cpu": cpu, "mem": mem, "disks": disks,
-            "diskio": diskio, "net": net,
-            "gpu": self._gpu_snapshot(), "temps": self._temps(),
-            "battery": self._battery(), "procs": self._procs_norm(),
+            "ts": ts,
+            "cpu": cpu,
+            "mem": mem,
+            "disks": disks,
+            "diskio": diskio,
+            "net": net,
+            "gpu": self._gpu_snapshot(),
+            "temps": self._temps(),
+            "battery": self._battery(),
+            "procs": self._procs_norm(),
         }
 
     def _disk_rate(self, ts: float) -> dict:
@@ -154,8 +179,15 @@ class HardwareCollector(QObject):
     def _procs_norm(self) -> list[dict]:
         rows = self._procs_refresh()
         count = max(1, psutil.cpu_count() or 1)
-        return [{"pid": r["pid"], "name": r["name"],
-                 "cpu": r["cpu"] / count, "mem": r["mem"]} for r in rows]
+        return [
+            {
+                "pid": r["pid"],
+                "name": r["name"],
+                "cpu": r["cpu"] / count,
+                "mem": r["mem"],
+            }
+            for r in rows
+        ]
 
     def _procs_refresh(self) -> list[dict]:
         now = time.time()
@@ -166,8 +198,14 @@ class HardwareCollector(QObject):
             try:
                 cpu = p.cpu_percent(interval=None)
                 mem = p.info.get("memory_percent") or 0.0
-                rows.append({"pid": p.info["pid"], "name": p.info.get("name") or "?",
-                             "cpu": cpu, "mem": mem})
+                rows.append(
+                    {
+                        "pid": p.info["pid"],
+                        "name": p.info.get("name") or "?",
+                        "cpu": cpu,
+                        "mem": mem,
+                    }
+                )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         rows.sort(key=lambda r: (r["cpu"], r["mem"]), reverse=True)
@@ -192,14 +230,18 @@ class HardwareCollector(QObject):
             for handle in state["handles"]:
                 util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                 mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-                devices.append({
-                    "name": _decode(pynvml.nvmlDeviceGetName(handle)),
-                    "util_pct": float(util.gpu),
-                    "vram_used": float(mem.used),
-                    "vram_total": float(mem.total),
-                    "temp_c": float(temp),
-                })
+                temp = pynvml.nvmlDeviceGetTemperature(
+                    handle, pynvml.NVML_TEMPERATURE_GPU
+                )
+                devices.append(
+                    {
+                        "name": _decode(pynvml.nvmlDeviceGetName(handle)),
+                        "util_pct": float(util.gpu),
+                        "vram_used": float(mem.used),
+                        "vram_total": float(mem.total),
+                        "temp_c": float(temp),
+                    }
+                )
         except pynvml.NVMLError:
             state["tried"] = False
             return None
@@ -210,7 +252,9 @@ class HardwareCollector(QObject):
         try:
             pynvml.nvmlInit()
             count = pynvml.nvmlDeviceGetCount()
-            state["handles"] = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(count)]
+            state["handles"] = [
+                pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(count)
+            ]
             state["tried"] = bool(state["handles"])
         except Exception:
             state["tried"] = False
@@ -229,6 +273,7 @@ class HardwareCollector(QObject):
         if self._lhm is None:
             try:
                 from pulse_hwm.collectors.lhm import LibreSensors, is_available
+
                 if not is_available():
                     return None
                 self._lhm = LibreSensors()
@@ -244,11 +289,14 @@ class HardwareCollector(QObject):
             return None
         try:
             c = wmi_module.WMI(namespace="root\\LibreHardwareMonitor")
-            sensors = c.query("SELECT Name, Value FROM Sensor WHERE SensorType='Temperature'")
+            sensors = c.query(
+                "SELECT Name, Value FROM Sensor WHERE SensorType='Temperature'"
+            )
         except Exception:
             return None
-        rows = [{"label": s.Name, "temp": s.Value} for s in sensors
-                if s.Value is not None]
+        rows = [
+            {"label": s.Name, "temp": s.Value} for s in sensors if s.Value is not None
+        ]
         return rows or None
 
     def _temps_acpi(self) -> list[dict] | None:
@@ -260,7 +308,9 @@ class HardwareCollector(QObject):
             for zone in c.MSAcpi_ThermalZoneTemperature():
                 celsius = (float(zone.CurrentTemperature) - 2732.0) / 10.0
                 if -40.0 < celsius < 120.0:
-                    rows.append({"label": zone.InstanceName or "ACPI zone", "temp": celsius})
+                    rows.append(
+                        {"label": zone.InstanceName or "ACPI zone", "temp": celsius}
+                    )
             return rows or None
         except Exception:
             return None
@@ -273,12 +323,17 @@ class HardwareCollector(QObject):
             bat = None
         if bat is None:
             return None
-        return {"pct": bat.percent, "plugged": bool(bat.power_plugged), "secs_left": bat.secsleft}
+        return {
+            "pct": bat.percent,
+            "plugged": bool(bat.power_plugged),
+            "secs_left": bat.secsleft,
+        }
 
     # -- persistence ------------------------------------------------------------------
     def _persist(self, snap: dict) -> None:
         try:
             from pulse_hwm.db import Database
+
             db = Database.current()
             if db is None:
                 return
@@ -300,6 +355,7 @@ class HardwareCollector(QObject):
 def _cpu_name() -> str:
     try:
         import platform
+
         return platform.processor() or "Unknown CPU"
     except Exception:
         return "Unknown CPU"

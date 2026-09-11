@@ -41,10 +41,13 @@ last_sound_error: str | None = None
 
 
 def _win_sound():
-    global _WIN_SND
+    # last_sound_error is a module-level global so the UI can show why sound
+    # is unavailable; assigning without `global` would create a throwaway local.
+    global _WIN_SND, last_sound_error
     if _WIN_SND is None:
         try:
             import winsound as snd
+
             _WIN_SND = snd
         except Exception as exc:
             _WIN_SND = False
@@ -122,7 +125,10 @@ def send_slack_alert(message: str) -> None:
 def send_toast(title: str, message: str) -> None:
     try:
         from winotify import Notification, audio
-        toast = Notification(app_id="Pulse-HWM", title=title, msg=message, duration="short")
+
+        toast = Notification(
+            app_id="Pulse-HWM", title=title, msg=message, duration="short"
+        )
         try:
             audio.Default(toast)
         except Exception:
@@ -153,20 +159,30 @@ class AlertManager:
     def attach_tray(self, tray) -> None:
         self._tray = tray
 
-    def notify(self, level: str, title: str, message: str, play_sound: bool = True) -> dict:
+    def notify(
+        self, level: str, title: str, message: str, play_sound: bool = True
+    ) -> dict:
         """Dispatch an alert on all enabled channels. Returns what fired."""
         sent = {"sound": False, "desktop": False, "webhooks": 0}
         if self._channels.desktop and self._tray is not None:
             try:
                 from PySide6.QtWidgets import QSystemTrayIcon
-                severity = QSystemTrayIcon.MessageIcon.Critical if level == "error" else QSystemTrayIcon.MessageIcon.Information
+
+                severity = (
+                    QSystemTrayIcon.MessageIcon.Critical
+                    if level == "error"
+                    else QSystemTrayIcon.MessageIcon.Information
+                )
                 self._tray.setToolTip(title)
                 self._tray.showMessage(title, message, severity, 5000)
                 sent["desktop"] = True
             except Exception:
                 pass
         if self._channels.sound and play_sound:
-            threading.Thread(target=(lambda: sent.__setitem__("sound", play_alert_sound())), daemon=True).start()
+            threading.Thread(
+                target=(lambda: sent.__setitem__("sound", play_alert_sound())),
+                daemon=True,
+            ).start()
             sent["sound_requested"] = True
         if self._channels.webhooks:
             threading.Thread(
@@ -187,8 +203,10 @@ class AlertManager:
             message = f"{result['name']} recovered ({result['latency_ms']} ms)"
             self.notify("info", "SITE RECOVERED", message, play_sound=False)
         self._db.insert_event(
-            _now(), "ERROR" if result["transition"] == "down" else "INFO",
-            f"site_{result['transition']}", message,
+            _now(),
+            "ERROR" if result["transition"] == "down" else "INFO",
+            f"site_{result['transition']}",
+            message,
         )
 
 
@@ -207,4 +225,5 @@ def _fan_out_webhooks(message: str, level: str) -> int:
 
 def _now() -> float:
     import time
+
     return time.time()

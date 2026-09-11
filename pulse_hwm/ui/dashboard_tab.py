@@ -5,8 +5,16 @@ import socket
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QGridLayout, QHeaderView, QLabel, QScrollArea, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from pulse_hwm.collectors.hardware import HardwareCollector
@@ -85,7 +93,9 @@ class DashboardTab(QWidget):
         body = panel.body()
         host = QLabel(socket.gethostname())
         host.setObjectName("stat")
-        self.os_label = QLabel(f"{platform.system()} {platform.release()} · {platform.machine()}")
+        self.os_label = QLabel(
+            f"{platform.system()} {platform.release()} · {platform.machine()}"
+        )
         self.os_label.setObjectName("muted")
         self.cpu_model = QLabel("")
         self.cpu_model.setObjectName("muted")
@@ -203,7 +213,9 @@ class DashboardTab(QWidget):
         body = panel.body()
         self.net_down_gauge = GaugeBar()
         self.net_down_label = QLabel("0 B/s")
-        body.addLayout(self._gauge_row("DOWN", self.net_down_gauge, self.net_down_label))
+        body.addLayout(
+            self._gauge_row("DOWN", self.net_down_gauge, self.net_down_label)
+        )
         self.net_up_gauge = GaugeBar()
         self.net_up_label = QLabel("0 B/s")
         body.addLayout(self._gauge_row("UP", self.net_up_gauge, self.net_up_label))
@@ -215,7 +227,9 @@ class DashboardTab(QWidget):
         self.proc_table = QTableWidget(0, 4)
         self.proc_table.setHorizontalHeaderLabels(["PROCESS", "CPU %", "MEM %", "PID"])
         self.proc_table.verticalHeader().setVisible(False)
-        self.proc_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.proc_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
         self.proc_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.proc_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.proc_table.setShowGrid(False)
@@ -349,8 +363,11 @@ class DashboardTab(QWidget):
             else:
                 _hw, sensor = label, label
             sensor = sensor.strip()
-            if ("Distance to TjMax" in sensor or sensor in
-                    ("Warning Temperature", "Critical Temperature", "Core Max")):
+            if "Distance to TjMax" in sensor or sensor in (
+                "Warning Temperature",
+                "Critical Temperature",
+                "Core Max",
+            ):
                 continue
             if "Core Average" in sensor:
                 continue
@@ -360,7 +377,12 @@ class DashboardTab(QWidget):
                 rows.append({**t, "name": "SSD", "prio": 2})
             elif sensor.startswith("GPU"):
                 rows.append({**t, "name": sensor, "prio": 1})
-            elif "Nuvoton" in _hw or "Super I/O" in _hw or "Winbond" in _hw or "ITE" in _hw:
+            elif (
+                "Nuvoton" in _hw
+                or "Super I/O" in _hw
+                or "Winbond" in _hw
+                or "ITE" in _hw
+            ):
                 rows.append({**t, "name": f"M/B {sensor}", "prio": 3})
             else:
                 rows.append({**t, "name": sensor[:30], "prio": 8})
@@ -395,11 +417,18 @@ class DashboardTab(QWidget):
             return
         self.proc_table.setRowCount(len(procs))
         for r, proc in enumerate(procs):
-            cells = (proc["name"][:40], f"{proc['cpu']:.1f}", f"{proc['mem']:.1f}", str(proc["pid"]))
+            cells = (
+                proc["name"][:40],
+                f"{proc['cpu']:.1f}",
+                f"{proc['mem']:.1f}",
+                str(proc["pid"]),
+            )
             for c, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 if c:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                 self.proc_table.setItem(r, c, item)
 
 
@@ -415,6 +444,7 @@ class GaugeLed(QWidget):
 
     def paintEvent(self, ev) -> None:
         from PySide6.QtGui import QColor, QPainter, QPen
+
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(T.PANEL))
         color = T.SUCCESS if self.property("ok") else T.DANGER

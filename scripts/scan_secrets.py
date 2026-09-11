@@ -24,19 +24,64 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # file name patterns never scanned (binaries, vendored, generated)
 SKIP_SUFFIXES = {
-    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".bmp", ".webp",
-    ".ttf", ".otf", ".woff", ".woff2", ".eot",
-    ".zip", ".7z", ".gz", ".tar", ".exe", ".dll", ".so", ".dylib",
-    ".pdf", ".db", ".sqlite3", ".pyc", ".pyo", ".wav", ".mp3", ".ogg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".ico",
+    ".bmp",
+    ".webp",
+    ".ttf",
+    ".otf",
+    ".woff",
+    ".woff2",
+    ".eot",
+    ".zip",
+    ".7z",
+    ".gz",
+    ".tar",
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".pdf",
+    ".db",
+    ".sqlite3",
+    ".pyc",
+    ".pyo",
+    ".wav",
+    ".mp3",
+    ".ogg",
 }
-SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "build", "dist", ".pytest_cache", "node_modules"}
+SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".pytest_cache",
+    "node_modules",
+}
 SKIP_FILE_NAMES = {"package-lock.json", "poetry.lock", "Pipfile.lock"}
 
 # never flag placeholder values commonly seen in example/template files
 PLACEHOLDER_SUBSTRINGS = {
-    "your_key_here", "your_key", "your-key", "yourtoken", "your_token",
-    "placeholder", "example_key", "example.com", "xxxxxxxx", "paste_your",
-    "<insert", "insert_here", "changeme", "dummy", "sample_key",
+    "your_key_here",
+    "your_key",
+    "your-key",
+    "yourtoken",
+    "your_token",
+    "placeholder",
+    "example_key",
+    "example.com",
+    "xxxxxxxx",
+    "paste_your",
+    "<insert",
+    "insert_here",
+    "changeme",
+    "dummy",
+    "sample_key",
 }
 
 SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -48,14 +93,30 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("GitLab token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
     ("AWS access key id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("Slack bot/user token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
-    ("Slack incoming webhook", re.compile(r"\bhooks\.slack\.com/services/T[A-Za-z0-9]{8,}\b")),
-    ("Discord webhook URL", re.compile(r"https://discord(app)?\.com/api/webhooks/\d{5,}/[A-Za-z0-9_-]{30,}")),
+    (
+        "Slack incoming webhook",
+        re.compile(r"\bhooks\.slack\.com/services/T[A-Za-z0-9]{8,}\b"),
+    ),
+    (
+        "Discord webhook URL",
+        re.compile(
+            r"https://discord(app)?\.com/api/webhooks/\d{5,}/[A-Za-z0-9_-]{30,}"
+        ),
+    ),
     ("Telegram bot token", re.compile(r"\b\d{8,10}:AA[A-Za-z0-9_-]{30,}\b")),
     ("Stripe secret key", re.compile(r"\b[rs]k_live_[A-Za-z0-9]{20,}\b")),
     ("npm/PyPI token", re.compile(r"\b(npm_[A-Za-z0-9]{36}|pypi-[A-Za-z0-9_]{20,})\b")),
     ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    ("generic apiKey= assignment", re.compile(r"(?i)\b(api[_-]?key|secret[_-]?key|auth[_-]?token)\b\s*[:=]\s*[\"'][A-Za-z0-9+/_-]{24,}[\"']")),
-    ("bearer token literal", re.compile(r"(?i)\bbearer\s+[\"'][A-Za-z0-9._~+/-]{30,}[\"']")),
+    (
+        "generic apiKey= assignment",
+        re.compile(
+            r"(?i)\b(api[_-]?key|secret[_-]?key|auth[_-]?token)\b\s*[:=]\s*[\"'][A-Za-z0-9+/_-]{24,}[\"']"
+        ),
+    ),
+    (
+        "bearer token literal",
+        re.compile(r"(?i)\bbearer\s+[\"'][A-Za-z0-9._~+/-]{30,}[\"']"),
+    ),
 ]
 
 HIGH_ENTROPY_RE = re.compile(r"\b[A-Za-z0-9+/_=-]{40,}\b")
@@ -86,14 +147,21 @@ def is_placeholder(text: str) -> bool:
 def staged_files() -> list[str]:
     out = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
-        capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO_ROOT,
     )
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
 def tracked_files() -> list[str]:
     out = subprocess.run(
-        ["git", "ls-files"], capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+        ["git", "ls-files"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO_ROOT,
     )
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
@@ -118,7 +186,7 @@ def scan_file(rel_path: str) -> list[tuple[int, str, str]]:
         return []
 
     raw = path.read_bytes()
-    if b"\x00" in raw[:8192]:          # binary → skip
+    if b"\x00" in raw[:8192]:  # binary → skip
         return []
 
     hits: list[tuple[int, str, str]] = []
@@ -148,7 +216,11 @@ def scan_file(rel_path: str) -> list[tuple[int, str, str]]:
             token = m.group(0)
             if is_placeholder(token):
                 continue
-            show = token[:8] + "…REDACTED…" + token[-4:] if len(token) > 16 else "…REDACTED…"
+            show = (
+                token[:8] + "…REDACTED…" + token[-4:]
+                if len(token) > 16
+                else "…REDACTED…"
+            )
             hits.append((line_no, kind, show))
 
         if not safe_to_skip:
@@ -184,8 +256,12 @@ def run(args: argparse.Namespace) -> int:
 
     if total_hits:
         print(f"\n[pulse-scan] COMMIT BLOCKED — {total_hits} possible secret(s) found.")
-        print("[pulse-scan] Move it to .env (gitignored) and reference it via os.environ.")
-        print("[pulse-scan] If this is a false positive, adjust scan_secrets.py allowlists.")
+        print(
+            "[pulse-scan] Move it to .env (gitignored) and reference it via os.environ."
+        )
+        print(
+            "[pulse-scan] If this is a false positive, adjust scan_secrets.py allowlists."
+        )
         return 1
     print("[pulse-scan] clean ✔ no secrets found")
     return 0
@@ -197,7 +273,9 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="Pulse-HWM secret scanner")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--staged", action="store_true", help="scan files staged for commit (default)")
+    group.add_argument(
+        "--staged", action="store_true", help="scan files staged for commit (default)"
+    )
     group.add_argument("--all", action="store_true", help="scan every tracked file")
     group.add_argument("--paths", nargs="+", metavar="FILE", help="scan specific files")
     parser.set_defaults(staged=True)

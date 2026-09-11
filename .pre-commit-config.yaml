@@ -1,7 +1,24 @@
-# Pulse-HWM pre-commit: two independent secret scanners run before EVERY commit.
+# Pulse-HWM pre-commit hooks. Order matters: format first, lint second,
+# then the two independent secret scanners run before EVERY commit.
+#
 # Install once:  pre-commit install   (or: py -m pre_commit install)
 # Re-run manually on all files:  pre-commit run --all-files
 repos:
+  # ── formatting: black is the ONLY formatter. ruff-format is deliberately
+  #    not in this pipeline — it disagrees with black on blank lines before
+  #    `if __name__` etc., so the two would flip-flop on every commit. ───────
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 26.5.1
+    hooks:
+      - id: black
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  # ── secrets: custom scanner + gitleaks resolver guard ────────────────────
   - repo: local
     hooks:
       - id: pulse-secret-scan

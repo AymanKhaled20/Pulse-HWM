@@ -19,14 +19,14 @@ def run() -> int:
     from pulse_hwm.collectors.hardware import HardwareThreadBridge
     from pulse_hwm.db import open_default
     from pulse_hwm.ui.main_window import MainWindow
-    from pulse_hwm.ui.theme import app_icon, load_fonts, load_theme
+    from pulse_hwm.ui.theme import load_fonts, load_theme
 
     QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
-    app.setQuitOnLastWindowClosed(False)   # close = minimize to tray
+    app.setQuitOnLastWindowClosed(False)  # close = minimize to tray
 
     load_fonts()
     load_theme(app)
@@ -35,17 +35,22 @@ def run() -> int:
     db.seed_default_sites()
 
     from pulse_hwm import app_settings
+
     settings = app_settings.load(db)
 
     hardware_thread = QThread()
     hardware_thread.setObjectName("hardware-collector")
-    collector = HardwareThreadBridge().attach(hardware_thread, settings.hardware_interval_ms)
+    collector = HardwareThreadBridge().attach(
+        hardware_thread, settings.hardware_interval_ms
+    )
 
     from pulse_hwm.collectors.websites import WebsiteThreadBridge
+
     websites_thread = QThread()
     websites_thread.setObjectName("websites-monitor")
     monitor = WebsiteThreadBridge().attach(
-        websites_thread, db,
+        websites_thread,
+        db,
         interval_s=settings.website_interval_s,
         timeout_s=settings.website_timeout_s,
         ssl_warn_days=settings.ssl_warn_days,
@@ -57,6 +62,7 @@ def run() -> int:
             log = config.data_dir() / "error.log"
             with log.open("a", encoding="utf-8") as fh:
                 import time
+
                 fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
                 traceback.print_exception(etype, value, tb, file=fh)
         except Exception:
@@ -64,15 +70,20 @@ def run() -> int:
 
     sys.excepthook = excepthook
 
-    from pulse_hwm.alerts.notifier import AlertManager, AlertChannels
-    alerts = AlertManager(db, AlertChannels(
-        sound=config.env().alert_sound_enabled,
-        desktop=True,
-        webhooks=True,
-    ))
+    from pulse_hwm.alerts.notifier import AlertChannels, AlertManager
 
-    window = MainWindow(hardware_collector=collector, websites_monitor=monitor,
-                        db=db, alerts=alerts)
+    alerts = AlertManager(
+        db,
+        AlertChannels(
+            sound=config.env().alert_sound_enabled,
+            desktop=True,
+            webhooks=True,
+        ),
+    )
+
+    window = MainWindow(
+        hardware_collector=collector, websites_monitor=monitor, db=db, alerts=alerts
+    )
     window.show()
 
     alerts.attach_tray(window.tray)
@@ -116,6 +127,7 @@ def _selftest() -> int:
     # ── sound probe ──────────────────────────────────────
     try:
         from pulse_hwm.alerts import notifier as _notifier
+
         probes["sound_played"] = _notifier.play_alert_sound()
         if not probes["sound_played"] and _notifier.last_sound_error:
             probes["sound_played"] = f"FAILED: {_notifier.last_sound_error}"
@@ -127,6 +139,7 @@ def _selftest() -> int:
     added = None
     try:
         from pulse_hwm.db import open_default
+
         db = open_default()
         stale = [s for s in db.get_sites(include_disabled=True) if s["name"] == name]
         for s in stale:
@@ -144,17 +157,22 @@ def _selftest() -> int:
     except Exception:
         probes["add_site"] = f"EXC: {traceback.format_exc(limit=3)}"
 
-    from pulse_hwm.collectors.lhm import is_available, LibreSensors
+    from pulse_hwm.collectors.lhm import LibreSensors, is_available
 
     report = {"admin": admin, "lhm_runtime": is_available(), "sensors": [], **probes}
     if is_available():
         sensors = LibreSensors()
         rows = sensors.read()
         if rows:
-            report["sensors"] = [{"label": r["label"], "temp": round(r["temp"], 1)} for r in rows]
+            report["sensors"] = [
+                {"label": r["label"], "temp": round(r["temp"], 1)} for r in rows
+            ]
         else:
-            report["lhm_error"] = sensors.last_error or "no temperature sensors returned"
+            report["lhm_error"] = (
+                sensors.last_error or "no temperature sensors returned"
+            )
         import time as _time
+
         _time.sleep(3)
         rows2 = sensors.read()
         report["sensors_second_read"] = [
@@ -167,7 +185,11 @@ def _selftest() -> int:
                     "name": hw.Name,
                     "type": str(hw.HardwareType),
                     "n_sensors": len(list(hw.Sensors)),
-                    "temps": [s.Name for s in hw.Sensors if s.SensorType.ToString() == "Temperature"][:6],
+                    "temps": [
+                        s.Name
+                        for s in hw.Sensors
+                        if s.SensorType.ToString() == "Temperature"
+                    ][:6],
                 }
                 try:
                     rep = hw.GetReport()

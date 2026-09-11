@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
-from pulse_hwm import config
 from pulse_hwm import app_settings
 from pulse_hwm.alerts.notifier import AlertChannels
 from pulse_hwm.app_settings import AppSettings
@@ -83,8 +89,8 @@ class SettingsTab(QWidget):
         data_panel.body().addLayout(data_form)
         data_panel.body().addWidget(note)
         credit = QLabel(
-            'Temp sensors via LibreHardwareMonitorLib 0.9.6 (MPL-2.0) — '
-            'librehardwaremonitor.org — see THIRD_PARTY.md'
+            "Temp sensors via LibreHardwareMonitorLib 0.9.6 (MPL-2.0) — "
+            "librehardwaremonitor.org — see THIRD_PARTY.md"
         )
         credit.setObjectName("muted")
         credit.setWordWrap(True)
@@ -132,11 +138,13 @@ class SettingsTab(QWidget):
             timeout_s=values.website_timeout_s,
             ssl_warn_days=values.ssl_warn_days,
         )
-        self._alerts.set_channels(AlertChannels(
-            sound=values.sound_enabled,
-            desktop=values.desktop_enabled,
-            webhooks=values.webhooks_enabled,
-        ))
+        self._alerts.set_channels(
+            AlertChannels(
+                sound=values.sound_enabled,
+                desktop=values.desktop_enabled,
+                webhooks=values.webhooks_enabled,
+            )
+        )
         self._prune_values(values)
 
     def _prune_values(self, values: AppSettings) -> None:
@@ -147,7 +155,10 @@ class SettingsTab(QWidget):
 
     def _test_alert(self) -> None:
         sent = self._alerts.notify(
-            "info", "PULSE-HWM TEST", "This is what an alert looks like.", play_sound=True,
+            "info",
+            "PULSE-HWM TEST",
+            "This is what an alert looks like.",
+            play_sound=True,
         )
         parts = []
         if sent.get("sound_requested"):
@@ -158,7 +169,8 @@ class SettingsTab(QWidget):
         if hooks:
             parts.append(f"{hooks} WEBHOOK(S)")
         self.test_result.setText(
-            "fired: " + (", ".join(parts) if parts else "no channels enabled (toggles above)")
+            "fired: "
+            + (", ".join(parts) if parts else "no channels enabled (toggles above)")
         )
         self.test_banner.setVisible(True)
         self.test_banner.setStyleSheet(

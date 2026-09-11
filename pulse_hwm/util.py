@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 
 
@@ -41,6 +40,7 @@ def short_cpu_name(name: str | None) -> str:
     if needs_source and sys.platform.startswith("win"):
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
                 r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
@@ -56,9 +56,15 @@ def short_cpu_name(name: str | None) -> str:
 
 def _clean_cpu(name: str | None) -> str:
     import re
+
     if not name:
         return "Unknown CPU"
-    cleaned = name.replace("(R)", "").replace("(r)", "").replace("(TM)", "").replace("(tm)", "")
+    cleaned = (
+        name.replace("(R)", "")
+        .replace("(r)", "")
+        .replace("(TM)", "")
+        .replace("(tm)", "")
+    )
     cleaned = re.sub(r"\s+CPU\s+@\s+.*$", "", cleaned)
     cleaned = re.sub(r"\s+@\s+.*$", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -66,4 +72,8 @@ def _clean_cpu(name: str | None) -> str:
 
 
 def str_to_bool(value: str, default: bool = True) -> bool:
-    return default if value == "" else value.strip().lower() not in ("false", "0", "no", "off")
+    return (
+        default
+        if value == ""
+        else value.strip().lower() not in ("false", "0", "no", "off")
+    )
