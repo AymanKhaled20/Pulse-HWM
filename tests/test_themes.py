@@ -82,6 +82,20 @@ def test_render_qss_leaves_no_unrendered_tokens_all_pairs():
             assert ft.body in out
 
 
+def test_rendered_qss_respects_14px_minimum():
+    # tiny pixel sizes (9-13px) were unreadable on real screens
+    size_re = re.compile(r"font-size:\s*(\d+)px")
+    from pulse_hwm.ui.theme import MIN_FONT_PX
+
+    for ct in COLOR_THEMES:
+        for ft in FONT_THEMES:
+            for match in size_re.finditer(render_qss(ct, ft)):
+                assert int(match.group(1)) >= MIN_FONT_PX, (
+                    f"font-size {match.group(1)}px < {MIN_FONT_PX} "
+                    f"for {ct.id}/{ft.id}"
+                )
+
+
 def test_every_font_theme_names_a_real_family():
     # QFontDatabase needs a running Qt app; instead verify each named family
     # corresponds to a font file actually present in the bundle (for our
