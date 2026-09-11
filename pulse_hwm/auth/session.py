@@ -37,11 +37,27 @@ class SessionManager:
         return self.tokens is not None and self.tokens.is_valid()
 
     # ── email + password ──────────────────────────────────────────────
-    def sign_up(self, email: str, password: str, redirect_to: str) -> AuthResult:
-        result = self._client.sign_up(email, password, redirect_to=redirect_to)
+    def sign_up(
+        self,
+        email: str,
+        password: str,
+        redirect_to: str = "",
+        challenge: str = "",
+    ) -> AuthResult:
+        """redirect_to/challenge come from OauthCoordinator.start_email_flow()
+        when confirm-email is ON (PKCE-bound verification link)."""
+        result = self._client.sign_up(
+            email,
+            password,
+            redirect_to=redirect_to,
+            code_challenge=challenge,
+        )
         if result.ok:
             self._adopt(result, provider="password")
         return result
+
+    def recover(self, email: str, challenge: str = "") -> AuthResult:
+        return self._client.recover(email, code_challenge=challenge)
 
     def sign_in(self, email: str, password: str) -> AuthResult:
         result = self._client.sign_in_with_password(email, password)

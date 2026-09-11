@@ -88,13 +88,28 @@ class SupabaseClient:
         self._http.close()
 
     # ── auth ───────────────────────────────────────────────────────────
-    def sign_up(self, email: str, password: str, redirect_to: str) -> AuthResult:
-        """Create an account. With confirm-email on, returns no tokens."""
+    def sign_up(
+        self,
+        email: str,
+        password: str,
+        redirect_to: str = "",
+        code_challenge: str = "",
+    ) -> AuthResult:
+        """Create an account. With confirm-email ON the server stores the
+        PKCE challenge for THIS signup and returns NO tokens; the verify
+        link later redirects with a code bound to our parked verifier."""
         email, password = email.strip(), password
         try:
             r = self._http.post(
                 "/auth/v1/signup",
-                json={"email": email, "password": password},
+                json={
+                    "email": email,
+                    "password": password,
+                    # with confirm-email ON, the challenge binds the LATER
+                    # verification-link code exchange to our parked verifier
+                    **({"code_challenge": code_challenge} if code_challenge else {}),
+                    **({"code_challenge_method": "s256"} if code_challenge else {}),
+                },
                 params={"redirect_to": redirect_to} if redirect_to else None,
             )
         except httpx.HTTPError:
@@ -176,12 +191,20 @@ class SupabaseClient:
         )
         return f"{self._base}/auth/v1/authorize?{params}"
 
-    def recover(self, email: str, redirect_to: str) -> AuthResult:
-        """Send the 'reset password' email (link lands on redirect_to)."""
+    def recover(
+        self, email: str, redirect_to: str = "", code_challenge: str = ""
+    ) -> AuthResult:
+        """Send the 'reset password' email (link lands on redirect_to).
+        With PKCE, the challenge is bound here and the link later
+        redirects with a code the parked verifier can exchange."""
         try:
             r = self._http.post(
                 "/auth/v1/recover",
-                json={"email": email.strip()},
+                json={
+                    "email": email.strip(),
+                    **({"code_challenge": code_challenge} if code_challenge else {}),
+                    **({"code_challenge_method": "s256"} if code_challenge else {}),
+                },
                 params={"redirect_to": redirect_to} if redirect_to else None,
             )
         except httpx.HTTPError:
