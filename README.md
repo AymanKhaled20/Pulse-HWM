@@ -1,6 +1,6 @@
 ﻿# Pulse-HWM
 
-A glorified hardware monitor â€” a small native Windows desktop app with high
+A glorified hardware monitor a small native Windows desktop app with high
 hopes. Watches your machine (CPU, RAM, disk, network, GPU, temps, battery, top
 processes), tracks the health of websites you care about (status, latency,
 uptime, SSL expiry), and makes a noise when anything goes wrong.
