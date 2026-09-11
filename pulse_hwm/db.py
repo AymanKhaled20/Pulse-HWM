@@ -298,6 +298,123 @@ class Database:
         ).fetchone()
         return row["value"] if row else default
 
+    # -- sync helpers (settings + sites, per-key/per-row LWW) ───────────
+
+    def get_settings_with_ts(self) -> dict[str, tuple[str, float]]:
+        """Every settings key → (value, sync timestamp from settings_sync)."""
+        rows = self._conn.execute(
+            "SELECT s.key, s.value, COALESCE(sc.updated_at, 0) AS updated_at"
+            " FROM settings s LEFT JOIN settings_sync sc ON s.key = sc.key"
+        ).fetchall()
+        return {r["key"]: (r["value"], float(r["updated_at"])) for r in rows}
+
+    def adopt_cloud_setting(self, key: str, value: str, ts: float) -> bool:
+        """Take a cloud write when it is NEWER than the local write.
+        Unlike set_setting, the cloud timestamp is preserved as-is."""
+        row = self._conn.execute(
+            "SELECT updated_at FROM settings_sync WHERE key = ?", (key,)
+        ).fetchone()
+        if row is not None and float(row["updated_at"]) >= ts:
+            return False  # local write wins (LWW)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+            self._conn.execute(
+                "INSERT INTO settings_sync (key, updated_at) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET updated_at = excluded.updated_at",
+                (key, ts),
+            )
+            self._conn.commit()
+        return True
+
+    def get_sites_for_sync(self) -> list[sqlite3.Row]:
+        """ALL site rows incl. tombstones — the sync engine needs history."""
+        return self._conn.execute("SELECT * FROM sites ORDER BY id").fetchall()
+
+    def upsert_synced_site(
+        self,
+        site_uuid: str,
+        name: str,
+        url: str,
+        method: str = "GET",
+        timeout_s: float = 10.0,
+        expected_status: int = 200,
+        keyword: str = "",
+        enabled: bool = True,
+        deleted: bool = False,
+        updated_at: float = 0.0,
+    ) -> bool:
+        """Upsert a cloud row by uuid; only applied when NEWER locally.
+        Returns True when the local state changed."""
+        now = time.time()
+        existing = self._conn.execute(
+            "SELECT id, updated_at FROM sites WHERE uuid = ?", (site_uuid,)
+        ).fetchone()
+        if existing is not None and float(existing["updated_at"]) >= updated_at:
+            return False
+        with self._lock:
+            if existing is None:
+                # deleted column left at its 0 default; tombstoned rows are
+                # patched right below so the stored row reflects cloud truth
+                self._conn.execute(
+                    "INSERT INTO sites (name, url, method, timeout_s, expected_status, keyword, enabled, created_at, uuid, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        name,
+                        url,
+                        method,
+                        float(timeout_s),
+                        int(expected_status),
+                        keyword,
+                        int(enabled),
+                        now,
+                        site_uuid,
+                        float(updated_at),
+                    ),
+                )
+                if deleted:
+                    # cloud tombstone for a row we never had: record it anyway
+                    self._conn.execute(
+                        "UPDATE sites SET deleted = 1 WHERE uuid = ?", (site_uuid,)
+                    )
+            else:
+                self._conn.execute(
+                    "UPDATE sites SET name=?, url=?, method=?, timeout_s=?, expected_status=?, keyword=?, enabled=?, updated_at=?, deleted=?"
+                    " WHERE uuid = ?",
+                    (
+                        name,
+                        url,
+                        method,
+                        float(timeout_s),
+                        int(expected_status),
+                        keyword,
+                        int(enabled),
+                        float(updated_at),
+                        int(deleted),
+                        site_uuid,
+                    ),
+                )
+            self._conn.commit()
+        return True
+
+    def tombstone_site_by_uuid(self, site_uuid: str, ts: float) -> bool:
+        existing = self._conn.execute(
+            "SELECT updated_at FROM sites WHERE uuid = ?", (site_uuid,)
+        ).fetchone()
+        if existing is None or float(existing["updated_at"]) >= ts:
+            return False
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sites SET deleted = 1, enabled = 0, updated_at = ?"
+                " WHERE uuid = ?",
+                (ts, site_uuid),
+            )
+            self._conn.commit()
+        return True
+
     # -- retention -----------------------------------------------------------
     def prune(self, retention_days: float) -> dict[str, int]:
         cutoff = time.time() - retention_days * 86400

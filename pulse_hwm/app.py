@@ -118,6 +118,7 @@ def run() -> int:
     supa = SupabaseClient(auth_cfg.base_url, auth_cfg.publishable_key)
     session = SessionManager(supa)
     coordinator = OauthCoordinator(supa)
+    _SYNC_TICK_MS = 60 * 1000  # automatic compare-and-merge cadence
 
     window = MainWindow(
         hardware_collector=collector,
@@ -165,7 +166,34 @@ def run() -> int:
     QTimer.singleShot(20, resume_session)
 
     def session_started() -> None:
-        """Phase 7 hook: the sync engine connects here after sign-in."""
+        # sign-in (and OAuth adoption) both kick a sync immediately
+        sync_engine.sync_now()
+
+    # ── sync engine (automatic ~60 s compare-and-merge; payloads tiny) ─
+    from PySide6.QtCore import QThreadPool
+
+    from pulse_hwm.auth.sync_engine import SyncEngine
+
+    sync_engine = SyncEngine(session, supa, db, parent=None)
+    sync_engine.attach_pool(QThreadPool.globalInstance())
+    sync_engine.finished.connect(
+        lambda summary, ok, error: window.show_account_feedback(summary or error)
+    )
+    if window._account_tab is not None:
+        window._account_tab.sync_requested.connect(sync_engine.sync_now)
+    sync_timer = QTimer()
+    sync_timer.timeout.connect(sync_engine.sync_now)
+    sync_timer.start(_SYNC_TICK_MS)
+
+    def on_sync_done(summary: str, ok: bool, _error: str) -> None:
+        if not ok or not summary or summary == "not signed in":
+            return
+        # cloud may have updated syncable settings (theme etc.) — reapply
+        merged = app_settings.load(db)
+        theme_manager.apply(merged.theme_color, merged.theme_font, persist=False)
+        theme_manager.set_body_px(merged.font_size)
+
+    sync_engine.finished.connect(on_sync_done)
 
     def shutdown() -> None:
         websites_thread.quit()
