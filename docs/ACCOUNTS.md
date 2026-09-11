@@ -24,9 +24,12 @@ service-role key never leaves the Supabase dashboard.
 3. **Brevo SMTP** (free 300/day) → https://app.brevo.com
    - Sign up, verify sender → https://app.brevo.com/senders
    - Create SMTP key → https://app.brevo.com/settings/keys/smtp
-     (`smtp-relay.brevo.com:587`, login = account email).
-   - Supabase → Auth → SMTP: paste Brevo host/user/pass. Confirm-email
-     provider settings → templates visible only with custom SMTP.
+   - **IMPORTANT: Brevo's SMTP LOGIN is NOT your account email** — it is a
+     special address shown on that page (`<id>@smtp-brevo.com`). Use THAT as
+     the Supabase SMTP username; the SMTP key is the password.
+   - Supabase → Auth → SMTP: host `smtp-relay.brevo.com`, port 587,
+     user = the `@smtp-brevo.com` login, pass = SMTP key, sender =
+     the verified sender address.
 4. **Redirect URLs** → Auth → URL Configuration: add exact
    `pulsehwm://auth-callback` (+ `http://localhost:53124/**` for dev tests).
 5. **Google OAuth** → https://console.cloud.google.com/apis/credentials
