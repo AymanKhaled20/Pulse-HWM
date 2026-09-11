@@ -58,7 +58,7 @@ class _ColorCard(QWidget):
         ):
             p.fillRect(10 + i * chip_w, 8, chip_w, 14, QColor(getattr(self._ct, field)))
         p.setPen(QColor(self._ct.text if not self._active else self._ct.highlight))
-        p.setFont(QFont(T.BODY_FONT, T.active_font_theme().body_px - 2))
+        p.setFont(QFont(T.BODY_FONT, T.MIN_FONT_PX))
         p.drawText(10, 46, self._ct.label)
 
 
@@ -92,14 +92,14 @@ class _FontCard(QWidget):
         )
         p.drawRect(0, 0, self.width() - 1, self.height() - 1)
         p.setPen(QColor(T.TEXT))
-        p.setFont(QFont(self._ft.title, self._ft.title_px - 3))
-        p.drawText(12, 26, self._ft.label.upper())
-        p.setFont(QFont(self._ft.display, self._ft.display_px - 1))
+        p.setFont(QFont(self._ft.title, max(T.MIN_FONT_PX, self._ft.title_px)))
+        p.drawText(12, 28, self._ft.label.upper())
+        p.setFont(QFont(self._ft.display, max(T.MIN_FONT_PX, self._ft.display_px)))
         p.setPen(QColor(T.MUTED))
-        p.drawText(12, 46, f"LABELS  TABS  BUTTONS   ({self._ft.display})")
-        p.setFont(QFont(self._ft.body, self._ft.body_px - 4))
+        p.drawText(12, 48, f"LABELS  TABS  BUTTONS   ({self._ft.display})")
+        p.setFont(QFont(self._ft.body, max(T.MIN_FONT_PX, self._ft.body_px)))
         p.setPen(QColor(T.HIGHLIGHT))
-        p.drawText(12, 68, "CPU 47%  RAM 12.3 GB  NET UP 41 KB/s")
+        p.drawText(12, 70, "CPU 47%  RAM 12.3 GB  NET UP 41 KB/s")
 
 
 class ThemesTab(QWidget):

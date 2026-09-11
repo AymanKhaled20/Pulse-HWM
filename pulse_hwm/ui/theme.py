@@ -70,8 +70,14 @@ def active_font_theme() -> FontTheme:
     return _sizes
 
 
+# hard floor for every rendered font size: pixel-art themes ship px sizes as
+# small as 9 (readable on their home grid, tiny on real screens)
+MIN_FONT_PX = 14
+
+
 def tick_font() -> QFont:
-    return QFont(BODY_FONT, _sizes.body_px)
+    # charts got their own slightly smaller tick text; still ≥ MIN_FONT_PX
+    return QFont(BODY_FONT, max(MIN_FONT_PX, _sizes.body_px - 4))
 
 
 def set_active_theme(color: ColorTheme, fonts: FontTheme) -> None:
@@ -114,12 +120,12 @@ def render_qss(color: ColorTheme, fonts: FontTheme) -> str:
         "TEXT": color.text,
         "MUTED": color.muted,
         "TITLE_FONT": fonts.title,
-        "TITLE_PX": fonts.title_px,
+        "TITLE_PX": max(MIN_FONT_PX, fonts.title_px),
         "DISPLAY_FONT": fonts.display,
-        "DISPLAY_PX": fonts.display_px,
+        "DISPLAY_PX": max(MIN_FONT_PX, fonts.display_px),
         "BODY_FONT": fonts.body,
-        "BODY_PX": fonts.body_px,
-        "HEADER_PX": fonts.header_px,
+        "BODY_PX": max(MIN_FONT_PX, fonts.body_px),
+        "HEADER_PX": max(MIN_FONT_PX, fonts.header_px),
     }
     return string.Template(template).substitute(subs)
 
