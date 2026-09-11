@@ -98,7 +98,7 @@ class ProcessesCollector(QObject):
             cat: [r for r in rows_in_cat if r.pid not in family_pids]
             for cat, rows_in_cat in groups.items()
         }
-        kids_by_pid = {kid.pid: kid for kids in families.values() for kid in kids}
+        # families is keyed by PARENT pid — look kids up per app row
         return {
             "ts": time.time(),
             "self_pid": own,
@@ -109,15 +109,15 @@ class ProcessesCollector(QObject):
             # rows are converted to plain dicts for the cross-thread hop;
             # app rows carry their adopted background children along
             "groups": {
-                cat: [self._row_with_children(r, kids_by_pid) for r in rows_in_cat]
+                cat: [self._row_with_children(r, families) for r in rows_in_cat]
                 for cat, rows_in_cat in primary.items()
             },
         }
 
     @staticmethod
-    def _row_with_children(r, kids_by_pid: dict) -> dict:
+    def _row_with_children(r, families: dict) -> dict:
         d = ProcessesCollector._row_to_dict(r)
-        kids = kids_by_pid.get(r.pid)
+        kids = families.get(r.pid)
         if kids:
             d["children"] = [ProcessesCollector._row_to_dict(kid) for kid in kids]
         else:

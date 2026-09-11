@@ -184,6 +184,7 @@ class ProcessesTab(QWidget):
                     row_item.setText(COL_CPU, f"{kids_cpu:.1f}")
                     row_item.setText(COL_MEM_PCT, f"{kids_pct:.1f}")
                     row_item.setText(COL_RAM, human_bytes(kids_rss))
+                    row_item.setExpanded(True)  # show every instance up-front
                     for kid in kids:
                         seen_pids.add(int(kid["pid"]))
                         self._upsert_row(row_item, kid)
