@@ -1,10 +1,10 @@
-; Pulse-HWM — Inno Setup script
+; Pulse-HWM ??? Inno Setup script
 ; Build (if Inno Setup installed):
 ;   & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\pulse-hwm.iss
 ; Output: installer\output\PulseHWM-Setup-<version>.exe
 
 #define AppName "Pulse-HWM"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 #define AppExeName "PulseHWM.exe"
 #define AppPublisher "Pulse-HWM"
 

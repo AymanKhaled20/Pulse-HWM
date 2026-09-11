@@ -18,7 +18,7 @@ Yellow and black pixel-art look by default, changeable live in the THEMES tab
 - **Alerts**: tray + desktop toasts, 8-bit sound, Discord/Slack webhooks
 - **History**: charts + event log, SQLite-backed retention
 
-## Install (v1.0.0 â€” production)
+## Install (v1.0.1 â€” production)
 
 Grab the latest release from the repo's
 [**Releases** page](https://github.com/AymanKhaled20/Pulse-HWM/releases/latest)
@@ -26,11 +26,11 @@ Grab the latest release from the repo's
 
 | File | What it is |
 |---|---|
-| `PulseHWM-Setup-1.0.0-beta.exe` | **Installer (recommended)** â€” one-click, Start-menu icon, optional desktop icon and "start at login" |
-| `PulseHWM-v1.0.0-beta-win64.zip` | Portable build â€” unzip anywhere and run `PulseHWM.exe` directly |
+| `PulseHWM-Setup-1.0.1.exe` | **Installer (recommended)** â€” one-click, Start-menu icon, optional desktop icon and "start at login" |
+| `PulseHWM-v1.0.1-win64.zip` | Portable build â€” unzip anywhere and run `PulseHWM.exe` directly |
 
 Steps:
-1. Download **`PulseHWM-Setup-1.0.0-beta.exe`** from the release assets.
+1. Download **`PulseHWM-Setup-1.0.1.exe`** from the release assets.
 2. Windows SmartScreen may say "unknown publisher" â€” click **More info â†’ Run
    anyway** (the app is unsigned because code-signing certificates cost money).
 3. Follow the wizard (per-user install, no admin rights needed).

@@ -29,6 +29,23 @@ from pulse_hwm.util import human_bytes
 
 COL_PID, COL_CPU, COL_MEM_PCT, COL_RAM, COL_USER = 1, 2, 3, 4, 5
 
+_RAM_UNITS = {
+    "B": 1.0,
+    "KB": 1024.0,
+    "MB": 1024.0**2,
+    "GB": 1024.0**3,
+    "TB": 1024.0**4,
+}
+
+
+def _ram_bytes(text: str) -> float:
+    """Turn a human_bytes() cell like '1,023.5 KB' back into bytes for sorting."""
+    try:
+        number, unit = text.strip().split(" ", 1)
+        return float(number.replace(",", "")) * _RAM_UNITS.get(unit.upper(), 1.0)
+    except (ValueError, IndexError):
+        return -1.0  # N/A / unknown sorts low on purpose
+
 
 class _TerminateSignals(QObject):
     """Signal carrier so a QRunnable can talk back to the UI thread."""
@@ -144,6 +161,16 @@ class ProcessesTab(QWidget):
         self.tree.customContextMenuRequested.connect(self._context_menu)
         outer.addWidget(self.tree, 1)
 
+        # ── click-a-header-to-sort ────────────────────────────────────────
+        # We sort GROUP MEMBERS only (group banners keep their fixed
+        # APPLICATIONS → BACKGROUND order) — like Task Manager, the metric
+        # columns re-rank each list inside every group. Numeric columns are
+        # parsed back to numbers so '999.0 KB' sorts below '1.0 MB'.
+        self._sort_col = -1
+        self._sort_desc = True
+        self.tree.header().setSectionsClickable(True)
+        self.tree.header().sectionClicked.connect(self._on_sort_clicked)
+
         collector.updated.connect(self._on_snapshot)
         self.refresh_requested.connect(collector.refresh_now)
         self.active_changed.connect(collector.set_active)
@@ -196,7 +223,52 @@ class ProcessesTab(QWidget):
         for pid in [pid for pid in self._pid_items if pid not in seen_pids]:
             parent, child = self._pid_items.pop(pid)
             parent.removeChild(child)
+        self._apply_sort()  # keep the requested order as values tick
         self._apply_filter(self.search.text())
+
+    # ── header sorting: re-orders rows inside each group only ───────────
+    def _on_sort_clicked(self, col: int) -> None:
+        if col == self._sort_col:
+            self._sort_desc = not self._sort_desc  # second click: flip order
+        else:
+            self._sort_col = col
+            self._sort_desc = True  # first click: biggest first
+        order = (
+            Qt.SortOrder.DescendingOrder
+            if self._sort_desc
+            else Qt.SortOrder.AscendingOrder
+        )
+        self.tree.header().setSortIndicator(col, order)
+        self._apply_sort()
+
+    def _sort_key(self, child: QTreeWidgetItem, col: int):
+        text = child.text(col)
+        if col == COL_PID:
+            try:
+                return (0, int(text), "")
+            except ValueError:
+                return (1, 0, "")
+        if col in (COL_CPU, COL_MEM_PCT):
+            try:
+                return (0, float(text), "")
+            except ValueError:
+                return (1, 0.0, "")
+        if col == COL_RAM:
+            return (0, _ram_bytes(text), "")
+        return (0, 0.0, text.lower())  # PROCESS / USER: plain text
+
+    def _apply_sort(self) -> None:
+        if self._sort_col < 0:
+            return
+        col, desc = self._sort_col, self._sort_desc
+        for i in range(self.tree.topLevelItemCount()):
+            parent = self.tree.topLevelItem(i)
+            children = parent.takeChildren()
+            # hidden state lives on the item, so re-adding keeps the filter
+            for child in sorted(
+                children, key=lambda c: self._sort_key(c, col), reverse=desc
+            ):
+                parent.addChild(child)
 
     def _group_item(self, category: str, count: int) -> QTreeWidgetItem:
         for i in range(self.tree.topLevelItemCount()):
