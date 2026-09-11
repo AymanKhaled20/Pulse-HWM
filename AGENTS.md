@@ -94,6 +94,14 @@ pytest.ini                  # pytest config
   commit straight to the feature branch and merge to `main` only after the user
   gives the OK. Small changes (palette tweaks, version bumps, minor fixes) are
   always PR-less.
+- Code signing (future): Azure Artifact Signing (formerly Trusted Signing) is
+  the cheapest modern option (~$9.99/mo Basic, 5,000 signatures). Caveats for
+  our case: requires a PAID Azure subscription, identity validation, and
+  individuals are limited to USA/Canada residents (orgs: US/CA/EU/UK). It does
+  NOT remove SmartScreen instantly — publisher reputation builds over
+  consecutive signed releases. EV certs no longer bypass SmartScreen (since
+  2024). Free alternative worth exploring when heading to production-ish:
+  Microsoft Store re-signing (MSIX) removes SmartScreen entirely for free.
 - Before every commit, run the hooks: `pre-commit run --all-files`.
 - All hooks must pass. If a formatter rewrites files, re-stage and re-run until
   the run is clean.
