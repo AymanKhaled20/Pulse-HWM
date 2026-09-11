@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import httpx
 
-from pulse_hwm.collectors.websites import check_site, ssl_expiry_days
+from pulse_hwm.collectors.websites import (
+    WebsiteMonitor,
+    check_site,
+    ssl_expiry_days,
+)
 
 
 def make_site(**overrides) -> dict:
@@ -77,3 +81,14 @@ def test_connect_error():
 def test_ssl_expiry_non_https_returns_none():
     assert ssl_expiry_days("http://example.com") is None
     assert ssl_expiry_days("not a url") is None
+
+
+def test_prune_state_drops_removed_sites():
+    monitor = WebsiteMonitor(db=object(), interval_s=30)
+    monitor._states = {1: True, 2: False}
+    monitor._fail_streaks = {1: 0, 2: 3}
+    monitor._check_counts = {1: 5, 2: 7}
+    monitor._prune_state({1})
+    assert monitor._states == {1: True}
+    assert monitor._fail_streaks == {1: 0}
+    assert monitor._check_counts == {1: 5}

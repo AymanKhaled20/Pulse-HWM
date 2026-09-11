@@ -17,7 +17,12 @@ class MainWindow(QMainWindow):
     """Top-level window: 4 tabs + system-tray behavior."""
 
     def __init__(
-        self, hardware_collector=None, websites_monitor=None, db=None, alerts=None
+        self,
+        hardware_collector=None,
+        websites_monitor=None,
+        db=None,
+        alerts=None,
+        processes_collector=None,
     ):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
@@ -36,6 +41,18 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(
                 StdoutPlaceholder("DASHBOARD — hardware collector unavailable"),
                 "DASHBOARD",
+            )
+        if processes_collector is not None:
+            from pulse_hwm.ui.processes_tab import ProcessesTab
+
+            # the tab toggles collector scans on visibility, so the full scan
+            # only costs CPU while the user is actually looking at it
+            self._processes_tab = ProcessesTab(processes_collector)
+            self.tabs.addTab(self._processes_tab, "PROCESSES")
+        else:
+            self._processes_tab = None
+            self.tabs.addTab(
+                StdoutPlaceholder("PROCESSES — collector unavailable"), "PROCESSES"
             )
         if websites_monitor is not None:
             from pulse_hwm.ui.sites_tab import SitesTab
@@ -56,7 +73,15 @@ class MainWindow(QMainWindow):
         if db is not None and alerts is not None and websites_monitor is not None:
             from pulse_hwm.ui.settings_tab import SettingsTab
 
-            self.tabs.addTab(SettingsTab(db, websites_monitor, alerts), "SETTINGS")
+            self.tabs.addTab(
+                SettingsTab(
+                    db,
+                    websites_monitor,
+                    alerts,
+                    processes_collector=processes_collector,
+                ),
+                "SETTINGS",
+            )
         else:
             self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
         self.setCentralWidget(self.tabs)

@@ -44,7 +44,9 @@ def run() -> int:
         hardware_thread, settings.hardware_interval_ms
     )
 
+    from pulse_hwm.collectors.processes import ProcessesThreadBridge
     from pulse_hwm.collectors.websites import WebsiteThreadBridge
+    from pulse_hwm.processes import set_low_priority_mode, trim_working_set
 
     websites_thread = QThread()
     websites_thread.setObjectName("websites-monitor")
@@ -54,6 +56,16 @@ def run() -> int:
         interval_s=settings.website_interval_s,
         timeout_s=settings.website_timeout_s,
         ssl_warn_days=settings.ssl_warn_days,
+    )
+
+    # own worker thread for the (heavier) full process scan; the collector
+    # pauses itself whenever the Processes tab is hidden
+    processes_thread = QThread()
+    processes_thread.setObjectName("processes-scan")
+    processes_collector = ProcessesThreadBridge.attach(
+        processes_thread,
+        interval_s=settings.process_interval_s,
+        max_rows=settings.process_max_rows,
     )
 
     def excepthook(etype, value, tb) -> None:
@@ -82,9 +94,26 @@ def run() -> int:
     )
 
     window = MainWindow(
-        hardware_collector=collector, websites_monitor=monitor, db=db, alerts=alerts
+        hardware_collector=collector,
+        websites_monitor=monitor,
+        db=db,
+        alerts=alerts,
+        processes_collector=processes_collector,
     )
     window.show()
+
+    # being a good citizen: apply boot-time resource mode from settings
+    set_low_priority_mode(settings.limit_resources)
+
+    def trim_memory() -> None:
+        # re-read on every fire so flipping the toggle in Settings applies
+        # without a restart
+        if app_settings.load(db).limit_resources:
+            trim_working_set()
+
+    trim_timer = QTimer()
+    trim_timer.timeout.connect(trim_memory)
+    trim_timer.start(15 * 60 * 1000)
 
     alerts.attach_tray(window.tray)
     monitor.site_state_changed.connect(alerts.handle_site_transition)
@@ -101,12 +130,15 @@ def run() -> int:
 
     hardware_thread.start()
     websites_thread.start()
+    processes_thread.start()
 
     def shutdown() -> None:
         websites_thread.quit()
         hardware_thread.quit()
+        processes_thread.quit()
         websites_thread.wait(3000)
         hardware_thread.wait(2500)
+        processes_thread.wait(2500)
         db.close()
 
     app.aboutToQuit.connect(shutdown)

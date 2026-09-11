@@ -167,6 +167,14 @@ class WebsiteMonitor(QObject):
             self._check_counts[site["id"]] = self._check_counts.get(site["id"], 0) + 1
         for future in pending:
             future.add_done_callback(lambda _f: None)
+        self._prune_state({site["id"] for site in sites})
+
+    def _prune_state(self, live_ids: set[int]) -> None:
+        """Drop per-site state for removed sites so these dicts stay bounded
+        by the live site count (a removed site used to leak its entries)."""
+        for cache in (self._states, self._fail_streaks, self._check_counts):
+            for key in [k for k in cache if k not in live_ids]:
+                del cache[key]
 
     def run_cycle_now(self) -> None:
         self.run_cycle()

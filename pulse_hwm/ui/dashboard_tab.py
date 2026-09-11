@@ -43,6 +43,10 @@ class DashboardTab(QWidget):
         self._collector = collector
 
         self._disk_rows: dict[str, tuple[GaugeBar, QLabel]] = {}
+        # temperature row widgets keyed by sensor name (rebuilt only when the
+        # sensor set changes; otherwise updated in place — see _refresh_temps)
+        self._temp_rows: dict[str, StatRow] = {}
+        self._temp_names: tuple[str, ...] = ()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -390,18 +394,36 @@ class DashboardTab(QWidget):
         return rows
 
     def _refresh_temps(self, temps: list[dict] | None) -> None:
+        # fast path: same sensor set as last time -> touch only value labels.
+        # Rebuilding the row widgets every 5s created constant widget churn.
+        if temps and len(self._temp_rows) == len(temps):
+            categorized = self._categorize_temps(temps)
+            if tuple(str(t["name"])[:38] for t in categorized) == self._temp_names:
+                for t in categorized:
+                    name = str(t["name"])[:38]
+                    value = t.get("temp")
+                    self._temp_rows[name].set_value(
+                        f"{value:.0f} °C" if value is not None else "N/A"
+                    )
+                return
         while self.temp_rows_container.count():
             item = self.temp_rows_container.takeAt(0)
             if item and item.widget():
                 item.widget().deleteLater()
         self.temp_na.setVisible(not temps)
+        self._temp_rows.clear()
         if not temps:
+            self._temp_names = ()
             return
         for t in self._categorize_temps(temps):
-            row = StatRow(str(t["name"])[:38])
+            name = str(t["name"])[:38]
             value = t.get("temp")
+            row = StatRow(name)
             row.set_value(f"{value:.0f} °C" if value is not None else "N/A")
+            self._temp_rows[name] = row
             self.temp_rows_container.addWidget(row)
+        # remember the set so later refreshes only update values in place
+        self._temp_names = tuple(self._temp_rows)
 
     def _refresh_battery(self, battery: dict | None) -> None:
         if not battery:
