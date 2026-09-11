@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -32,24 +33,39 @@ COL_LED, COL_NAME, COL_URL, COL_STATUS, COL_LATENCY, COL_UPTIME, COL_SSL, COL_LA
 
 REFRESH_UPTIME_EVERY = 5
 SPARK_POINTS = 120
+# Failsafe for the CHECK NOW feedback: results normally arrive one by one and
+# end the "checking" state early, but if a site is removed mid-check its
+# result never comes — this cap re-enables the button no matter what.
+CHECK_FEEDBACK_CAP_MS = 150_000
+BLINK_INTERVAL_MS = 400
 
 
 class _LedWidget(QWidget):
     def __init__(self, state: str = "pending", parent=None):
         super().__init__(parent)
         self._state = state
+        self._blink = False  # True while a manual check cycle is in flight
         self.setFixedSize(30, 20)
 
     def set_state(self, state: str) -> None:
         self._state = state
         self.update()
 
+    def set_blink(self, on: bool) -> None:
+        if self._blink != on:
+            self._blink = on
+            self.update()
+
     def paintEvent(self, ev) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        color = {"ok": T.SUCCESS, "down": T.DANGER, "pending": T.LINE}.get(
-            self._state, T.LINE
-        )
+        # while a manual check runs, pending LEDs pulse between the dim line
+        # color and the accent color so "CHECK NOW" visibly does something
+        color = {
+            "ok": T.SUCCESS,
+            "down": T.DANGER,
+            "pending": T.PRIMARY if self._blink else T.LINE,
+        }.get(self._state, T.LINE)
         p.fillRect(3, 3, self.width() - 6, self.height() - 6, QColor(color))
         p.setPen(QPen(QColor(T.LINE), 1))
         p.drawRect(0, 0, self.width() - 1, self.height() - 1)
@@ -117,6 +133,15 @@ class SitesTab(QWidget):
         self._rows: dict[int, int] = {}
         self._leds: dict[int, _LedWidget] = {}
         self._cycle = 0
+        # CHECK NOW feedback: sites waiting for a result + LED pulse timer
+        self._checking_ids: set[int] = set()
+        self._blink_on = False
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setInterval(BLINK_INTERVAL_MS)
+        self._blink_timer.timeout.connect(self._toggle_blink)
+        self._check_cap = QTimer(self)
+        self._check_cap.setSingleShot(True)
+        self._check_cap.timeout.connect(self._end_check_feedback)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -154,6 +179,7 @@ class SitesTab(QWidget):
         check_btn = QPushButton("CHECK NOW")
         check_btn.setObjectName("success")
         check_btn.clicked.connect(self._check_now)
+        self._check_btn = check_btn  # kept so the checking state can restyle it
         for b in (add_btn, edit_btn, remove_btn, check_btn):
             buttons.addWidget(b)
         buttons.addStretch(1)
@@ -252,7 +278,7 @@ class SitesTab(QWidget):
                 ).removeprefix("www.")
             self._db.add_site(**values)
             self.reload_sites()
-            self._monitor.run_cycle_now()
+            self._check_now()
 
     def _edit_site(self) -> None:
         site_id = self._selected_site_id()
@@ -287,7 +313,7 @@ class SitesTab(QWidget):
             )
             self._db._conn.commit()
         self.reload_sites()
-        self._monitor.run_cycle_now()
+        self._check_now()
 
     def _remove_site(self) -> None:
         site_id = self._selected_site_id()
@@ -297,11 +323,58 @@ class SitesTab(QWidget):
         self.reload_sites()
 
     def _check_now(self) -> None:
+        if self._checking_ids:
+            return  # a manual check is already running — don't double-fire
+        # the monitor only checks enabled sites; mirror that so the waiting
+        # set empties exactly when every result has come back
+        enabled = [int(s["id"]) for s in self._db.get_sites(include_disabled=False)]
+        if not enabled:
+            return
+        self._checking_ids = set(enabled)
+        self._blink_on = True
+        for site_id in enabled:
+            led = self._leds.get(site_id)
+            if led:
+                led.set_state("pending")
+                led.set_blink(True)
+            row = self._rows.get(site_id)
+            if row is not None:
+                status_item = self.table.item(row, COL_STATUS)
+                status_item.setText("…")
+                self._tint(status_item, T.MUTED)
+        self._check_btn.setEnabled(False)
+        self._check_btn.setText("CHECKING…")
+        self._blink_timer.start()
+        self._check_cap.start(CHECK_FEEDBACK_CAP_MS)
         self._monitor.run_cycle_now()
+
+    def _toggle_blink(self) -> None:
+        self._blink_on = not self._blink_on
+        for site_id in self._checking_ids:
+            led = self._leds.get(site_id)
+            if led:
+                led.set_blink(self._blink_on)
+
+    def _end_check_feedback(self) -> None:
+        self._blink_timer.stop()
+        self._check_cap.stop()
+        # sites that never reported keep their LED pending, but stop pulsing
+        for site_id in self._checking_ids:
+            led = self._leds.get(site_id)
+            if led:
+                led.set_blink(False)
+        self._checking_ids = set()
+        self._check_btn.setEnabled(True)
+        self._check_btn.setText("CHECK NOW")
 
     # ── updates ────────────────────────────────────────────
     def _on_checked(self, result: dict) -> None:
         site_id = int(result["site_id"])
+        # one manual-check result arrived; end the checking state when the
+        # last one lands (scheduled background results don't touch the set)
+        self._checking_ids.discard(site_id)
+        if not self._checking_ids and self._blink_timer.isActive():
+            self._end_check_feedback()
         row = self._rows.get(site_id)
         if row is None:
             self.reload_sites()
