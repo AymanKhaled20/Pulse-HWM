@@ -10,14 +10,21 @@ import httpx
 
 from pulse_hwm import config
 
+# Error sound: a DESCENDING chain of square-wave tones (E5 → C5 → G#4 → E#4/D#4).
+# A fall reads as "something is wrong" to the ear; the old ascending two-tone
+# (880 → 1174.7 Hz) sounded like a happy "ta-da!" instead of an alert.
+ALERT_TONES: tuple[tuple[float, float], ...] = (
+    (659.3, 0.10),  # E5
+    (523.3, 0.10),  # C5
+    (415.3, 0.10),  # G#4
+    (311.1, 0.26),  # D#4 — long low tail = the "womp"
+)
+
 
 def synth_beep() -> bytes:
-    """Short 2-tone square-wave alert, 16-bit mono 8kHz."""
+    """Short 4-tone square-wave ERROR alert, 16-bit mono 8kHz."""
     rate = 8000
-    tones = [
-        (880.0, 0.16),
-        (1174.7, 0.22),
-    ]
+    tones = ALERT_TONES
     frames = bytearray()
     for freq, dur in tones:
         n_samples = int(rate * dur)
