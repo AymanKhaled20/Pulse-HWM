@@ -94,6 +94,12 @@ pytest.ini                  # pytest config
 - All hooks must pass. If a formatter rewrites files, re-stage and re-run until
   the run is clean.
 - Only commit when the user explicitly asks. Never stage `.env`.
+- End-of-feature workflow: ALWAYS rebuild the exe with
+  `.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm` after finishing a
+  feature/update (the user tests the `dist\PulseHWM.exe` build as their prod
+  version), but ASK before committing/pushing/merging to main. Note: a running
+  (often admin-elevated) PulseHWM instance locks the exe and can make the
+  rebuild fail with access-denied — close/kill it first.
 
 ## Working style
 - I'm a beginner learning as I go: favor clear, well-commented code over
