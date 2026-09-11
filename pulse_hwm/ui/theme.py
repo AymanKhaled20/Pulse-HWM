@@ -1,15 +1,29 @@
 from __future__ import annotations
 
+import string
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPen, QPixmap
 
+from pulse_hwm.ui.palettes import (
+    ColorTheme,
+    FontTheme,
+    color_theme,
+    font_theme,
+)
+
 FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 QSS_PATH = Path(__file__).resolve().parent / "theme.qss"
 
+# Families referenced by the DEFAULT font theme (for the boot-time warning).
 FONT_FAMILIES = ("Silkscreen", "VT323", "Press Start 2P")
 
+# ── live palette ───────────────────────────────────────────────
+# These module globals ARE the theme: custom-painted widgets read them at
+# paint time (T.PRIMARY etc.), so theme switching rebinding these values
+# recolors every painter on the next repaint — no widget has to know.
+# set_active_theme() is the only place that mutates them.
 BG = "#0A0A0A"
 PANEL = "#141414"
 PANEL_ALT = "#0F0F0F"
@@ -21,8 +35,17 @@ SUCCESS = "#9BE800"
 TEXT = "#E8E8E8"
 MUTED = "#6A6A6A"
 
+# Live font roles (mirrors the active FontTheme).
+TITLE_FONT = "Press Start 2P"
+DISPLAY_FONT = "Silkscreen"
+BODY_FONT = "VT323"
+
+_sizes = FONT_FAMILIES  # placeholder until the first set_active_theme call
+
 
 def load_fonts(logger=print) -> list[str]:
+    """Register every bundled .ttf once per process. Must run before the
+    first painting; ThemeManager calls this, and app.py calls it at boot."""
     loaded: list[str] = []
     for path in sorted(FONTS_DIR.glob("*.ttf")):
         font_id = QFontDatabase.addApplicationFont(str(path))
@@ -40,12 +63,70 @@ def load_fonts(logger=print) -> list[str]:
     return loaded
 
 
+def active_font_theme() -> FontTheme:
+    return _sizes
+
+
 def tick_font() -> QFont:
-    return QFont("VT323", 10)
+    return QFont(BODY_FONT, _sizes.body_px)
 
 
-def load_theme(app) -> None:
-    app.setStyleSheet(QSS_PATH.read_text(encoding="utf-8"))
+def set_active_theme(color: ColorTheme, fonts: FontTheme) -> None:
+    """Rebind the module-level palette + font roles. All painters pick the
+    new values up on their next paint; QSS is re-rendered by the manager."""
+    global BG, PANEL, PANEL_ALT, LINE, PRIMARY, HIGHLIGHT, DANGER, SUCCESS
+    global TEXT, MUTED, TITLE_FONT, DISPLAY_FONT, BODY_FONT, _sizes
+    BG = color.bg
+    PANEL = color.panel
+    PANEL_ALT = color.panel_alt
+    LINE = color.line
+    PRIMARY = color.primary
+    HIGHLIGHT = color.highlight
+    DANGER = color.danger
+    SUCCESS = color.success
+    TEXT = color.text
+    MUTED = color.muted
+    TITLE_FONT = fonts.title
+    DISPLAY_FONT = fonts.display
+    BODY_FONT = fonts.body
+    _sizes = fonts
+
+
+def render_qss(color: ColorTheme, fonts: FontTheme) -> str:
+    """Fill the theme.qss template from a palette + font pair.
+
+    Strict substitution: an unrendered $TOKEN left in the output would
+    silently corrupt the stylesheet, so missing tokens raise instead.
+    """
+    template = QSS_PATH.read_text(encoding="utf-8")
+    subs = {
+        "BG": color.bg,
+        "PANEL": color.panel,
+        "PANEL_ALT": color.panel_alt,
+        "LINE": color.line,
+        "PRIMARY": color.primary,
+        "HIGHLIGHT": color.highlight,
+        "DANGER": color.danger,
+        "SUCCESS": color.success,
+        "TEXT": color.text,
+        "MUTED": color.muted,
+        "TITLE_FONT": fonts.title,
+        "TITLE_PX": fonts.title_px,
+        "DISPLAY_FONT": fonts.display,
+        "DISPLAY_PX": fonts.display_px,
+        "BODY_FONT": fonts.body,
+        "BODY_PX": fonts.body_px,
+        "HEADER_PX": fonts.header_px,
+    }
+    return string.Template(template).substitute(subs)
+
+
+def load_theme(app, color_id: str | None = None, font_id: str | None = None) -> None:
+    """Apply a theme synchronously (used at boot before any window exists)."""
+    color = color_theme(color_id) if color_id else color_theme("amber")
+    fonts = font_theme(font_id) if font_id else font_theme("classic")
+    set_active_theme(color, fonts)
+    app.setStyleSheet(render_qss(color, fonts))
 
 
 def pixel_pixmap(size: int = 32, draw=None) -> QPixmap:

@@ -19,7 +19,7 @@ def run() -> int:
     from pulse_hwm.collectors.hardware import HardwareThreadBridge
     from pulse_hwm.db import open_default
     from pulse_hwm.ui.main_window import MainWindow
-    from pulse_hwm.ui.theme import load_fonts, load_theme
+    from pulse_hwm.ui.theme import load_fonts
 
     QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
@@ -28,15 +28,19 @@ def run() -> int:
     app.setApplicationVersion(__version__)
     app.setQuitOnLastWindowClosed(False)  # close = minimize to tray
 
-    load_fonts()
-    load_theme(app)
-
     db = open_default()
     db.seed_default_sites()
 
     from pulse_hwm import app_settings
+    from pulse_hwm.ui.theme_manager import ThemeManager
 
     settings = app_settings.load(db)
+
+    # Fonts first (QFontDatabase has no styling), then the SAVED theme —
+    # before any window is built, so the app never flashes default colors.
+    load_fonts()
+    theme_manager = ThemeManager(app, db)
+    theme_manager.bootstrap(settings.theme_color, settings.theme_font)
 
     hardware_thread = QThread()
     hardware_thread.setObjectName("hardware-collector")
@@ -99,6 +103,7 @@ def run() -> int:
         db=db,
         alerts=alerts,
         processes_collector=processes_collector,
+        theme_manager=theme_manager,
     )
     window.show()
 

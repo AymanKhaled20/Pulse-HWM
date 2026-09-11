@@ -23,8 +23,10 @@ class MainWindow(QMainWindow):
         db=None,
         alerts=None,
         processes_collector=None,
+        theme_manager=None,
     ):
         super().__init__()
+        self._theme_manager = theme_manager
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(1280, 840)
@@ -70,6 +72,16 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(HistoryTab(db), "HISTORY")
         else:
             self.tabs.addTab(StdoutPlaceholder("HISTORY — db unavailable"), "HISTORY")
+        if theme_manager is not None:
+            from pulse_hwm.ui.themes_tab import ThemesTab
+
+            self._themes_tab = ThemesTab(theme_manager)
+            self.tabs.addTab(self._themes_tab, "THEMES")
+        else:
+            self._themes_tab = None
+            self.tabs.addTab(
+                StdoutPlaceholder("THEMES — manager unavailable"), "THEMES"
+            )
         if db is not None and alerts is not None and websites_monitor is not None:
             from pulse_hwm.ui.settings_tab import SettingsTab
 
@@ -135,6 +147,15 @@ class MainWindow(QMainWindow):
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._on_tray_activated)
         self.tray.show()
+        # theme switches repaint the tray icon in the new palette
+        if self._theme_manager is not None:
+            self._theme_manager.add_listener(self._on_theme_applied)
+
+    def _on_theme_applied(self) -> None:
+        # status_icon() re-reads the live palette globals, so re-setting it
+        # is all that's needed after a theme switch
+        if getattr(self, "tray", None) is not None:
+            self.tray.setIcon(status_icon("error" if self._down_sites else "ok"))
 
     def _on_tray_activated(self, reason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:

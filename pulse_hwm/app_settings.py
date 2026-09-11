@@ -22,6 +22,10 @@ class AppSettings:
     process_max_rows: int = 400
     limit_resources: bool = False  # low priority + periodic working-set trim
 
+    # ── theme ─────────────────────────────────────────────────────────
+    theme_color: str = "amber"  # id from ui/palettes.py COLOR_THEMES
+    theme_font: str = "classic"  # id from ui/palettes.py FONT_THEMES
+
 
 _INT_KEYS = {
     "hardware_interval_ms",
@@ -33,7 +37,8 @@ _INT_KEYS = {
 }
 _FLOAT_KEYS = {"website_timeout_s"}
 _BOOL_KEYS = {"sound_enabled", "desktop_enabled", "webhooks_enabled", "limit_resources"}
-_ALL_KEYS = _INT_KEYS | _FLOAT_KEYS | _BOOL_KEYS
+_STR_KEYS = {"theme_color", "theme_font"}
+_ALL_KEYS = _INT_KEYS | _FLOAT_KEYS | _BOOL_KEYS | _STR_KEYS
 
 LIMITS = {
     "hardware_interval_ms": (250, 10_000),
@@ -96,6 +101,8 @@ def load(db: Database) -> AppSettings:
         read("limit_resources", str_to_bool, values.limit_resources)
         in (True, "true", "True", 1)
     )
+    values.theme_color = str(read("theme_color", str, values.theme_color)) or "amber"
+    values.theme_font = str(read("theme_font", str, values.theme_font)) or "classic"
     return values
 
 

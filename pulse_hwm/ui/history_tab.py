@@ -40,7 +40,7 @@ class HistoryTab(QWidget):
 
         charts_row = QHBoxLayout()
         self.cpu_plot = PixelPlot()
-        self.mem_plot = PixelPlot(pen_color=T.HIGHLIGHT)
+        self.mem_plot = PixelPlot(accent="highlight")
         cpu_cap = self._cap("CPU % (1H)", self.cpu_plot)
         mem_cap = self._cap("RAM % (1H)", self.mem_plot)
         charts_row.addWidget(cpu_cap, 1)
