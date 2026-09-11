@@ -432,16 +432,41 @@ class ProcessScanner:
             self.last_error = "no readable processes this scan"
         return rows
 
+    def _private_mem(self, proc, info: dict) -> tuple[int, float]:
+        """Task-Manager-accurate memory: PRIVATE WORKING SET, not RSS.
+
+        On Windows many processes (especially Chromium-style apps) share
+        the same mapped DLLs; summing RSS across a 15-process app therefore
+        reports about twice what Task Manager says (double-counting every
+        shared page). The USS/private bytes from memory_full_info() are the
+        unique, rightfully-attributed pages — a 0.3-0.5s VirtualQueryEx
+        pass on the worker thread, measured live. Falls back to RSS when
+        the OS refuses or a fake process object (tests) lacks the call.
+        """
+        full = None
+        full_fn = getattr(proc, "memory_full_info", None)
+        if callable(full_fn):
+            try:
+                full = full_fn()
+            except Exception:
+                full = None
+            if full is not None:
+                uss = int(getattr(full, "uss", 0) or 0)
+                if uss > 0:
+                    total = psutil.virtual_memory().total or 1
+                    return uss, min(100.0, 100.0 * uss / total)
+        # fallback: RSS (tests / access-denied)
+        mem_info = info.get("memory_info")
+        mem_rss = int(getattr(mem_info, "rss", 0) or 0) if mem_info is not None else 0
+        mem_pct = float(info.get("memory_percent") or 0.0)
+        return mem_rss, mem_pct
+
     def _row_for(
         self, proc, info: dict, pid: int, now: float, visible: set[int]
     ) -> Optional[ProcessRow]:
         try:
             static = self._static(proc, info, pid)
-            mem_info = info.get("memory_info")
-            mem_rss = (
-                int(getattr(mem_info, "rss", 0) or 0) if mem_info is not None else 0
-            )
-            mem_pct = float(info.get("memory_percent") or 0.0)
+            mem_rss, mem_pct = self._private_mem(proc, info)
             # empty `visible` (pywin32 missing / non-Windows) means "unknown",
             # not "no window" — keep those rows in BACKGROUND rather than
             # pretending we probed them.
