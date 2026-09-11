@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -155,10 +156,21 @@ class ThemesTab(QWidget):
         layout.addWidget(fonts_panel, 5)
 
         # ── footer ───────────────────────────────────────────────────
+        size_lbl = QLabel("UI FONT SIZE")
+        size_lbl.setObjectName("panelTitle")
+        self._size_box = QComboBox()
+        # 14px floor…18px shipped default; everything scales proportionally
+        for px in range(14, 19):
+            self._size_box.addItem(f"{px}PX" + ("  (DEFAULT)" if px == 18 else ""), px)
+        default_index = self._size_box.findData(self._manager.body_px)
+        self._size_box.setCurrentIndex(max(0, default_index))
+        self._size_box.currentIndexChanged.connect(self._choose_size)
         reset = QPushButton("RESET TO DEFAULT (AMBER / CLASSIC)")
         reset.setObjectName("danger")
         reset.clicked.connect(lambda: self._manager.apply("amber", "classic"))
         footer = QHBoxLayout()
+        footer.addWidget(size_lbl)
+        footer.addWidget(self._size_box)
         footer.addWidget(reset)
         footer.addStretch(1)
         layout.addLayout(footer)
@@ -191,3 +203,8 @@ class ThemesTab(QWidget):
     def _choose_font(self, font_id: str) -> None:
         self._manager.apply(self._manager.color_id, font_id)
         self._refresh_active()
+
+    def _choose_size(self, index: int) -> None:
+        px = self._size_box.itemData(index)
+        if px is not None and int(px) != self._manager.body_px:
+            self._manager.set_body_px(int(px))

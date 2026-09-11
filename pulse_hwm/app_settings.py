@@ -25,6 +25,7 @@ class AppSettings:
     # ── theme ─────────────────────────────────────────────────────────
     theme_color: str = "amber"  # id from ui/palettes.py COLOR_THEMES
     theme_font: str = "classic"  # id from ui/palettes.py FONT_THEMES
+    font_size: int = 18  # UI base size in px; THEMES tab dropdown (14–18)
 
 
 _INT_KEYS = {
@@ -34,6 +35,7 @@ _INT_KEYS = {
     "retention_days",
     "process_interval_s",
     "process_max_rows",
+    "font_size",
 }
 _FLOAT_KEYS = {"website_timeout_s"}
 _BOOL_KEYS = {"sound_enabled", "desktop_enabled", "webhooks_enabled", "limit_resources"}
@@ -48,6 +50,7 @@ LIMITS = {
     "retention_days": (1, 365),
     "process_interval_s": (1, 60),
     "process_max_rows": (50, 2_000),
+    "font_size": (14, 18),
 }
 
 
@@ -103,6 +106,9 @@ def load(db: Database) -> AppSettings:
     )
     values.theme_color = str(read("theme_color", str, values.theme_color)) or "amber"
     values.theme_font = str(read("theme_font", str, values.theme_font)) or "classic"
+    values.font_size = int(read("font_size", int, values.font_size))
+    lo, hi = LIMITS["font_size"]
+    values.font_size = max(lo, min(hi, values.font_size))
     return values
 
 

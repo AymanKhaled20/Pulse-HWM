@@ -40,7 +40,9 @@ def run() -> int:
     # before any window is built, so the app never flashes default colors.
     load_fonts()
     theme_manager = ThemeManager(app, db)
-    theme_manager.bootstrap(settings.theme_color, settings.theme_font)
+    theme_manager.bootstrap(
+        settings.theme_color, settings.theme_font, settings.font_size
+    )
 
     hardware_thread = QThread()
     hardware_thread.setObjectName("hardware-collector")

@@ -165,15 +165,28 @@ class ProcessesTab(QWidget):
     def _on_snapshot(self, snap: dict) -> None:
         groups = snap.get("groups") or {}
         self.summary.setText(
-            f"{snap.get('total', 0)} PROCESSES · {len(groups)} GROUPS "
+            f"{snap.get('total', 0)} PROCESSES — {len(groups)} GROUPS "
             f"(TOP {snap.get('shown', 0)})"
         )
         seen_pids: set[int] = set()
         for category, rows in groups.items():
             parent = self._group_item(category, len(rows))
             for rd in rows:
+                row_item = self._upsert_row(parent, rd)
                 seen_pids.add(int(rd["pid"]))
-                self._upsert_row(parent, rd)
+                # app rows carry their adopted background helpers: Task-
+                # Manager style, the parent shows the COMBINED footprint
+                kids = rd.get("children") or []
+                if kids:
+                    kids_cpu = rd["cpu"] + sum(k["cpu"] for k in kids)
+                    kids_pct = rd["mem_pct"] + sum(k["mem_pct"] for k in kids)
+                    kids_rss = rd["mem_rss"] + sum(k["mem_rss"] for k in kids)
+                    row_item.setText(COL_CPU, f"{kids_cpu:.1f}")
+                    row_item.setText(COL_MEM_PCT, f"{kids_pct:.1f}")
+                    row_item.setText(COL_RAM, human_bytes(kids_rss))
+                    for kid in kids:
+                        seen_pids.add(int(kid["pid"]))
+                        self._upsert_row(row_item, kid)
         # remove rows whose process died since the last snapshot
         for pid in [pid for pid in self._pid_items if pid not in seen_pids]:
             parent, child = self._pid_items.pop(pid)
@@ -194,7 +207,7 @@ class ProcessesTab(QWidget):
         item.setExpanded(category != "BACKGROUND")
         return item
 
-    def _upsert_row(self, parent: QTreeWidgetItem, rd: dict) -> None:
+    def _upsert_row(self, parent: QTreeWidgetItem, rd: dict) -> QTreeWidgetItem:
         pid = int(rd["pid"])
         user_short = (rd["username"].rsplit("\\", 1)[-1] if rd.get("username") else "")[
             :22
@@ -226,6 +239,7 @@ class ProcessesTab(QWidget):
             child.setText(COL_USER, user_short)
         child.setText(COL_CPU, f"{rd['cpu']:.1f}")
         child.setText(COL_MEM_PCT, f"{rd['mem_pct']:.1f}")
+        return child
 
     # ── search filter ──────────────────────────────────────────────────────
     def _apply_filter(self, text: str) -> None:

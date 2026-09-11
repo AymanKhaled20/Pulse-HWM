@@ -128,6 +128,68 @@ def group_processes(rows: list[ProcessRow]) -> dict[str, list[ProcessRow]]:
     return {cat: buckets[cat] for cat in CATEGORY_ORDER if cat in buckets}
 
 
+def _exe_dir(exe_path: str) -> str:
+    path = norm_path(exe_path)
+    return os.path.dirname(path) if path else ""
+
+
+def _name_stem(name: str) -> str:
+    """'bravesvc.exe' -> 'bravesvc'; case folded for family matching."""
+    return name.lower().rsplit(".", 1)[0] if "." in name else name.lower()
+
+
+def app_families(rows: list[ProcessRow]) -> dict[int, list[ProcessRow]]:
+    """Task-Manager-style grouping: background processes that belong to a
+    visible app become its children (so 'Brave' shows its real ~1GB RAM
+    instead of a bare 400MB app row plus orphan background rows).
+
+    Membership is deliberately conservative — a child qualifies ONLY when:
+      * its exe lives in the SAME install directory as a visible app
+        (e.g. Brave's helper processes run from Brave's own folder), or
+      * its exe name family matches the app ('bravesvc' -> 'brave').
+    WINDOWS / SERVICES / PULSE rows are never adopted, so OS jobs can't
+    be mis-parented onto an app by accident.
+    """
+    apps = [r for r in rows if r.category == CATEGORY_APPS and r.visible_window]
+    if not apps:
+        return {}
+    dir_owner: dict[str, int] = {}
+    stem_owner: dict[str, int] = {}
+    for app in apps:
+        app_dir = _exe_dir(app.exe)
+        if app_dir:
+            # first visible app wins a directory; a rogue second exe there
+            # is almost certainly the same program's other window
+            dir_owner.setdefault(app_dir, app.pid)
+        stem_owner.setdefault(_name_stem(app.name), app.pid)
+
+    families: dict[int, list[ProcessRow]] = {}
+    for r in rows:
+        if r.category != CATEGORY_BG:
+            continue
+        parent = None
+        r_dir = _exe_dir(r.exe)
+        if r_dir and r_dir in dir_owner:
+            parent = dir_owner[r_dir]
+        else:
+            # name-FAMILY match, not exact: "bravesvc" belongs to "brave".
+            # 4-char minimum so a 1-2-letter exe can't chain onto an
+            # unrelated app by sharing a short prefix.
+            r_stem = _name_stem(r.name)
+            if len(r_stem) >= 4:
+                for app_stem, pid in stem_owner.items():
+                    if r_stem.startswith(app_stem) or app_stem.startswith(r_stem):
+                        parent = pid
+                        break
+        # own-PID guard is paranoia: a PULSE row can't be BACKGROUND, but a
+        # crash between classify and here must never self-adopt
+        if parent is not None and parent != r.pid:
+            families.setdefault(parent, []).append(r)
+    for kids in families.values():
+        kids.sort(key=lambda r: r.weight(), reverse=True)
+    return families
+
+
 def cap_rows(
     rows: list[ProcessRow], max_rows: int, self_pid: Optional[int] = None
 ) -> list[ProcessRow]:
