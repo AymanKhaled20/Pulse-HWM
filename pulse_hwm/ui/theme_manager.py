@@ -75,4 +75,10 @@ class ThemeManager:
             try:
                 callback()
             except Exception:
-                pass  # one broken listener must not break theme switching
+                # one broken listener must not break theme switching — log
+                # so the failure is at least discoverable in error.log
+                import logging
+
+                logging.getLogger("pulse_hwm.theme").exception(
+                    "theme listener callback failed"
+                )

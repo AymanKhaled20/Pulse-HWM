@@ -68,13 +68,36 @@ def test_unknown_theme_ids_fall_back_to_default():
     assert font_theme("does-not-exist").id == "classic"
 
 
-def test_render_qss_leaves_no_unrendered_tokens():
-    for ct in (COLOR_THEMES[0], color_theme("paper")):
-        for ft in (FONT_THEMES[0], font_theme("orbit-tech")):
+def test_render_qss_leaves_no_unrendered_tokens_all_pairs():
+    # every color × font combination must render cleanly: an unrendered
+    # $TOKEN would ship broken QSS, and each palette's colors / each font's
+    # family must actually appear in the output
+    for ct in COLOR_THEMES:
+        for ft in FONT_THEMES:
             out = render_qss(ct, ft)
-            assert not LEFTOVER_TOKEN_RE.search(out), "unrendered $TOKEN in QSS"
+            assert not LEFTOVER_TOKEN_RE.search(
+                out
+            ), f"unrendered $TOKEN in QSS for {ct.id}/{ft.id}"
             assert ct.primary in out
             assert ft.body in out
+
+
+def test_every_font_theme_names_a_real_family():
+    # QFontDatabase needs a running Qt app; instead verify each named family
+    # corresponds to a font file actually present in the bundle (for our
+    # files, the family's first word is the filename stem)
+    from pulse_hwm.ui.theme import FONTS_DIR
+
+    stems = {p.stem.upper() for p in FONTS_DIR.glob("*.ttf")}
+    assert stems, "no fonts bundled"
+
+    for ft in FONT_THEMES:
+        for family in {ft.title, ft.display, ft.body}:
+            assert family, f"{ft.id}: empty font family"
+            word = family.split()[0].upper()
+            assert any(
+                s.startswith(word) for s in stems
+            ), f"{ft.id}: family '{family}' has no bundled font file"
 
 
 def test_theme_settings_roundtrip_survives_reload(db):

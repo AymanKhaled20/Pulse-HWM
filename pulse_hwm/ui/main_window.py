@@ -154,8 +154,12 @@ class MainWindow(QMainWindow):
     def _on_theme_applied(self) -> None:
         # status_icon() re-reads the live palette globals, so re-setting it
         # is all that's needed after a theme switch
-        if getattr(self, "tray", None) is not None:
-            self.tray.setIcon(status_icon("error" if self._down_sites else "ok"))
+        # getattr guards init-order: the listener can fire before the tray
+        # or _down_sites attribute has been set up
+        tray = getattr(self, "tray", None)
+        if tray is not None:
+            down = getattr(self, "_down_sites", set())
+            tray.setIcon(status_icon("error" if down else "ok"))
 
     def _on_tray_activated(self, reason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:

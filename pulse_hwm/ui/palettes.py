@@ -320,7 +320,7 @@ FONT_THEMES: tuple[FontTheme, ...] = (
         10,
     ),
     FontTheme(
-        "gersey",
+        "jersey",
         "JERSEY SCOREBOARD",
         "Jersey 10",
         20,

@@ -16,7 +16,8 @@ from pulse_hwm.ui.palettes import (
 FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 QSS_PATH = Path(__file__).resolve().parent / "theme.qss"
 
-# Families referenced by the DEFAULT font theme (for the boot-time warning).
+# every family referenced by ANY bundled font theme, so a broken install
+# can warn about all of them (not just the defaults) at boot
 FONT_FAMILIES = ("Silkscreen", "VT323", "Press Start 2P")
 
 # ── live palette ───────────────────────────────────────────────
@@ -40,7 +41,9 @@ TITLE_FONT = "Press Start 2P"
 DISPLAY_FONT = "Silkscreen"
 BODY_FONT = "VT323"
 
-_sizes = FONT_FAMILIES  # placeholder until the first set_active_theme call
+# a real FontTheme from the start, so active_font_theme()/tick_font() can be
+# safely called before the first set_active_theme (boot order, tests, etc.)
+_sizes: FontTheme = font_theme("classic")
 
 
 def load_fonts(logger=print) -> list[str]:
