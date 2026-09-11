@@ -21,6 +21,7 @@ from pulse_hwm.app_settings import AppSettings
 from pulse_hwm.db import Database
 from pulse_hwm.processes import set_low_priority_mode, trim_working_set
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
+from pulse_hwm.util import is_admin
 
 
 class SettingsTab(QWidget):
@@ -114,6 +115,11 @@ class SettingsTab(QWidget):
             "Quit and relaunch elevated — needed for some temperature sensors"
         )
         admin_btn.clicked.connect(self._restart_as_admin)
+        # Already elevated? Relaunching as admin would change nothing, so the
+        # button is pointless — grey it out (theme.qss styles :disabled).
+        if is_admin():
+            admin_btn.setEnabled(False)
+            admin_btn.setToolTip("already running as ADMIN")
         resources_form.addRow(admin_btn)
         resources_note = QLabel(
             "PROCESSES tab only scans while visible; caches evict dead processes "

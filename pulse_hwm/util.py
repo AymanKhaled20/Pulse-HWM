@@ -119,6 +119,25 @@ def shell_runas(exe: str, args: str, cwd: str | None = None) -> bool:
     return int(ret) > 32
 
 
+def is_admin() -> bool:
+    """True when THIS process is already running with administrator rights.
+
+    Used to grey out RESTART AS ADMIN: relaunching elevated changes nothing
+    if we're already elevated, so the button would only be a footgun.
+    Never raises — False on non-Windows or if the check itself fails.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        # Same probe scripts/lhm.py uses; IsUserAnAdmin is formally
+        # "deprecated" by Microsoft but still the cheapest reliable answer.
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
 def app_root() -> str:
     """Absolute path of the pulse_hwm package's parent (the project root).
 

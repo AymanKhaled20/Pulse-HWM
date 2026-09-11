@@ -121,3 +121,20 @@ def test_app_root_is_project_root():
     # The package's parent must contain the package itself — that's the
     # working directory `-m pulse_hwm` needs to resolve from.
     assert (Path(app_root()) / "pulse_hwm" / "util.py").is_file()
+
+
+def test_is_admin_false_on_non_windows(monkeypatch):
+    """No elevation concept on POSIX — the check must short-circuit to False
+    (that's what greys out RESTART AS ADMIN on non-Windows test machines)."""
+    import pulse_hwm.util as util_mod
+
+    monkeypatch.setattr(util_mod.os, "name", "posix")
+    assert util_mod.is_admin() is False
+
+
+def test_is_admin_never_raises():
+    """On real Windows this probes the process token; whatever the answer,
+    it must come back as a plain bool (UI depends on it never raising)."""
+    from pulse_hwm.util import is_admin
+
+    assert is_admin() in (True, False)
