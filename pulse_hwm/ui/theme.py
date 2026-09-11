@@ -76,14 +76,17 @@ MIN_FONT_PX = 14
 
 # font SIZES are theme-independent: switching a font theme swaps the FAMILY
 # only, never the size — a fixed set keeps the layout identical no matter
-# which theme is chosen
+# which theme is chosen. Stored as STRINGS WITH UNITS: QSS rejects unitless
+# font-size values ("font-size: 24;" is a parse error and the rule is
+# silently dropped — that once shrank every table/UI font to the ~12px
+# system default)
 SIZES = {
-    "title": 16,  # window/section headlines
-    "display": 14,  # labels, tabs, buttons, table headers
-    "body": 18,  # numbers, tables, inputs, menus
-    "tick": 14,  # chart axis ticks (slightly smaller than body)
-    "table": 24,  # TOP PROCESSES-style tables/trees
-    "table_lg": 28,  # the dedicated PROCESSES tab tree (extra bump)
+    "title": "16px",  # window/section headlines
+    "display": "14px",  # labels, tabs, buttons, table headers
+    "body": "18px",  # numbers, tables, inputs, menus
+    "tick": 14,  # chart axis ticks (setPixelSize, raw px int)
+    "table": "24px",  # TOP PROCESSES-style tables/trees
+    "table_lg": "30px",  # the dedicated PROCESSES tab tree (extra bump)
 }
 
 
@@ -99,7 +102,7 @@ def table_font(theme: FontTheme | None = None) -> QFont:
     """Tables/trees read much bigger than body text: dense rows at 14px were
     unreadable on the processes tab."""
     f = QFont((theme or _sizes).body)
-    f.setPixelSize(SIZES["table"])
+    f.setPixelSize(int(str(SIZES["table"]).rstrip("px")))
     return f
 
 
