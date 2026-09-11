@@ -18,7 +18,31 @@ Yellow and black pixel-art look by default, changeable live in the THEMES tab
 - **Alerts**: tray + desktop toasts, 8-bit sound, Discord/Slack webhooks
 - **History**: charts + event log, SQLite-backed retention
 
-## Getting started
+## Install (v1.0.0 — production)
+
+Grab the latest release from the repo's
+[**Releases** page](https://github.com/AymanKhaled20/Pulse-HWM/releases/latest)
+— two downloads are provided:
+
+| File | What it is |
+|---|---|
+| `PulseHWM-Setup-1.0.0.exe` | **Installer (recommended)** — one-click, Start-menu icon, optional desktop icon and "start at login" |
+| `PulseHWM-v1.0.0-win64.zip` | Portable build — unzip anywhere and run `PulseHWM.exe` directly |
+
+Steps:
+1. Download **`PulseHWM-Setup-1.0.0.exe`** from the release assets.
+2. Windows SmartScreen may say "unknown publisher" — click **More info → Run
+   anyway** (the app is unsigned because code-signing certificates cost money).
+3. Follow the wizard (per-user install, no admin rights needed).
+4. Launch **PulseHWM** — the icon docks to your system tray; closing the
+   window minimizes there instead of quitting. Quit from the tray icon menu.
+   Temperature sensing (temps tab/GPU) works best when you ALLOW the
+   Administrator prompt on the startup prompt.
+
+Requirements: Windows 10 / 11 (64-bit). No Python or other prerequisites —
+everything is bundled.
+
+## Getting started (from source)
 
 ```powershell
 py -m venv .venv
