@@ -1,4 +1,4 @@
-﻿# Pulse-HWM
+# Pulse-HWM
 
 A glorified hardware monitor — a small native Windows desktop app with high
 hopes. Watches your machine (CPU, RAM, disk, network, GPU, temps, battery, top
