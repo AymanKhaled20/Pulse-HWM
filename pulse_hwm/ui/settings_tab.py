@@ -106,6 +106,12 @@ class SettingsTab(QWidget):
         trim_btn = QPushButton("TRIM MEMORY NOW")
         trim_btn.clicked.connect(self._trim_now)
         resources_form.addRow(trim_btn)
+        admin_btn = QPushButton("RESTART AS ADMIN")
+        admin_btn.setToolTip(
+            "Quit and relaunch elevated — needed for some temperature sensors"
+        )
+        admin_btn.clicked.connect(self._restart_as_admin)
+        resources_form.addRow(admin_btn)
         resources_note = QLabel(
             "PROCESSES tab only scans while visible; caches evict dead processes "
             "every scan so memory stays bounded."
@@ -210,6 +216,23 @@ class SettingsTab(QWidget):
 
     def _trim_now(self) -> None:
         trim_working_set()
+
+    def _restart_as_admin(self) -> None:
+        """Quit clean, then Windows relaunches Pulse with the UAC runas verb.
+
+        The current process must exit AFTER Windows accepts the elevation
+        request, otherwise the UAC dialog would pop up over a dead app.
+        """
+        from PySide6.QtWidgets import QApplication
+
+        from pulse_hwm.util import restart_command, shell_runas
+
+        exe, args = restart_command()
+        if shell_runas(exe, args):
+            self.test_result.setText("relaunching as ADMIN…")
+            QApplication.quit()
+        else:
+            self.test_result.setText("restart cancelled (UAC denied)")
 
     def _test_alert(self) -> None:
         sent = self._alerts.notify(

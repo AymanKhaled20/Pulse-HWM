@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import sys
+from pathlib import Path
 
 
 def human_bytes(n: float | None) -> str:
@@ -77,3 +79,36 @@ def str_to_bool(value: str, default: bool = True) -> bool:
         if value == ""
         else value.strip().lower() not in ("false", "0", "no", "off")
     )
+
+
+def restart_command() -> tuple[str, str]:
+    """The (exe, args) that relaunches Pulse, for the RESTART AS ADMIN button.
+
+    Frozen builds re-execute the packaged exe itself; dev mode uses pythonw
+    (windowless) from the venv so the relaunch looks like a normal boot.
+    """
+    if getattr(sys, "frozen", False):
+        return str(sys.executable), ""
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    exe = str(pythonw) if pythonw.exists() else str(sys.executable)
+    # windowless AND identical to how `python -m pulse_hwm` boots
+    return exe, "-m pulse_hwm"
+
+
+def shell_runas(exe: str, args: str) -> bool:
+    """Ask Windows to start `exe` elevated (UAC prompt). True when Windows
+    accepted the launch — False when the user declined / on non-Windows.
+
+    Tiny injectable seam so tests never touch the real shell.
+    """
+    if os.name != "nt":
+        return False
+
+    import ctypes
+
+    SW_SHOWNORMAL = 1
+    # >32 means success per the ShellExecute contract; small values = cancel.
+    ret = ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", exe, args, None, SW_SHOWNORMAL
+    )
+    return int(ret) > 32
