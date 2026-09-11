@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+import uuid as _uuid
 from pathlib import Path
 
 _SCHEMA = """
@@ -51,6 +52,37 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+# ── forward-only migrations ────────────────────────────────────────────
+# Each entry runs exactly once (tracked in schema_meta). The cloud-sync
+# feature needs stable per-row identity + timestamps: sqlite 1-based
+# rowids are recycled/gapped per-device, so sites get a random uuid.
+_MIGRATIONS: list[tuple[int, str]] = [
+    (
+        1,
+        """
+        ALTER TABLE sites ADD COLUMN uuid TEXT;
+        ALTER TABLE sites ADD COLUMN updated_at REAL NOT NULL DEFAULT 0;
+        ALTER TABLE sites ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+        UPDATE sites SET updated_at = created_at;
+        UPDATE sites SET uuid = lower(hex(randomblob(16)))
+            WHERE uuid IS NULL OR uuid = '';
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sites_uuid ON sites(uuid);
+
+        CREATE TABLE IF NOT EXISTS settings_sync (
+            key        TEXT PRIMARY KEY,
+            updated_at REAL NOT NULL DEFAULT 0
+        );
+        INSERT INTO settings_sync (key, updated_at)
+            SELECT key, strftime('%s','now') FROM settings;
+        """,
+    ),
+]
+
+
+def _latest_schema_version() -> int:
+    return max((v for v, _ in _MIGRATIONS), default=0)
+
+
 DEFAULT_SITES = [
     ("Google", "https://www.google.com"),
     ("GitHub", "https://github.com"),
@@ -73,6 +105,26 @@ class Database:
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+        self._apply_migrations()
+
+    def _apply_migrations(self) -> None:
+        """Run each pending _MIGRATIONS entry once (idempotent, locked)."""
+        with self._lock:
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER NOT NULL)"
+            )
+            row = self._conn.execute(
+                "SELECT MAX(version) AS v FROM schema_meta"
+            ).fetchone()
+            current = int(row["v"]) if row and row["v"] is not None else 0
+            for version, sql in _MIGRATIONS:
+                if version <= current:
+                    continue
+                self._conn.executescript(sql)
+                self._conn.execute(
+                    "INSERT INTO schema_meta (version) VALUES (?)", (version,)
+                )
+                self._conn.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -100,32 +152,51 @@ class Database:
         expected_status: int = 200,
         keyword: str = "",
     ) -> int:
+        # uuid is the sync identity: stable across devices (local rowids are not)
+        site_uuid = _uuid.uuid4().hex  # 32 chars, same format as the backfill
+        now = time.time()
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO sites (name, url, method, timeout_s, expected_status, keyword, enabled, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-                (name, url, method, timeout_s, expected_status, keyword, time.time()),
+                "INSERT INTO sites (name, url, method, timeout_s, expected_status, keyword, enabled, created_at, uuid, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+                (
+                    name,
+                    url,
+                    method,
+                    timeout_s,
+                    expected_status,
+                    keyword,
+                    now,
+                    site_uuid,
+                    now,
+                ),
             )
             self._conn.commit()
             return int(cur.lastrowid)
 
     def remove_site(self, site_id: int) -> None:
-        with self._lock:
-            self._conn.execute("DELETE FROM checks WHERE site_id = ?", (site_id,))
-            self._conn.execute("DELETE FROM sites WHERE id = ?", (site_id,))
-            self._conn.commit()
+        # tombstone (deleted=1), not DELETE: the sync engine must be able to
+        # tell the other devices "this was removed on purpose"
+        self._set_site_bool(site_id, "deleted", True)
+        self._set_site_bool(site_id, "enabled", False)
 
-    def set_site_enabled(self, site_id: int, enabled: bool) -> None:
+    def _set_site_bool(self, site_id: int, column: str, value: bool) -> None:
+        if column not in ("deleted", "enabled"):
+            raise ValueError(f"not a toggle column: {column}")
         with self._lock:
             self._conn.execute(
-                "UPDATE sites SET enabled = ? WHERE id = ?", (int(enabled), site_id)
+                f"UPDATE sites SET {column} = ?, updated_at = ? WHERE id = ?",
+                (int(value), time.time(), site_id),
             )
             self._conn.commit()
 
+    def set_site_enabled(self, site_id: int, enabled: bool) -> None:
+        self._set_site_bool(site_id, "enabled", enabled)
+
     def get_sites(self, include_disabled: bool = True) -> list[sqlite3.Row]:
-        q = "SELECT * FROM sites"
+        q = "SELECT * FROM sites WHERE deleted = 0"
         if not include_disabled:
-            q += " WHERE enabled = 1"
+            q += " AND enabled = 1"
         q += " ORDER BY id"
         return self._conn.execute(q).fetchall()
 
@@ -206,11 +277,18 @@ class Database:
 
     # -- settings ----------------------------------------------------------
     def set_setting(self, key: str, value: str) -> None:
+        now = time.time()
         with self._lock:
             self._conn.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?)"
                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, value),
+            )
+            # mirror the timestamp: the sync engine compares per-key LWW
+            self._conn.execute(
+                "INSERT INTO settings_sync (key, updated_at) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET updated_at = excluded.updated_at",
+                (key, now),
             )
             self._conn.commit()
 
