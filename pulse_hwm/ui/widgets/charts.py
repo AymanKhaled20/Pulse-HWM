@@ -8,49 +8,65 @@ from PySide6.QtWidgets import QWidget
 
 from pulse_hwm.ui import theme as T
 
-pg.setConfigOptions(antialias=False, background="#0A0A0A", foreground=T.LINE)
-
 
 def _time_axis() -> pg.DateAxisItem:
     axis = pg.DateAxisItem(orientation="bottom")
-    axis.setPen(pg.mkPen(T.LINE, width=1))
-    axis.setTextPen(pg.mkPen(QColor(T.MUTED)))
-    axis.setStyle(tickFont=T.tick_font())
+    _style_axis(axis)
     return axis
 
 
+def _style_axis(axis) -> None:
+    """(Re)style one pyqtgraph axis from the ACTIVE palette + body font.
+
+    Pens and tick fonts are cached by pyqtgraph, so theme switching must
+    call this again — that's what PixelPlot.apply_theme() does.
+    """
+    axis.setPen(pg.mkPen(QColor(T.LINE), width=1))
+    axis.setTextPen(pg.mkPen(QColor(T.MUTED)))
+    axis.setStyle(tickFont=T.tick_font())
+
+
 class PixelPlot(QWidget):
-    """Rolling line chart with pixel styling (no smoothing, hard amber trace)."""
+    """Rolling line chart with pixel styling (no smoothing, hard accent trace)."""
 
     MAX_POINTS = 180
 
-    def __init__(self, pen_color: str = T.PRIMARY, fill: bool = True, parent=None):
+    def __init__(self, accent: str = "primary", fill: bool = True, parent=None):
+        """`accent` is a palette role name ("primary" / "highlight") — NOT a
+        hex string. A hex default would be frozen at import time and never
+        follow theme switches."""
         super().__init__(parent)
+        self._accent = accent
+        self._fill = fill
         self._data: deque[tuple[float, float]] = deque(maxlen=self.MAX_POINTS)
         self._plot = pg.PlotWidget(axisItems={"bottom": _time_axis()})
 
-        self._plot.setBackground("#0A0A0A")
         self._plot.setMouseEnabled(x=False, y=False)
         self._plot.hideButtons()
         self._plot.getPlotItem().setContentsMargins(0, 0, 0, 0)
 
-        pen = pg.mkPen(
-            QColor(pen_color), width=1, style=pg.QtCore.Qt.PenStyle.SolidLine
-        )
-        self._curve = self._plot.plot([], [], pen=pen, fillLevel=0.0 if fill else None)
-        if fill:
-            brush_color = QColor(pen_color)
-            brush_color.setAlpha(40)
-            self._curve.setFillBrush(pg.mkBrush(brush_color))
+        self._curve = self._plot.plot([], [], fillLevel=0.0 if fill else None)
 
-        ax = self._plot.getAxis("left")
-        ax.setPen(pg.mkPen(T.LINE, width=1))
-        ax.setTextPen(pg.mkPen(QColor(T.MUTED)))
-        ax.setStyle(tickFont=T.tick_font())
+        _style_axis(self._plot.getAxis("left"))
 
         layout = pg.QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._plot)
+        self.apply_theme()
+
+    def apply_theme(self) -> None:
+        """Re-apply the active palette to cached pens/brushes/backgrounds."""
+        accent = T.PRIMARY if self._accent == "primary" else T.HIGHLIGHT
+        pen = pg.mkPen(QColor(accent), width=1, style=pg.QtCore.Qt.PenStyle.SolidLine)
+        self._curve.setPen(pen)
+        if self._fill:
+            brush_color = QColor(accent)
+            brush_color.setAlpha(40)
+            self._curve.setFillBrush(pg.mkBrush(brush_color))
+        self._plot.setBackground(QColor(T.BG))
+        for name in ("bottom", "left"):
+            _style_axis(self._plot.getAxis(name))
+        self._plot.update()
 
     def add_sample(self, ts: float, value: float) -> None:
         self._data.append((ts, value))

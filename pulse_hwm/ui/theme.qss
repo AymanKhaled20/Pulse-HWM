@@ -1,19 +1,20 @@
-/* ── Pulse-HWM pixel theme ─────────────────────────────────
-   bg #0A0A0A  panel #141414  panel-alt #0F0F0F
-   primary #FFD400  highlight #FFE873  danger #FF3B30
-   success #9BE800  text #E8E8E8  muted #6A6A6A  line #2E2E2E
+/* ── Pulse-HWM pixel theme (TEMPLATE) ──────────────────────
+   This file is a template, not a raw stylesheet: every color and font
+   below is filled in from the active entry in ui/palettes.py by
+   theme.render_qss(). Tokens are UPPER_SNAKE names prefixed with a dollar
+   sign (string.Template).
    ───────────────────────────────────────────────────────────*/
 
 * {
-    font-family: 'VT323', 'Consolas', monospace;
-    font-size: 18px;
-    color: #E8E8E8;
-    selection-background-color: #FFD400;
-    selection-color: #0A0A0A;
+    font-family: '$BODY_FONT';
+    font-size: $BODY_PX;
+    color: $TEXT;
+    selection-background-color: $PRIMARY;
+    selection-color: $BG;
 }
 
 QMainWindow, QWidget#root {
-    background-color: #0A0A0A;
+    background-color: $BG;
 }
 
 /* ── labels ─────────────────────────────────────────────── */
@@ -22,186 +23,198 @@ QLabel {
 }
 
 QLabel#title {
-    font-family: 'Press Start 2P';
-    font-size: 16px;
-    color: #FFD400;
+    font-family: '$TITLE_FONT';
+    font-size: $TITLE_PX;
+    color: $PRIMARY;
     letter-spacing: 2px;
 }
 
 QLabel#panelTitle {
-    font-family: 'Silkscreen';
-    font-size: 10px;
-    color: #FFE873;
+    font-family: '$DISPLAY_FONT';
+    font-size: $DISPLAY_PX;
+    color: $HIGHLIGHT;
 }
 
 QLabel#stat {
-    font-family: 'VT323';
+    font-family: '$BODY_FONT';
     font-size: 26px;
-    color: #E8E8E8;
+    color: $TEXT;
 }
 
 QLabel#muted, QLabel#unit {
-    color: #6A6A6A;
+    color: $MUTED;
 }
 
 /* ── pixel panels ───────────────────────────────────────── */
 QFrame#pixelPanel {
-    background-color: #141414;
-    border: 2px solid #2E2E2E;
+    background-color: $PANEL;
+    border: 2px solid $LINE;
     border-radius: 0px;
 }
 QFrame#pixelPanel:hover {
-    border-color: #FFD400;
+    border-color: $PRIMARY;
 }
 
 /* ── tabs ───────────────────────────────────────────────── */
 QTabWidget::pane {
-    border: 2px solid #2E2E2E;
-    background: #0A0A0A;
+    border: 2px solid $LINE;
+    background: $BG;
     top: -1px;
 }
 QTabBar::tab {
-    background: #141414;
-    color: #6A6A6A;
-    font-family: 'Silkscreen';
-    font-size: 10px;
+    background: $PANEL;
+    color: $MUTED;
+    font-family: '$DISPLAY_FONT';
+    font-size: $DISPLAY_PX;
     padding: 8px 18px;
-    border: 2px solid #2E2E2E;
+    border: 2px solid $LINE;
     border-bottom: none;
     margin-right: 2px;
 }
 QTabBar::tab:selected {
-    color: #0A0A0A;
-    background: #FFD400;
+    color: $BG;
+    background: $PRIMARY;
     font-weight: bold;
 }
 QTabBar::tab:hover:!selected {
-    color: #FFE873;
-    border-color: #FFD400;
+    color: $HIGHLIGHT;
+    border-color: $PRIMARY;
 }
 
 /* ── buttons ────────────────────────────────────────────── */
 QPushButton {
-    background: #141414;
-    border: 2px solid #FFD400;
-    color: #FFD400;
-    font-family: 'Silkscreen';
-    font-size: 10px;
+    background: $PANEL;
+    border: 2px solid $PRIMARY;
+    color: $PRIMARY;
+    font-family: '$DISPLAY_FONT';
+    font-size: $DISPLAY_PX;
     padding: 7px 14px;
     border-radius: 0px;
 }
 QPushButton:hover {
-    background: #FFD400;
-    color: #0A0A0A;
+    background: $PRIMARY;
+    color: $BG;
 }
 QPushButton:pressed {
-    background: #FFE873;
-    color: #0A0A0A;
+    background: $HIGHLIGHT;
+    color: $BG;
     padding-top: 8px;
     padding-bottom: 6px;
 }
 QPushButton:disabled {
-    border-color: #2E2E2E;
-    color: #6A6A6A;
-    background: #141414;
+    border-color: $LINE;
+    color: $MUTED;
+    background: $PANEL;
 }
 QPushButton#danger {
-    border-color: #FF3B30;
-    color: #FF3B30;
+    border-color: $DANGER;
+    color: $DANGER;
 }
 QPushButton#danger:hover {
-    background: #FF3B30;
-    color: #0A0A0A;
+    background: $DANGER;
+    color: $BG;
 }
 QPushButton#success {
-    border-color: #9BE800;
-    color: #9BE800;
+    border-color: $SUCCESS;
+    color: $SUCCESS;
 }
 QPushButton#success:hover {
-    background: #9BE800;
-    color: #0A0A0A;
+    background: $SUCCESS;
+    color: $BG;
 }
 
 /* ── inputs ─────────────────────────────────────────────── */
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
-    background: #0F0F0F;
-    border: 2px solid #2E2E2E;
-    color: #E8E8E8;
-    font-family: 'VT323';
-    font-size: 18px;
+    background: $PANEL_ALT;
+    border: 2px solid $LINE;
+    color: $TEXT;
+    font-family: '$BODY_FONT';
+    font-size: $BODY_PX;
     padding: 4px 8px;
     border-radius: 0px;
 }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
-    border-color: #FFD400;
+    border-color: $PRIMARY;
 }
 QComboBox::drop-down {
     border: none;
     width: 24px;
 }
 QComboBox QAbstractItemView {
-    background: #141414;
-    border: 2px solid #FFD400;
-    selection-background-color: #FFD400;
-    selection-color: #0A0A0A;
+    background: $PANEL;
+    border: 2px solid $PRIMARY;
+    selection-background-color: $PRIMARY;
+    selection-color: $BG;
 }
 QSpinBox::up-button, QDoubleSpinBox::up-button,
 QSpinBox::down-button, QDoubleSpinBox::down-button {
-    background: #141414;
-    border: 1px solid #2E2E2E;
+    background: $PANEL;
+    border: 1px solid $LINE;
     width: 16px;
 }
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-    background: #FFD400;
+    background: $PRIMARY;
 }
 
 /* ── tables ─────────────────────────────────────────────── */
 QTableWidget, QTableView {
-    background: #0F0F0F;
-    border: 2px solid #2E2E2E;
-    gridline-color: #222222;
-    font-family: 'VT323';
-    font-size: 18px;
+    background: $PANEL_ALT;
+    border: 2px solid $LINE;
+    gridline-color: $LINE;
+    font-family: '$BODY_FONT';
+    font-size: $BODY_PX;
 }
 QHeaderView::section {
-    background: #141414;
-    color: #FFE873;
-    font-family: 'Silkscreen';
-    font-size: 9px;
+    background: $PANEL;
+    color: $HIGHLIGHT;
+    font-family: '$DISPLAY_FONT';
+    font-size: $HEADER_PX;
     padding: 6px;
-    border: 1px solid #2E2E2E;
+    border: 1px solid $LINE;
     border-radius: 0px;
 }
 QTableCornerButton::section {
-    background: #141414;
-    border: 1px solid #2E2E2E;
+    background: $PANEL;
+    border: 1px solid $LINE;
+}
+
+/* ── trees (processes) ──────────────────────────────────── */
+QTreeWidget {
+    background: $PANEL_ALT;
+    border: 2px solid $LINE;
+    font-family: '$BODY_FONT';
+    font-size: $BODY_PX;
+}
+QTreeWidget::item:selected {
+    background: $PANEL;
+    color: $PRIMARY;
 }
 
 /* ── scrollbars ─────────────────────────────────────────── */
 QScrollBar:vertical {
-    background: #0A0A0A;
+    background: $BG;
     width: 14px;
-    border-left: 2px solid #2E2E2E;
+    border-left: 2px solid $LINE;
 }
 QScrollBar::handle:vertical {
-    background: #FFD400;
+    background: $PRIMARY;
     min-height: 24px;
     border: none;
 }
 QScrollBar::handle:vertical:hover {
-    background: #FFE873;
+    background: $HIGHLIGHT;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
 }
 QScrollBar:horizontal {
-    background: #0A0A0A;
+    background: $BG;
     height: 14px;
-    border-top: 2px solid #2E2E2E;
+    border-top: 2px solid $LINE;
 }
 QScrollBar::handle:horizontal {
-    background: #FFD400;
+    background: $PRIMARY;
     min-width: 24px;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
@@ -212,64 +225,64 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 QCheckBox::indicator, QRadioButton::indicator {
     width: 16px;
     height: 16px;
-    background: #0F0F0F;
-    border: 2px solid #2E2E2E;
+    background: $PANEL_ALT;
+    border: 2px solid $LINE;
 }
 QCheckBox::indicator:hover, QRadioButton::indicator:hover {
-    border-color: #FFD400;
+    border-color: $PRIMARY;
 }
 QCheckBox::indicator:checked {
-    background: #FFD400;
+    background: $PRIMARY;
 }
 QRadioButton::indicator:checked {
-    background: #FFD400;
+    background: $PRIMARY;
 }
 QCheckBox, QRadioButton {
-    font-family: 'VT323';
-    font-size: 18px;
+    font-family: '$BODY_FONT';
+    font-size: $BODY_PX;
 }
 
 /* ── menus / tray ───────────────────────────────────────── */
 QMenu {
-    background: #141414;
-    border: 2px solid #FFD400;
+    background: $PANEL;
+    border: 2px solid $PRIMARY;
     padding: 2px;
 }
 QMenu::item {
-    font-family: 'VT323';
-    font-size: 18px;
+    font-family: '$BODY_FONT';
+    font-size: $BODY_PX;
     padding: 6px 28px;
-    color: #E8E8E8;
+    color: $TEXT;
 }
 QMenu::item:selected {
-    background: #FFD400;
-    color: #0A0A0A;
+    background: $PRIMARY;
+    color: $BG;
 }
 QMenu::separator {
     height: 2px;
-    background: #2E2E2E;
+    background: $LINE;
     margin: 2px 6px;
 }
 
 /* ── misc ───────────────────────────────────────────────── */
 QToolTip {
-    background: #141414;
-    color: #FFE873;
-    border: 1px solid #FFD400;
-    font-family: 'VT323';
-    font-size: 16px;
+    background: $PANEL;
+    color: $HIGHLIGHT;
+    border: 1px solid $PRIMARY;
+    font-family: '$BODY_FONT';
+    font-size: $DISPLAY_PX;
 }
 QProgressBar {
-    background: #0F0F0F;
-    border: 2px solid #2E2E2E;
+    background: $PANEL_ALT;
+    border: 2px solid $LINE;
     border-radius: 0px;
     text-align: center;
-    font-family: 'VT323';
-    color: #E8E8E8;
+    font-family: '$BODY_FONT';
+    color: $TEXT;
 }
 QProgressBar::chunk {
-    background: #FFD400;
+    background: $PRIMARY;
 }
 QSplitter::handle {
-    background: #2E2E2E;
+    background: $LINE;
 }

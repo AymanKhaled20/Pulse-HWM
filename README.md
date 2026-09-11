@@ -44,6 +44,9 @@ Not a website. A native Windows desktop app.
 Yellow and black. Pixelated. Hard 1–2px borders, no rounded corners, chunky
 offset shadows, CRT scanline overlay, segmented blocky gauges, blinking LEDs.
 
+**This is the default look** — the only look until v0.1.2, and the fallback
+the app ships with today:
+
 | Purpose | Color |
 |---|---|
 | Background | `#0A0A0A` |
@@ -56,6 +59,22 @@ offset shadows, CRT scanline overlay, segmented blocky gauges, blinking LEDs.
 Fonts: [Silkscreen](https://fonts.google.com/specimen/Silkscreen) (labels) and
 [VT323](https://fonts.google.com/specimen/VT323) (readable numbers), bundled in
 `pulse_hwm/assets/fonts/`.
+
+Don't like it? The **THEMES** tab changes the whole surface live: 15 color
+palettes (amber, matrix green, ice, synthwave, game boy, paper, …) and 15
+font sets (pixel-art pairings plus clean monospace ones). Every choice
+applies instantly and survives a restart via the local settings database.
+
+## Theme tab internals (for contributors)
+
+- `pulse_hwm/ui/palettes.py` — the registries: 15 `ColorTheme`s and 15
+  `FontTheme`s. Pure data, unit-tested without Qt.
+- `pulse_hwm/ui/theme.qss` — a **template**; `theme.render_qss()` fills
+  `$TOKENS` from the active palette (it is not a raw stylesheet).
+- `pulse_hwm/ui/theme.py` — module-level palette globals that every custom
+  painter reads at paint time; `set_active_theme()` rebinds them.
+- `pulse_hwm/ui/theme_manager.py` — applies live: re-renders QSS, repaints
+  widgets, refreshes cached chart pens and the tray icon, persists the choice.
 
 ## Stack
 
@@ -159,6 +178,7 @@ Pulse-HWM/
 - [x] Phase 6 — pixel theme polish + icons
 - [x] Phase 7 — test suite (34 tests)
 - [x] Phase 8 — packaging: PyInstaller exe (verified) + Inno Setup script
+- [x] Phase 9 — THEMES tab: 15 color palettes + 15 font sets, live switching, persisted
 - [ ] Beyond — autostart on login (installer option exists), history export, macOS/Linux builds
 
 ### Build the installer

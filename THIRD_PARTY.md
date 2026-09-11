@@ -34,5 +34,13 @@ temperature sensor readout would not be possible without them.
 | winotify | MIT |
 | PyInstaller | GPL with bootloader exception |
 
-Fonts (OFL-1.1, bundled in `pulse_hwm/assets/fonts/`): Silkscreen, VT323,
-Press Start 2P.
+Fonts (bundle in `pulse_hwm/assets/fonts/`, licenses next to each family in
+`pulse_hwm/assets/fonts/licenses/`):
+
+- **SIL OFL-1.1**: Silkscreen, VT323, Press Start 2P (bundled from the start)
+  plus Anonymous Pro, Audiowide, Chakra Petch (OFL), Codystar, DM Mono,
+  DotGothic16, Fira Code, Handjet, IBM Plex Mono, Jersey 10, JetBrains Mono,
+  Orbitron, Pixelify Sans, Share Tech Mono, Space Mono, Tiny5 (v0.1.2).
+
+All bundled font files are unmodified; OFL permits bundling and requires that
+the license text accompany the fonts, which it does in `assets/fonts/licenses/`.

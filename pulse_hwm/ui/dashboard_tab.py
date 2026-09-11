@@ -77,7 +77,7 @@ class DashboardTab(QWidget):
         # row 3 — history charts
         history = PixelPanel("HISTORY")
         self.cpu_chart = PixelPlot()
-        self.net_chart = PixelPlot(pen_color=T.HIGHLIGHT)
+        self.net_chart = PixelPlot(accent="highlight")
         row = QHBoxLayout()
         row.addWidget(Caption("CPU %", self.cpu_chart), 1)
         row.addWidget(Caption("NET DOWN", self.net_chart), 1)
