@@ -3,10 +3,13 @@ from __future__ import annotations
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
     QMainWindow,
     QMenu,
+    QScrollArea,
     QSystemTrayIcon,
     QTabWidget,
+    QWidget,
 )
 
 from pulse_hwm import APP_NAME, __version__
@@ -30,15 +33,27 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(1280, 840)
-        self.setMinimumSize(960, 640)
+        # windowed (restored-down) size can never shrink past this, so the
+        # layout keeps ALL text readable; content scrolls instead of clipping
+        self.setMinimumSize(1180, 820)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
+
+        def _capped(tab_widget) -> QWidget:
+            """Scrollable wrapper so a windowed (restored-down) window never
+            cuts content off at the bottom — it grows a scrollbar instead;
+            maximized, the scroll area stays slack and looks untouched."""
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setWidget(tab_widget)
+            return scroll
 
         self.tabs = QTabWidget()
         if hardware_collector is not None:
             from pulse_hwm.ui.dashboard_tab import DashboardTab
 
-            self.tabs.addTab(DashboardTab(hardware_collector), "DASHBOARD")
+            self.tabs.addTab(_capped(DashboardTab(hardware_collector)), "DASHBOARD")
         else:
             self.tabs.addTab(
                 StdoutPlaceholder("DASHBOARD — hardware collector unavailable"),
@@ -60,7 +75,7 @@ class MainWindow(QMainWindow):
             from pulse_hwm.ui.sites_tab import SitesTab
 
             self._sites_tab = SitesTab(websites_monitor.db, websites_monitor)
-            self.tabs.addTab(self._sites_tab, "WEBSITES")
+            self.tabs.addTab(_capped(self._sites_tab), "WEBSITES")
         else:
             self._sites_tab = None
             self.tabs.addTab(
@@ -69,14 +84,14 @@ class MainWindow(QMainWindow):
         if db is not None:
             from pulse_hwm.ui.history_tab import HistoryTab
 
-            self.tabs.addTab(HistoryTab(db), "HISTORY")
+            self.tabs.addTab(_capped(HistoryTab(db)), "HISTORY")
         else:
             self.tabs.addTab(StdoutPlaceholder("HISTORY — db unavailable"), "HISTORY")
         if theme_manager is not None:
             from pulse_hwm.ui.themes_tab import ThemesTab
 
             self._themes_tab = ThemesTab(theme_manager)
-            self.tabs.addTab(self._themes_tab, "THEMES")
+            self.tabs.addTab(_capped(self._themes_tab), "THEMES")
         else:
             self._themes_tab = None
             self.tabs.addTab(
@@ -91,7 +106,7 @@ class MainWindow(QMainWindow):
                 alerts,
                 processes_collector=processes_collector,
             )
-            self.tabs.addTab(self._settings_tab, "SETTINGS")
+            self.tabs.addTab(_capped(self._settings_tab), "SETTINGS")
         else:
             self._settings_tab = None
             self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
