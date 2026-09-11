@@ -74,22 +74,32 @@ def active_font_theme() -> FontTheme:
 # small as 9 (readable on their home grid, tiny on real screens)
 MIN_FONT_PX = 14
 
+# font SIZES are theme-independent: switching a font theme swaps the FAMILY
+# only, never the size — a fixed set keeps the layout identical no matter
+# which theme is chosen
+SIZES = {
+    "title": 16,  # window/section headlines
+    "display": 14,  # labels, tabs, buttons, table headers
+    "body": 18,  # numbers, tables, inputs, menus
+    "tick": 14,  # chart axis ticks (slightly smaller than body)
+    "table": 24,  # TOP PROCESSES-style tables/trees
+    "table_lg": 28,  # the dedicated PROCESSES tab tree (extra bump)
+}
+
 
 def tick_font() -> QFont:
-    # charts got their own smaller tick text; still ≥ MIN_FONT_PX.
     # setPixelSize, NOT QFont(family, n): the latter is POINT size
     # (n pt ≈ 1.33n px) which silently over-sized the axes.
     f = QFont(BODY_FONT)
-    f.setPixelSize(max(MIN_FONT_PX, _sizes.body_px - 4))
+    f.setPixelSize(SIZES["tick"])
     return f
 
 
 def table_font(theme: FontTheme | None = None) -> QFont:
-    """Tables/trees read much bigger than body text: dense monospace rows at
-    14px were unreadable on the processes tab."""
-    t = theme or _sizes
-    f = QFont(t.body)
-    f.setPixelSize(max(24, t.body_px))
+    """Tables/trees read much bigger than body text: dense rows at 14px were
+    unreadable on the processes tab."""
+    f = QFont((theme or _sizes).body)
+    f.setPixelSize(SIZES["table"])
     return f
 
 
@@ -133,14 +143,15 @@ def render_qss(color: ColorTheme, fonts: FontTheme) -> str:
         "TEXT": color.text,
         "MUTED": color.muted,
         "TITLE_FONT": fonts.title,
-        "TITLE_PX": max(MIN_FONT_PX, fonts.title_px),
+        "TITLE_PX": SIZES["title"],
         "DISPLAY_FONT": fonts.display,
-        "DISPLAY_PX": max(MIN_FONT_PX, fonts.display_px),
+        "DISPLAY_PX": SIZES["display"],
         "BODY_FONT": fonts.body,
-        "BODY_PX": max(MIN_FONT_PX, fonts.body_px),
-        # tables/trees get a dedicated, much larger size
-        "TABLE_PX": max(24, fonts.body_px),
-        "HEADER_PX": max(MIN_FONT_PX, fonts.header_px),
+        "BODY_PX": SIZES["body"],
+        # fixed sizes — theme switches must never resize the UI
+        "TABLE_PX": SIZES["table"],
+        "TABLE_PX_LG": SIZES["table_lg"],
+        "HEADER_PX": SIZES["display"],
     }
     return string.Template(template).substitute(subs)
 

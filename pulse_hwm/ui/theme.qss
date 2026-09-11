@@ -184,7 +184,7 @@ QTreeWidget {
     background: $PANEL_ALT;
     border: 2px solid $LINE;
     font-family: '$BODY_FONT';
-    font-size: $TABLE_PX;
+    font-size: $TABLE_PX_LG;
 }
 QTreeWidget::item:selected {
     background: $PANEL;
