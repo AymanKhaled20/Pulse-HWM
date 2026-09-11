@@ -165,15 +165,33 @@ class ProcessesTab(QWidget):
     def _on_snapshot(self, snap: dict) -> None:
         groups = snap.get("groups") or {}
         self.summary.setText(
-            f"{snap.get('total', 0)} PROCESSES · {len(groups)} GROUPS "
+            f"{snap.get('total', 0)} PROCESSES — {len(groups)} GROUPS "
             f"(TOP {snap.get('shown', 0)})"
         )
         seen_pids: set[int] = set()
         for category, rows in groups.items():
             parent = self._group_item(category, len(rows))
             for rd in rows:
+                row_item = self._upsert_row(parent, rd)
                 seen_pids.add(int(rd["pid"]))
-                self._upsert_row(parent, rd)
+                # app rows carry their adopted background helpers: Task-
+                # Manager style, the parent shows the COMBINED footprint
+                kids = rd.get("children") or []
+                if kids:
+                    kids_cpu = rd["cpu"] + sum(k["cpu"] for k in kids)
+                    kids_pct = rd["mem_pct"] + sum(k["mem_pct"] for k in kids)
+                    kids_rss = rd["mem_rss"] + sum(k["mem_rss"] for k in kids)
+                    row_item.setText(COL_CPU, f"{kids_cpu:.1f}")
+                    row_item.setText(COL_MEM_PCT, f"{kids_pct:.1f}")
+                    row_item.setText(COL_RAM, human_bytes(kids_rss))
+                    # auto-expand ONCE (first time kids arrive): a manual
+                    # collapse must survive every 3s snapshot redraw
+                    if row_item.data(0, Qt.ItemDataRole.UserRole) is None:
+                        row_item.setData(0, Qt.ItemDataRole.UserRole, "auto-expanded")
+                        row_item.setExpanded(True)
+                    for kid in kids:
+                        seen_pids.add(int(kid["pid"]))
+                        self._upsert_row(row_item, kid)
         # remove rows whose process died since the last snapshot
         for pid in [pid for pid in self._pid_items if pid not in seen_pids]:
             parent, child = self._pid_items.pop(pid)
@@ -194,7 +212,7 @@ class ProcessesTab(QWidget):
         item.setExpanded(category != "BACKGROUND")
         return item
 
-    def _upsert_row(self, parent: QTreeWidgetItem, rd: dict) -> None:
+    def _upsert_row(self, parent: QTreeWidgetItem, rd: dict) -> QTreeWidgetItem:
         pid = int(rd["pid"])
         user_short = (rd["username"].rsplit("\\", 1)[-1] if rd.get("username") else "")[
             :22
@@ -226,6 +244,7 @@ class ProcessesTab(QWidget):
             child.setText(COL_USER, user_short)
         child.setText(COL_CPU, f"{rd['cpu']:.1f}")
         child.setText(COL_MEM_PCT, f"{rd['mem_pct']:.1f}")
+        return child
 
     # ── search filter ──────────────────────────────────────────────────────
     def _apply_filter(self, text: str) -> None:
@@ -309,10 +328,43 @@ class ProcessesTab(QWidget):
 
     # ── good-citizen buttons ───────────────────────────────────────────────
     def _trim_now(self) -> None:
-        ok = trim_working_set()
-        self._set_status(
-            "working set trimmed" if ok else "trim not available on this system"
-        )
+        """Trigger EmptyWorkingSet on Pulse itself and report the outcome.
+
+        Trim works (kernel frees cold pages), but Windows may refuse to
+        release below the process's true demand — so we measure RSS before
+        vs after: a real drop says how much was handed back, while a flat
+        result means this IS about as small as the process gets right now.
+        """
+        import os
+        import threading
+
+        def _work() -> None:
+            import psutil
+
+            from pulse_hwm.alerts.notifier import send_toast
+
+            me = psutil.Process(os.getpid())
+            before = me.memory_info().rss
+            ok = trim_working_set()
+            after = me.memory_info().rss
+            freed = before - after
+            if not ok:
+                message = "TRIM NOT AVAILABLE ON THIS SYSTEM"
+                title = "TRIM MEMORY"
+            elif freed < 1_000_000:  # under 1MB: no pages came loose
+                message = "ALREADY AT MINIMUM — THIS IS THE LEAST MEMORY IT CAN USE"
+                title = "TRIM MEMORY"
+            else:
+                message = f"FREED {freed / 1_000_000:.1f} MB"
+                title = "TRIM MEMORY"
+            self._set_status(message)
+            try:
+                send_toast(title, message)
+            except Exception:
+                pass  # toast is garnish; the status line still reports it
+
+        # kernel call is quick but never freeze the UI thread on it
+        threading.Thread(target=_work, daemon=True).start()
 
     def _toggle_priority(self, enabled: bool) -> None:
         ok = set_low_priority_mode(bool(enabled))

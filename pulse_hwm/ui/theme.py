@@ -74,10 +74,66 @@ def active_font_theme() -> FontTheme:
 # small as 9 (readable on their home grid, tiny on real screens)
 MIN_FONT_PX = 14
 
+# UI font scale: the BODY base size the user picks in THEMES (14–18px).
+# switching a font theme swaps the FAMILY only, never the size; the chosen
+# base instead scales EVERY role proportionally, so the layout keeps its
+# shape at any size.
+BASE_BODY_PX = 18  # shipped default
+_body_px = BASE_BODY_PX
+
+# integer px per role — QSS emits these as "Npx" (a unitless "font-size: 24;"
+# is a QSS parse error and Qt silently drops the rule: it once shrank every
+# table/UI font to the ~12px system default)
+SIZES: dict[str, int] = {}
+
+
+def _rebuild_sizes() -> None:
+    """Derive every role size from the base body size (ratios of 18px)."""
+
+    def scaled(base: int) -> int:
+        return max(MIN_FONT_PX, round(_body_px * base / BASE_BODY_PX))
+
+    SIZES.update(
+        {
+            "title": scaled(16),  # window/section headlines
+            "display": scaled(14),  # labels, tabs, buttons, table headers
+            "body": max(MIN_FONT_PX, _body_px),
+            "tick": max(MIN_FONT_PX, _body_px - 4),
+            "table": scaled(24),  # TOP PROCESSES-style tables
+            "table_lg": scaled(30),  # the dedicated PROCESSES tab tree
+            "stat": scaled(26),  # big dashboard numbers
+        }
+    )
+
+
+_rebuild_sizes()
+
+
+def body_px() -> int:
+    return _body_px
+
+
+def set_body_px(px: int) -> None:
+    """New UI base size (clamped 14–18); every role scales proportionally."""
+    global _body_px
+    _body_px = max(MIN_FONT_PX, min(BASE_BODY_PX, int(px)))
+    _rebuild_sizes()
+
 
 def tick_font() -> QFont:
-    # charts got their own slightly smaller tick text; still ≥ MIN_FONT_PX
-    return QFont(BODY_FONT, max(MIN_FONT_PX, _sizes.body_px - 4))
+    # setPixelSize, NOT QFont(family, n): the latter is POINT size
+    # (n pt ≈ 1.33n px) which silently over-sized the axes.
+    f = QFont(BODY_FONT)
+    f.setPixelSize(SIZES["tick"])
+    return f
+
+
+def table_font(theme: FontTheme | None = None) -> QFont:
+    """Tables/trees read much bigger than body text: dense rows at 14px were
+    unreadable on the processes tab."""
+    f = QFont((theme or _sizes).body)
+    f.setPixelSize(SIZES["table"])
+    return f
 
 
 def set_active_theme(color: ColorTheme, fonts: FontTheme) -> None:
@@ -120,12 +176,17 @@ def render_qss(color: ColorTheme, fonts: FontTheme) -> str:
         "TEXT": color.text,
         "MUTED": color.muted,
         "TITLE_FONT": fonts.title,
-        "TITLE_PX": max(MIN_FONT_PX, fonts.title_px),
+        "TITLE_PX": f"{SIZES['title']}px",
         "DISPLAY_FONT": fonts.display,
-        "DISPLAY_PX": max(MIN_FONT_PX, fonts.display_px),
+        "DISPLAY_PX": f"{SIZES['display']}px",
         "BODY_FONT": fonts.body,
-        "BODY_PX": max(MIN_FONT_PX, fonts.body_px),
-        "HEADER_PX": max(MIN_FONT_PX, fonts.header_px),
+        "BODY_PX": f"{SIZES['body']}px",
+        # fixed roles — theme switches must never resize the UI (the base
+        # size from THEMES scales them, units mandatory: see SIZES comment)
+        "TABLE_PX": f"{SIZES['table']}px",
+        "TABLE_PX_LG": f"{SIZES['table_lg']}px",
+        "STAT_PX": f"{SIZES['stat']}px",
+        "HEADER_PX": f"{SIZES['display']}px",
     }
     return string.Template(template).substitute(subs)
 

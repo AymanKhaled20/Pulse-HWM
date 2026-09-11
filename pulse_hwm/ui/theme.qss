@@ -1,4 +1,4 @@
-/* ── Pulse-HWM pixel theme (TEMPLATE) ──────────────────────
+﻿/* ── Pulse-HWM pixel theme (TEMPLATE) ──────────────────────
    This file is a template, not a raw stylesheet: every color and font
    below is filled in from the active entry in ui/palettes.py by
    theme.render_qss(). Tokens are UPPER_SNAKE names prefixed with a dollar
@@ -37,7 +37,7 @@ QLabel#panelTitle {
 
 QLabel#stat {
     font-family: '$BODY_FONT';
-    font-size: 26px;
+    font-size: $STAT_PX;
     color: $TEXT;
 }
 
@@ -163,7 +163,7 @@ QTableWidget, QTableView {
     border: 2px solid $LINE;
     gridline-color: $LINE;
     font-family: '$BODY_FONT';
-    font-size: $BODY_PX;
+    font-size: $TABLE_PX;
 }
 QHeaderView::section {
     background: $PANEL;
@@ -184,7 +184,7 @@ QTreeWidget {
     background: $PANEL_ALT;
     border: 2px solid $LINE;
     font-family: '$BODY_FONT';
-    font-size: $BODY_PX;
+    font-size: $TABLE_PX_LG;
 }
 QTreeWidget::item:selected {
     background: $PANEL;

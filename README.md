@@ -1,191 +1,83 @@
 # Pulse-HWM
 
-A glorified hardware monitor — a small desktop app with high hopes. It watches
-your machine (CPU, RAM, disk, network, GPU, temps, battery, top processes),
-tracks the health of websites you care about (status, latency, uptime %, SSL
-expiry), and makes a noise when anything goes wrong.
+A glorified hardware monitor — a small native Windows desktop app with high
+hopes. Watches your machine (CPU, RAM, disk, network, GPU, temps, battery, top
+processes), tracks the health of websites you care about (status, latency,
+uptime, SSL expiry), and makes a noise when anything goes wrong.
 
-Not a website. A native Windows desktop app.
-
-![status](https://img.shields.io/badge/status-v1_in_progress-FFD400)
+Yellow and black pixel-art look by default, changeable live in the THEMES tab
+(15 color palettes, 15 font sets, adjustable font size — all persisted).
 
 ## Features
 
-**Hardware monitoring** (1s polling)
-- CPU load (overall + per-core) and clock speed
-- RAM + swap usage
-- Disk usage and read/write throughput
-- Network up/down throughput
-- GPU utilization / VRAM / temps (NVIDIA NVML), CPU/GPU temps via an
-  in-process **LibreHardwareMonitorLib** bridge — run
-  `py scripts/lhm.py fetch` once to install the sensor runtime, and
-  `py scripts/lhm.py run` (as Administrator) for full CPU core temps
-- Battery status
-- Top processes by CPU / memory
+- **Hardware** (1s polling): CPU/RAM/disks/network/GPU/temps/battery, top
+  processes (Task-Manager style: every instance of an app nests under it,
+  with combined RAM/CPU)
+- **Websites** (configurable checks): up/down + status, latency history,
+  uptime %, SSL expiry warnings, keyword rules
+- **Alerts**: tray + desktop toasts, 8-bit sound, Discord/Slack webhooks
+- **History**: charts + event log, SQLite-backed retention
 
-**Website monitoring** (30s checks, configurable)
-- Up/down detection + HTTP status code
-- Response-time history and trend charts
-- Rolling uptime percentage
-- SSL certificate expiry warnings (< 14 days)
-- Keyword/body match rules
+## Install (v1.0.0 — production)
 
-**Alerts**
-- Desktop notifications (system tray + toast)
-- 8-bit style sound alert (state-transition only — no spam)
-- Discord and/or Slack webhooks
-- Tray icon reflects the worst current state (green / amber / red)
+Grab the latest release from the repo's
+[**Releases** page](https://github.com/AymanKhaled20/Pulse-HWM/releases/latest)
+— two downloads are provided:
 
-**Dashboard**
-- Real-time pixel-art dashboard with history charts
-
-## Design language
-
-Yellow and black. Pixelated. Hard 1–2px borders, no rounded corners, chunky
-offset shadows, CRT scanline overlay, segmented blocky gauges, blinking LEDs.
-
-**This is the default look** — the only look until v0.1.2, and the fallback
-the app ships with today:
-
-| Purpose | Color |
+| File | What it is |
 |---|---|
-| Background | `#0A0A0A` |
-| Panel | `#141414` |
-| Primary (amber) | `#FFD400` |
-| Highlight | `#FFE873` |
-| Danger | `#FF3B30` |
-| Success | `#9BE800` |
+| `PulseHWM-Setup-1.0.0.exe` | **Installer (recommended)** — one-click, Start-menu icon, optional desktop icon and "start at login" |
+| `PulseHWM-v1.0.0-win64.zip` | Portable build — unzip anywhere and run `PulseHWM.exe` directly |
 
-Fonts: [Silkscreen](https://fonts.google.com/specimen/Silkscreen) (labels) and
-[VT323](https://fonts.google.com/specimen/VT323) (readable numbers), bundled in
-`pulse_hwm/assets/fonts/`.
+Steps:
+1. Download **`PulseHWM-Setup-1.0.0.exe`** from the release assets.
+2. Windows SmartScreen may say "unknown publisher" — click **More info → Run
+   anyway** (the app is unsigned because code-signing certificates cost money).
+3. Follow the wizard (per-user install, no admin rights needed).
+4. Launch **PulseHWM** — the icon docks to your system tray; closing the
+   window minimizes there instead of quitting. Quit from the tray icon menu.
+   Temperature sensing (temps tab/GPU) works best when you ALLOW the
+   Administrator prompt on the startup prompt.
 
-Don't like it? The **THEMES** tab changes the whole surface live: 15 color
-palettes (amber, matrix green, ice, synthwave, game boy, paper, …) and 15
-font sets (pixel-art pairings plus clean monospace ones). Every choice
-applies instantly and survives a restart via the local settings database.
+Requirements: Windows 10 / 11 (64-bit). No Python or other prerequisites —
+everything is bundled.
 
-## Theme tab internals (for contributors)
-
-- `pulse_hwm/ui/palettes.py` — the registries: 15 `ColorTheme`s and 15
-  `FontTheme`s. Pure data, unit-tested without Qt.
-- `pulse_hwm/ui/theme.qss` — a **template**; `theme.render_qss()` fills
-  `$TOKENS` from the active palette (it is not a raw stylesheet).
-- `pulse_hwm/ui/theme.py` — module-level palette globals that every custom
-  painter reads at paint time; `set_active_theme()` rebinds them.
-- `pulse_hwm/ui/theme_manager.py` — applies live: re-renders QSS, repaints
-  widgets, refreshes cached chart pens and the tray icon, persists the choice.
-
-## Stack
-
-- Python 3.13
-- PySide6 (Qt6) — UI, tray, notifications
-- pyqtgraph — real-time charts
-- psutil — hardware telemetry
-- httpx — website checks + webhooks
-- SQLite (stdlib) — history & settings
-- PyInstaller + Inno Setup — packaging
-
-## Getting started
+## Getting started (from source)
 
 ```powershell
-git clone <this-repo>
-cd Pulse-HWM
-
-# 1. Environment + deps
 py -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
-
-# 2. Secrets (see policy below)
-Copy-Item .env.example .env   # then fill in webhook URLs if you use them
-
-# 3. Commit-time secret scanners (one-time)
+Copy-Item .env.example .env   # add webhook URLs if you use them
 pre-commit install
-
-# 4. Run
 python -m pulse_hwm
 ```
 
-Tests:
-
-```powershell
-pytest
-```
+Run tests with `pytest`. Build the exe with
+`.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm`.
 
 ## Configuration
 
-Secrets live in `.env` (gitignored — never committed):
+Secrets live only in `.env` (gitignored, never committed): `DISCORD_WEBHOOK_URL`,
+`SLACK_WEBHOOK_URL`, `ALERT_SOUND_ENABLED`. Everything else (intervals,
+retention, sites, theme) is configured in the app's Settings/THEMES tabs and
+persisted in the local SQLite database.
 
-| Variable | Purpose |
-|---|---|
-| `DISCORD_WEBHOOK_URL` | Alert POST target (empty = disabled) |
-| `SLACK_WEBHOOK_URL` | Alert POST target (empty = disabled) |
-| `ALERT_SOUND_ENABLED` | Boot default for sound alerts |
+Two secret scanners (`scripts/scan_secrets.py` and
+[gitleaks](https://github.com/gitleaks/gitleaks)) run before every commit and
+block on detected secrets. Never hardcode keys in code.
 
-Everything else (intervals, retention, site list, toggles) lives in the app's
-**Settings** tab and survives restarts via the local SQLite database.
+## Stack
 
-## Secrets policy
-
-- Never hardcode keys/tokens in code. `.env` only, loaded via
-  environment variables.
-- `.env` is gitignored and must never be staged.
-- `.env.example` carries the same names with placeholder values so anyone can
-  run the project without exposing real secrets.
-- Two independent scanners run **before every commit** and block on a hit:
-  1. `scripts/scan_secrets.py` — custom scanner for provider key patterns,
-     private keys, webhooks, and high-entropy strings (output redacted).
-  2. `scripts/gitleaks_guard.py` — [gitleaks](https://github.com/gitleaks/gitleaks)
-     on staged changes (`gitleaks protect --staged`).
-- Secrets are never printed/logged, not even for debugging.
-
-Install gitleaks (one-time): `winget install gitleaks.gitleaks`
-
-## Credits
-
-Temperature monitoring wouldn't exist without
-[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
-— licensed **MPL-2.0** (not MIT), vendored as unmodified release binaries with
-notice. See [THIRD_PARTY.md](THIRD_PARTY.md).
+Python 3.13 · PySide6 (Qt6) · pyqtgraph · psutil · httpx · SQLite ·
+LibreHardwareMonitorLib (vendored binaries, MPL-2.0 — see
+[THIRD_PARTY.md](THIRD_PARTY.md)) · PyInstaller + Inno Setup.
 
 ## Project structure
 
 ```
-Pulse-HWM/
-├─ pulse_hwm/            # application package
-│  ├─ app.py             # QApplication bootstrap, fonts, theme
-│  ├─ config.py          # .env loader + defaults
-│  ├─ db.py              # SQLite schema, retention
-│  ├─ collectors/        # hardware.py, websites.py (worker threads)
-│  ├─ alerts/            # tray/toast, sound, webhook dispatch
-│  ├─ ui/                # tabs, pixel widgets, theme.qss
-│  └─ assets/            # fonts, icons
-├─ scripts/              # scan_secrets.py, gitleaks_guard.py, build tooling
-├─ tests/                # pytest suite
-├─ installer/            # Inno Setup script
-└─ .pre-commit-config.yaml
-```
-
-## Roadmap
-
-- [x] Phase 0 — repo hygiene, secret scanners, git hooks, README
-- [x] Phase 1 — scaffold: themed window + tray
-- [x] Phase 2 — hardware collectors + dashboard widgets
-- [x] Phase 3 — website monitor + sites tab
-- [x] Phase 4 — alerts (tray, sound, webhooks)
-- [x] Phase 5 — history + settings, persistence + retention
-- [x] Phase 6 — pixel theme polish + icons
-- [x] Phase 7 — test suite (34 tests)
-- [x] Phase 8 — packaging: PyInstaller exe (verified) + Inno Setup script
-- [x] Phase 9 — THEMES tab: 15 color palettes + 15 font sets, live switching, persisted
-- [ ] Beyond — autostart on login (installer option exists), history export, macOS/Linux builds
-
-### Build the installer
-
-```powershell
-.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm          # → dist\PulseHWM\
-python scripts\build_icon.py                                      # regenerate icon
-# optional, requires Inno Setup 6:
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\pulse-hwm.iss
+pulse_hwm/     # app package (app, config, db, collectors/, alerts/, ui/, assets)
+scripts/       # secret scanners, LHM bridge, icon builder
+tests/         # pytest suite
+installer/     # Inno Setup script
 ```

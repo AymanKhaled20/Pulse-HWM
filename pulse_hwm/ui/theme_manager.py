@@ -33,6 +33,7 @@ class ThemeManager:
         self._db = db
         self.color_id = "amber"
         self.font_id = "classic"
+        self.body_px = theme.BASE_BODY_PX
         self._listeners: list = []
 
     def add_listener(self, callback) -> None:
@@ -40,19 +41,27 @@ class ThemeManager:
         if callback not in self._listeners:
             self._listeners.append(callback)
 
-    def bootstrap(self, color_id: str, font_id: str) -> None:
+    def bootstrap(self, color_id: str, font_id: str, body_px: int) -> None:
         """Boot-time application of the persisted theme (no saving)."""
+        self.body_px = body_px
         self.apply(color_id, font_id, persist=False)
+
+    def set_body_px(self, px: int) -> None:
+        """User picked a new UI size in THEMES: scale, re-render, persist."""
+        self.body_px = int(px)
+        self.apply(self.color_id, self.font_id)
 
     def apply(self, color_id: str, font_id: str, persist: bool = True) -> None:
         color = color_theme(color_id)
         fonts = font_theme(font_id)
         self.color_id = color.id
         self.font_id = fonts.id
+        theme.set_body_px(self.body_px)
         self._apply_now(color, fonts)
         if persist and self._db is not None:
             app_settings.save_field(self._db, "theme_color", self.color_id)
             app_settings.save_field(self._db, "theme_font", self.font_id)
+            app_settings.save_field(self._db, "font_size", self.body_px)
 
     # ── internals ─────────────────────────────────────────────────────────
     def _apply_now(self, color, fonts) -> None:

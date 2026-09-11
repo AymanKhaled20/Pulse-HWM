@@ -83,13 +83,19 @@ def test_render_qss_leaves_no_unrendered_tokens_all_pairs():
 
 
 def test_rendered_qss_respects_14px_minimum():
-    # tiny pixel sizes (9-13px) were unreadable on real screens
-    size_re = re.compile(r"font-size:\s*(\d+)px")
+    # tiny pixel sizes (9-13px) were unreadable on real screens; the regex
+    # FAILS on unitless values on purpose — "font-size: 24;" (no unit) is a
+    # QSS parse error that silently drops the whole rule
+    size_re = re.compile(r"font-size:\s*(\d+)(px)?")
     from pulse_hwm.ui.theme import MIN_FONT_PX
 
     for ct in COLOR_THEMES:
         for ft in FONT_THEMES:
             for match in size_re.finditer(render_qss(ct, ft)):
+                assert match.group(2) == "px", (
+                    f"font-size {match.group(1)} without 'px' unit "
+                    f"for {ct.id}/{ft.id} (Qt drops the rule!)"
+                )
                 assert int(match.group(1)) >= MIN_FONT_PX, (
                     f"font-size {match.group(1)}px < {MIN_FONT_PX} "
                     f"for {ct.id}/{ft.id}"

@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from pulse_hwm.processes import (
     CATEGORY_LABELS,
     ProcessScanner,
+    app_families,
     cap_rows,
     group_processes,
 )
@@ -83,11 +84,21 @@ class ProcessesCollector(QObject):
             self._tick()
 
     def snapshot(self) -> dict:
-        """One scan → grouped payload. Plain dicts so it is thread-safe."""
+        """One scan -> grouped payload. Plain dicts so it is thread-safe."""
         rows = self._scanner.scan()
         own = self._scanner.self_pid
         capped = cap_rows(rows, self.max_rows, self_pid=own)
         groups = group_processes(capped)
+        # Task-Manager nesting: attach BACKGROUND rows to their visible app
+        # (same install dir or same exe family) so apps report their TRUE
+        # combined RAM/CPU — a bare app row otherwise hides its helpers.
+        families = app_families(capped)
+        family_pids: set[int] = {kid.pid for kids in families.values() for kid in kids}
+        primary = {
+            cat: [r for r in rows_in_cat if r.pid not in family_pids]
+            for cat, rows_in_cat in groups.items()
+        }
+        # families is keyed by PARENT pid — look kids up per app row
         return {
             "ts": time.time(),
             "self_pid": own,
@@ -95,12 +106,23 @@ class ProcessesCollector(QObject):
             "shown": len(capped),
             "error": self._scanner.last_error,
             "labels": CATEGORY_LABELS,
-            # rows are converted to plain dicts for the cross-thread hop
+            # rows are converted to plain dicts for the cross-thread hop;
+            # app rows carry their adopted background children along
             "groups": {
-                cat: [self._row_to_dict(r) for r in rows_in_cat]
-                for cat, rows_in_cat in groups.items()
+                cat: [self._row_with_children(r, families) for r in rows_in_cat]
+                for cat, rows_in_cat in primary.items()
             },
         }
+
+    @staticmethod
+    def _row_with_children(r, families: dict) -> dict:
+        d = ProcessesCollector._row_to_dict(r)
+        kids = families.get(r.pid)
+        if kids:
+            d["children"] = [ProcessesCollector._row_to_dict(kid) for kid in kids]
+        else:
+            d["children"] = []
+        return d
 
     @staticmethod
     def _row_to_dict(r) -> dict:

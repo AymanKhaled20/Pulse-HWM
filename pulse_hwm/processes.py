@@ -128,6 +128,68 @@ def group_processes(rows: list[ProcessRow]) -> dict[str, list[ProcessRow]]:
     return {cat: buckets[cat] for cat in CATEGORY_ORDER if cat in buckets}
 
 
+def _exe_dir(exe_path: str) -> str:
+    path = norm_path(exe_path)
+    return os.path.dirname(path) if path else ""
+
+
+def _name_stem(name: str) -> str:
+    """'bravesvc.exe' -> 'bravesvc'; case folded for family matching."""
+    return name.lower().rsplit(".", 1)[0] if "." in name else name.lower()
+
+
+def app_families(rows: list[ProcessRow]) -> dict[int, list[ProcessRow]]:
+    """Task-Manager-style grouping: background processes that belong to a
+    visible app become its children (so 'Brave' shows its real ~1GB RAM
+    instead of a bare 400MB app row plus orphan background rows).
+
+    Membership is deliberately conservative — a child qualifies ONLY when:
+      * its exe lives in the SAME install directory as a visible app
+        (e.g. Brave's helper processes run from Brave's own folder), or
+      * its exe name family matches the app ('bravesvc' -> 'brave').
+    WINDOWS / SERVICES / PULSE rows are never adopted, so OS jobs can't
+    be mis-parented onto an app by accident.
+    """
+    apps = [r for r in rows if r.category == CATEGORY_APPS and r.visible_window]
+    if not apps:
+        return {}
+    dir_owner: dict[str, int] = {}
+    stem_owner: dict[str, int] = {}
+    for app in apps:
+        app_dir = _exe_dir(app.exe)
+        if app_dir:
+            # first visible app wins a directory; a rogue second exe there
+            # is almost certainly the same program's other window
+            dir_owner.setdefault(app_dir, app.pid)
+        stem_owner.setdefault(_name_stem(app.name), app.pid)
+
+    families: dict[int, list[ProcessRow]] = {}
+    for r in rows:
+        if r.category != CATEGORY_BG:
+            continue
+        parent = None
+        r_dir = _exe_dir(r.exe)
+        if r_dir and r_dir in dir_owner:
+            parent = dir_owner[r_dir]
+        else:
+            # name-FAMILY match, not exact: "bravesvc" belongs to "brave".
+            # 4-char minimum so a 1-2-letter exe can't chain onto an
+            # unrelated app by sharing a short prefix.
+            r_stem = _name_stem(r.name)
+            if len(r_stem) >= 4:
+                for app_stem, pid in stem_owner.items():
+                    if r_stem.startswith(app_stem) or app_stem.startswith(r_stem):
+                        parent = pid
+                        break
+        # own-PID guard is paranoia: a PULSE row can't be BACKGROUND, but a
+        # crash between classify and here must never self-adopt
+        if parent is not None and parent != r.pid:
+            families.setdefault(parent, []).append(r)
+    for kids in families.values():
+        kids.sort(key=lambda r: r.weight(), reverse=True)
+    return families
+
+
 def cap_rows(
     rows: list[ProcessRow], max_rows: int, self_pid: Optional[int] = None
 ) -> list[ProcessRow]:
@@ -144,6 +206,95 @@ def cap_rows(
 
 
 # ── CPU math ────────────────────────────────────────────────────────────────
+
+
+# ── Task-Manager memory formula ("Working Set - Private") ────────────────
+
+
+def private_working_set_map(debug_log=None) -> Optional[dict[int, int]]:
+    """pid -> private working-set bytes for every process in one PDH pass.
+
+    This is the SAME formula Task Manager's Memory column uses: the
+    "Working Set - Private" performance counter, cross-referenced per
+    process instance via its "ID Process" counter. PDH instance names are
+    the exe image name without .exe; duplicates get a #k suffix. Wildcards
+    merge same-name instances, so counters are added EXPLICITLY per
+    instance and the query is primed with two collects (PDH needs a
+    baseline sample before values become valid). Returns None on failure
+    so callers fall back to USS/RSS.
+    """
+    try:
+        import win32pdh
+    except Exception:
+        return None
+    query = None
+    counters = []
+    result: dict[int, int] = {}
+    try:
+        try:
+            _, instances = win32pdh.EnumObjectItems(
+                None, None, "Process", win32pdh.PERF_DETAIL_WIZARD
+            )
+        except ValueError:  # pywin32 version differences in tuple shape
+            instances = win32pdh.EnumObjectItems(
+                None, None, "Process", win32pdh.PERF_DETAIL_WIZARD
+            )[1]
+        # rebuild dedup suffixes PDH expects: first keep plain, subsequent
+        # occurrences of the same image name become name#1, name#2, ...
+        seen_count: dict[str, int] = {}
+        paths: list[str] = []
+        for inst in instances:
+            stem = inst.lower()
+            n = seen_count.get(stem, 0)
+            seen_count[stem] = n + 1
+            paths.append(inst if n == 0 else f"{inst}#{n}")
+
+        query = win32pdh.OpenQuery()
+        for path in paths:
+            base = f"\\Process({path})"
+            try:
+                counters.append(
+                    (
+                        win32pdh.AddCounter(query, base + "\\ID Process"),
+                        win32pdh.AddCounter(query, base + "\\Working Set - Private"),
+                    )
+                )
+            except Exception:
+                continue  # one unusable instance must not kill the rest
+        win32pdh.CollectQueryData(query)  # baseline (values come on #2)
+        try:
+            win32pdh.CollectQueryData(query)
+        except Exception:
+            pass  # a mid-scan process death can abort pass two; pass 1 cached
+        for cid, cw in counters:
+            try:
+                status_pid, pid = win32pdh.GetFormattedCounterValue(
+                    cid, win32pdh.PDH_FMT_LARGE
+                )
+                status_ws, ws = win32pdh.GetFormattedCounterValue(
+                    cw, win32pdh.PDH_FMT_LARGE
+                )
+            except Exception:
+                continue
+            # 0x10000 = PDH_CSTATUS_VALID_DATA (often ORed with the 0x100
+            # format flag by pywin32); the low bits are counter metadata
+
+            def valid(s: int) -> bool:
+                return bool(s & 0x10000) and (s & 0xFF) == 0
+
+            if valid(status_pid) and valid(status_ws) and int(pid) > 0 and int(ws) >= 0:
+                result[int(pid)] = int(ws)
+        return result
+    except Exception as exc:
+        if debug_log is not None:
+            debug_log(f"private_working_set_map failed: {exc!r}")
+        return None
+    finally:
+        if query is not None:
+            try:
+                win32pdh.CloseQuery(query)
+            except Exception:
+                pass
 
 
 def cpu_percent_from_delta(
@@ -345,10 +496,15 @@ class ProcessScanner:
         self._cache: dict[int, dict] = {}  # pid -> static info
         self._cpu_prev: dict[int, tuple[float, float]] = {}  # pid -> (cpu s, wall ts)
         self.last_error: str | None = None
+        self._priv_map: dict[int, int] | None = None  # pid -> private WS bytes
 
     def scan(self) -> list[ProcessRow]:
         now = self._clock()
         visible = visible_window_pids()
+        # PDH pass BEFORE rows exist: exact Task-Manager private working set
+        # per PID ("Working Set - Private" perf counter), independent of the
+        # psutil iteration below
+        self._priv_map = private_working_set_map()
         rows: list[ProcessRow] = []
         seen: set[int] = set()
         self.last_error = None
@@ -370,16 +526,46 @@ class ProcessScanner:
             self.last_error = "no readable processes this scan"
         return rows
 
+    def _private_mem(self, proc, info: dict, pid: int) -> tuple[int, float]:
+        """Task-Manager-identical memory: PRIVATE WORKING SET ("Working set
+        - private" perf counter), read per PID by the PDH pass in scan().
+
+        That counter is exactly what the Task Manager Memory column shows.
+        Fallbacks, in order: psutil USS (still correct, slightly higher),
+        then RSS when even that is refused (tests / access-denied). RSS is
+        only a last resort because Windows DLLs are SHARED between sibling
+        processes — summing it reads roughly 2x Task Manager.
+        """
+        total = psutil.virtual_memory().total or 1
+
+        if self._priv_map is not None:
+            priv = self._priv_map.get(pid)
+            if priv and priv > 0:
+                return int(priv), min(100.0, 100.0 * priv / total)
+
+        full = None
+        full_fn = getattr(proc, "memory_full_info", None)
+        if callable(full_fn):
+            try:
+                full = full_fn()
+            except Exception:
+                full = None
+            if full is not None:
+                uss = int(getattr(full, "uss", 0) or 0)
+                if uss > 0:
+                    return uss, min(100.0, 100.0 * uss / total)
+        # fallback: RSS (tests / access-denied)
+        mem_info = info.get("memory_info")
+        mem_rss = int(getattr(mem_info, "rss", 0) or 0) if mem_info is not None else 0
+        mem_pct = float(info.get("memory_percent") or 0.0)
+        return mem_rss, mem_pct
+
     def _row_for(
         self, proc, info: dict, pid: int, now: float, visible: set[int]
     ) -> Optional[ProcessRow]:
         try:
             static = self._static(proc, info, pid)
-            mem_info = info.get("memory_info")
-            mem_rss = (
-                int(getattr(mem_info, "rss", 0) or 0) if mem_info is not None else 0
-            )
-            mem_pct = float(info.get("memory_percent") or 0.0)
+            mem_rss, mem_pct = self._private_mem(proc, info, pid)
             # empty `visible` (pywin32 missing / non-Windows) means "unknown",
             # not "no window" — keep those rows in BACKGROUND rather than
             # pretending we probed them.

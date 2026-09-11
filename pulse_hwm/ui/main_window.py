@@ -30,7 +30,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(1280, 840)
-        self.setMinimumSize(960, 640)
+        # windowed (restored-down) size can never shrink past this, so the
+        # layout keeps ALL text readable with no scrollbars needed
+        self.setMinimumSize(1180, 820)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
 
