@@ -95,9 +95,14 @@ def restart_command() -> tuple[str, str]:
     return exe, "-m pulse_hwm"
 
 
-def shell_runas(exe: str, args: str) -> bool:
+def shell_runas(exe: str, args: str, cwd: str | None = None) -> bool:
     """Ask Windows to start `exe` elevated (UAC prompt). True when Windows
     accepted the launch — False when the user declined / on non-Windows.
+
+    `cwd` is the working directory the NEW process starts in. Pass it for
+    dev mode because `-m pulse_hwm` only resolves from the project root;
+    if we relied on inherited cwd, relaunching from any other folder would
+    fail with "No module named pulse_hwm".
 
     Tiny injectable seam so tests never touch the real shell.
     """
@@ -109,6 +114,14 @@ def shell_runas(exe: str, args: str) -> bool:
     SW_SHOWNORMAL = 1
     # >32 means success per the ShellExecute contract; small values = cancel.
     ret = ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", exe, args, None, SW_SHOWNORMAL
+        None, "runas", exe, args, cwd, SW_SHOWNORMAL
     )
     return int(ret) > 32
+
+
+def app_root() -> str:
+    """Absolute path of the pulse_hwm package's parent (the project root).
+
+    Used as the working directory when relaunching in dev mode.
+    """
+    return str(Path(__file__).resolve().parents[1])

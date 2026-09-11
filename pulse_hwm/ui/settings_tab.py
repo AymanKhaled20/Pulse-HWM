@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -107,6 +109,7 @@ class SettingsTab(QWidget):
         trim_btn.clicked.connect(self._trim_now)
         resources_form.addRow(trim_btn)
         admin_btn = QPushButton("RESTART AS ADMIN")
+        self._admin_btn = admin_btn
         admin_btn.setToolTip(
             "Quit and relaunch elevated — needed for some temperature sensors"
         )
@@ -222,17 +225,26 @@ class SettingsTab(QWidget):
 
         The current process must exit AFTER Windows accepts the elevation
         request, otherwise the UAC dialog would pop up over a dead app.
+        We show the status and wait a moment so the user can actually read
+        it, and disable the button so a double-click can't start two
+        elevated instances competing over the same SQLite database.
         """
+        from PySide6.QtCore import QTimer
         from PySide6.QtWidgets import QApplication
 
-        from pulse_hwm.util import restart_command, shell_runas
+        from pulse_hwm.util import app_root, restart_command, shell_runas
 
         exe, args = restart_command()
-        if shell_runas(exe, args):
+        # Dev mode needs the project root as cwd (python -m resolves from
+        # there); the frozen exe is self-contained so any cwd works.
+        cwd = None if getattr(sys, "frozen", False) else app_root()
+        self._admin_btn.setEnabled(False)
+        if shell_runas(exe, args, cwd):
             self.test_result.setText("relaunching as ADMIN…")
-            QApplication.quit()
+            QTimer.singleShot(200, QApplication.quit)
         else:
-            self.test_result.setText("restart cancelled (UAC denied)")
+            self.test_result.setText("restart failed or cancelled")
+            self._admin_btn.setEnabled(True)
 
     def _test_alert(self) -> None:
         sent = self._alerts.notify(

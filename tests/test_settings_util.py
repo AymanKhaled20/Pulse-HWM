@@ -102,3 +102,22 @@ def test_shell_runas_none_on_non_windows(monkeypatch):
 
     monkeypatch.setattr(util_mod.os, "name", "posix")
     assert util_mod.shell_runas("anything.exe", "") is False
+
+
+def test_shell_runas_accepts_cwd_argument(monkeypatch):
+    """The new `cwd` seam (dev-mode relaunch) must not change the non-Windows
+    path — it short-circuits to False no matter what cwd is passed."""
+    import pulse_hwm.util as util_mod
+
+    monkeypatch.setattr(util_mod.os, "name", "posix")
+    assert util_mod.shell_runas("anything.exe", "-m pulse_hwm", cwd=r"C:\tmp") is False
+
+
+def test_app_root_is_project_root():
+    from pathlib import Path
+
+    from pulse_hwm.util import app_root
+
+    # The package's parent must contain the package itself — that's the
+    # working directory `-m pulse_hwm` needs to resolve from.
+    assert (Path(app_root()) / "pulse_hwm" / "util.py").is_file()
