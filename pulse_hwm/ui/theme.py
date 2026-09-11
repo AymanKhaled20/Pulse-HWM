@@ -76,8 +76,21 @@ MIN_FONT_PX = 14
 
 
 def tick_font() -> QFont:
-    # charts got their own slightly smaller tick text; still ≥ MIN_FONT_PX
-    return QFont(BODY_FONT, max(MIN_FONT_PX, _sizes.body_px - 4))
+    # charts got their own smaller tick text; still ≥ MIN_FONT_PX.
+    # setPixelSize, NOT QFont(family, n): the latter is POINT size
+    # (n pt ≈ 1.33n px) which silently over-sized the axes.
+    f = QFont(BODY_FONT)
+    f.setPixelSize(max(MIN_FONT_PX, _sizes.body_px - 4))
+    return f
+
+
+def table_font(theme: FontTheme | None = None) -> QFont:
+    """Tables/trees read bigger than body text (dense monospace rows at 14px
+    were the '#1 too small' complaint on the processes tab)."""
+    t = theme or _sizes
+    f = QFont(t.body)
+    f.setPixelSize(max(16, t.body_px))
+    return f
 
 
 def set_active_theme(color: ColorTheme, fonts: FontTheme) -> None:
@@ -125,6 +138,8 @@ def render_qss(color: ColorTheme, fonts: FontTheme) -> str:
         "DISPLAY_PX": max(MIN_FONT_PX, fonts.display_px),
         "BODY_FONT": fonts.body,
         "BODY_PX": max(MIN_FONT_PX, fonts.body_px),
+        # tables/trees get a dedicated, slightly larger size
+        "TABLE_PX": max(16, fonts.body_px),
         "HEADER_PX": max(MIN_FONT_PX, fonts.header_px),
     }
     return string.Template(template).substitute(subs)
