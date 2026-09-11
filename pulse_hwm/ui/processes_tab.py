@@ -328,10 +328,43 @@ class ProcessesTab(QWidget):
 
     # ── good-citizen buttons ───────────────────────────────────────────────
     def _trim_now(self) -> None:
-        ok = trim_working_set()
-        self._set_status(
-            "working set trimmed" if ok else "trim not available on this system"
-        )
+        """Trigger EmptyWorkingSet on Pulse itself and report the outcome.
+
+        Trim works (kernel frees cold pages), but Windows may refuse to
+        release below the process's true demand — so we measure RSS before
+        vs after: a real drop says how much was handed back, while a flat
+        result means this IS about as small as the process gets right now.
+        """
+        import os
+        import threading
+
+        def _work() -> None:
+            import psutil
+
+            from pulse_hwm.alerts.notifier import send_toast
+
+            me = psutil.Process(os.getpid())
+            before = me.memory_info().rss
+            ok = trim_working_set()
+            after = me.memory_info().rss
+            freed = before - after
+            if not ok:
+                message = "TRIM NOT AVAILABLE ON THIS SYSTEM"
+                title = "TRIM MEMORY"
+            elif freed < 1_000_000:  # under 1MB: no pages came loose
+                message = "ALREADY AT MINIMUM — THIS IS THE LEAST MEMORY IT CAN USE"
+                title = "TRIM MEMORY"
+            else:
+                message = f"FREED {freed / 1_000_000:.1f} MB"
+                title = "TRIM MEMORY"
+            self._set_status(message)
+            try:
+                send_toast(title, message)
+            except Exception:
+                pass  # toast is garnish; the status line still reports it
+
+        # kernel call is quick but never freeze the UI thread on it
+        threading.Thread(target=_work, daemon=True).start()
 
     def _toggle_priority(self, enabled: bool) -> None:
         ok = set_low_priority_mode(bool(enabled))
