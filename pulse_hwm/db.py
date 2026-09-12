@@ -207,9 +207,13 @@ class Database:
             ]
             if count == 0:
                 for name, url in DEFAULT_SITES:
+                    # uuid + updated_at make seeded sites syncable from
+                    # day one (plan_sites keys everything by uuid)
+                    now = time.time()
                     self._conn.execute(
-                        "INSERT INTO sites (name, url, enabled, created_at) VALUES (?, ?, 1, ?)",
-                        (name, url, time.time()),
+                        "INSERT INTO sites (name, url, enabled, created_at, uuid, updated_at)"
+                        " VALUES (?, ?, 1, ?, ?, ?)",
+                        (name, url, now, _uuid.uuid4().hex, now),
                     )
                 self._conn.commit()
 

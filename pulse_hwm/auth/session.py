@@ -78,10 +78,13 @@ class SessionManager:
         return result
 
     # ── lifecycle ─────────────────────────────────────────────────────
-    def try_resume(self) -> bool:
+    def try_resume(self, force: bool = False) -> bool:
         """Silent restore on app start: does Credential Manager still
-        hold a live refresh token? Returns True and sets the session."""
-        if self.is_signed_in():
+        hold a live refresh token? Returns True and sets the session.
+        force=True re-runs the refresh even while signed in — the sync
+        engine uses this when REST starts answering 401 because the
+        access token expired since sign-in."""
+        if self.is_signed_in() and not force:
             return True
         parked = self._store.load_refresh_token()
         if not parked:

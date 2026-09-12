@@ -41,6 +41,24 @@ class SyncWorker(QRunnable):
         self._db = db
         self._signals = signals
 
+    def _fetch(self, table: str, query: str) -> tuple[int, list | dict, str]:
+        """GET one table; adds two guards the raw client lacks:
+
+        * 401 → the access token expired since sign-in, so force one
+          refresh from the parked refresh token and retry (otherwise
+          sync stays broken until app restart).
+        * a network blip surfaces as status 0 with a dict body — never
+          let that reach the planners, which expect a list.
+        """
+        token = self._session.bearer()
+        status, body = self._client.rest_select(table, query, token)
+        if status == 401 and self._session.try_resume(force=True):
+            token = self._session.bearer()
+            status, body = self._client.rest_select(table, query, token)
+        if status == 0 or not isinstance(body, list):
+            return -1, [], token
+        return status, body, token
+
     def run(self) -> None:
         try:
             summary, ok, error = self._cycle()
@@ -56,18 +74,17 @@ class SyncWorker(QRunnable):
         if not token or not user_id:
             return "session unusable", False, "missing token/user"
 
-        ok, remote_settings = self._client.rest_select(
-            "user_settings", "user_id=eq." + user_id, token
+        status, remote_settings, token = self._fetch(
+            "user_settings", "user_id=eq." + user_id
         )
-        if ok >= 400:
-            return "", False, f"cloud unavailable ({ok})"
-        ok, remote_sites = self._client.rest_select(
+        if status >= 400:
+            return "", False, f"cloud unavailable ({status})"
+        status, remote_sites, token = self._fetch(
             "user_sites",
             f"user_id=eq.{user_id}&order=updated_at.desc&limit=500",
-            token,
         )
-        if ok >= 400:
-            return "", False, f"cloud unavailable ({ok})"
+        if status >= 400:
+            return "", False, f"cloud unavailable ({status})"
 
         local_settings = self._db.get_settings_with_ts()
         local_sites = [dict(r) for r in self._db.get_sites_for_sync()]
