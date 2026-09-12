@@ -12,6 +12,8 @@ _SERVICE = "PulseHWM"
 _REFRESH_ACCOUNT = "supabase-refresh"
 # PKCE verifiers are single-use and short-lived; keyed by a flow id
 _VERIFIER_PREFIX = "pkce-"
+# pointer to the latest unfinished flow (so a cold launch can complete it)
+_PENDING_ACCOUNT = "pending-flow"
 _VERIFIER_TTL_S = 15 * 60  # a dropped email link is dead after 15 minutes
 
 
@@ -108,3 +110,34 @@ def take_verifier(flow_id: str) -> tuple[str, str]:
 
 def clear_pending_flow(flow_id: str) -> None:
     _delete(_verifier_account(flow_id))
+
+
+# ── pending flow pointer ─────────────────────────────────────────────
+# The callback URL carries ONLY the auth code — we need to know which
+# parked verifier matches. In-process, OauthCoordinator.pending remembers
+# it; the pointer below lets a COLD launch (user clicked the email link
+# while the app was closed) reconstruct the flow too. Value: flow_id|provider
+
+
+def save_pending_flow(flow_id: str, provider: str) -> bool:
+    try:
+        _keyring().set_password(_SERVICE, _PENDING_ACCOUNT, f"{flow_id}|{provider}")
+        return True
+    except Exception:
+        return False
+
+
+def load_pending_flow() -> tuple[str, str]:
+    """Stored pointer (flow_id, provider); ("","") when none/invalid."""
+    try:
+        raw = _keyring().get_password(_SERVICE, _PENDING_ACCOUNT) or ""
+    except Exception:
+        return "", ""
+    parts = raw.split("|")
+    if len(parts) != 2 or not parts[0]:
+        return "", ""
+    return parts[0], parts[1]
+
+
+def clear_pending_flow_id() -> None:
+    _delete(_PENDING_ACCOUNT)

@@ -29,6 +29,16 @@ class FakeStore:
         self.cleared.add(flow_id)
         self.parked.pop(flow_id, None)
 
+    def save_pending_flow(self, flow_id, provider):
+        self.pending_flow = (flow_id, provider)
+        return True
+
+    def load_pending_flow(self):
+        return getattr(self, "pending_flow", ("", ""))
+
+    def clear_pending_flow_id(self):
+        self.pending_flow = ("", "")
+
 
 class FakeClient:
     def oauth_authorize_url(self, provider, redirect_to, challenge):
@@ -95,3 +105,14 @@ def test_parse_callback_rejects_other_schemes():
     assert parse_callback_url("https://evil.example?code=stolen").ok is False
     assert parse_callback_url("").ok is False
     assert parse_callback_url("pulsehwm://").ok is False
+
+
+def test_cold_launch_restores_pending_flow():
+    coord, store = make_coordinator()
+    coord.start_email_flow("signup")  # user clicked create account, app died
+    later = OauthCoordinator(FakeClient(), store)  # NEW process object
+    later.restore_pending()
+    assert later.pending is not None
+    assert later.pending.provider == "signup"
+    later.clear_pending()
+    assert OauthCoordinator(FakeClient(), store).pending is None  # pointer gone

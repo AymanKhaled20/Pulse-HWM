@@ -48,6 +48,9 @@ class OauthCoordinator:
         parked = self._store.park_verifier(flow_id, verifier, REDIRECT_URI)
         if not parked:
             raise RuntimeError("secure token store unavailable — cannot sign in")
+        # remember which flow is open, so a cold launch (app was closed
+        # when the callback arrived) can still finish the exchange
+        self._store.save_pending_flow(flow_id, provider)
         self.pending = PendingFlow(
             flow_id=flow_id, provider=provider, url=url, challenge=challenge
         )
@@ -63,14 +66,35 @@ class OauthCoordinator:
         parked = self._store.park_verifier(flow_id, verifier, REDIRECT_URI)
         if not parked:
             raise RuntimeError("secure token store unavailable — cannot continue")
+        self._store.save_pending_flow(flow_id, kind)
         flow = PendingFlow(flow_id=flow_id, provider=kind, challenge=challenge)
         self.pending = flow
         return flow
+
+    def restore_pending(self) -> None:
+        """Rebuild an in-process flow from the store pointer (cold launch:
+        this process has never seen the sign-in, but the verifier is
+        parked and the email link just arrived). Expired verifiers are
+        rejected by take_verifier's TTL anyway."""
+        if self.pending is not None:
+            return
+        flow_id, provider = self._store.load_pending_flow()
+        if not flow_id:
+            return
+        self.pending = PendingFlow(flow_id=flow_id, provider=provider or "password")
+
+    def clear_pending(self) -> None:
+        """Flow finished (exchange consumed the single-use verifier):
+        drop the RAM flow AND the stored pointer so no later callback
+        can restore a dead flow."""
+        self.pending = None
+        self._store.clear_pending_flow_id()
 
     def reject_pending(self) -> None:
         if self.pending is not None:
             self._store.clear_pending_flow(self.pending.flow_id)
             self.pending = None
+        self._store.clear_pending_flow_id()
 
 
 @dataclass

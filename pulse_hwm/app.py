@@ -143,6 +143,9 @@ def run() -> int:
         if not callback.ok:
             window.show_account_feedback(f"login link problem: {callback.error}")
             return
+        # cold launch: this process never issued the sign-in, but the
+        # verifier is parked in Credential Manager — rebuild the flow
+        coordinator.restore_pending()
         pending = coordinator.pending
         if pending is None:
             window.show_account_feedback("no sign-in in progress — link expired")
@@ -150,7 +153,7 @@ def run() -> int:
         result = session.adopt_pkce_result(
             callback.code, pending.flow_id, pending.provider
         )
-        coordinator.pending = None  # verifier already consumed (single-use)
+        coordinator.clear_pending()  # verifier consumed (single-use)
         window.on_oauth_result(result.ok, result.error)
         if result.ok:
             session_started()
@@ -184,9 +187,19 @@ def run() -> int:
 
     sync_engine = SyncEngine(session, supa, db, parent=None)
     sync_engine.attach_pool(QThreadPool.globalInstance())
-    sync_engine.finished.connect(
-        lambda summary, ok, error: window.show_account_feedback(summary or error)
-    )
+    _was_signed_in = {"v": session.is_signed_in()}
+
+    def _sync_feedback(summary: str, ok: bool, error: str) -> None:
+        window.show_account_feedback(summary or error)
+        # only an actual SIGN-OUT (signed in → signed out because the
+        # parked token was rejected) should repaint; showing "session
+        # expired" on a never-signed-in install every 60 s would be noise
+        signed_in = session.is_signed_in()
+        if _was_signed_in["v"] and not signed_in:
+            window.on_oauth_result(False, "session expired — sign in again")
+        _was_signed_in["v"] = signed_in
+
+    sync_engine.finished.connect(_sync_feedback)
     if window._account_tab is not None:
         window._account_tab.sync_requested.connect(sync_engine.sync_now)
     sync_timer = QTimer()
@@ -212,6 +225,9 @@ def run() -> int:
             timeout_s=merged.website_timeout_s,
             ssl_warn_days=merged.ssl_warn_days,
         )
+        # pulled sites (adds AND tombstones) must repaint the WEBSITES list
+        if window._sites_tab is not None:
+            window._sites_tab.reload_sites()
 
     sync_engine.finished.connect(on_sync_done)
 

@@ -98,7 +98,11 @@ class SessionManager:
                 # (invalid grant) means the session is dead
                 return False
             # stale token: forget it; the user just signs in again
+            # (also drop the in-RAM session: leaving tokens set would
+            # keep the UI painting "SIGNED IN" against a dead session)
             self._store.clear_refresh_token()
+            self.tokens = None
+            self.session_info = Session()
             return False
         self._adopt(result, provider="password")  # provider unknown — fine
         return True
