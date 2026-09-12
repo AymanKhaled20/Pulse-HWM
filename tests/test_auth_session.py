@@ -119,6 +119,26 @@ def test_resume_with_dead_token_clears_session():
     assert store.refresh == ""  # dead token forgotten
 
 
+def test_resume_network_error_keeps_refresh_token():
+    """Offline 'resume' must NOT forget the parked token — otherwise one
+    offline launch signs the user out permanently."""
+    from pulse_hwm.auth.rest import AuthResult
+
+    mgr, client, store = make_manager()
+    store.refresh = "parked"
+
+    class OfflineClient(FakeClient):
+        def refresh(self, token):
+            return AuthResult(
+                error="network error refreshing the session", network_error=True
+            )
+
+    mgr._client = OfflineClient()
+    assert mgr.try_resume() is False
+    assert store.refresh == "parked"  # kept for the next tick/launch
+    assert mgr.is_signed_in() is False
+
+
 def test_pkce_flow_journal():
     mgr, client, store = make_manager()
     store.park_verifier("flow123", "verifier-abc", "pulsehwm://auth-callback")

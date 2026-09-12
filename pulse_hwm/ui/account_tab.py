@@ -161,6 +161,7 @@ class AccountTab(QWidget):
         self.btn_sign_out.clicked.connect(self._on_sign_out)
         self.btn_sync_now.clicked.connect(self.sync_requested)
 
+        self._auth_in_flight = False  # re-entry guard, see _auth_busy()
         self.refresh_from_session()
 
     # ─── helpers ───────────────────────────────────────────────────────
@@ -176,10 +177,34 @@ class AccountTab(QWidget):
         QDesktopServices.openUrl(url)  # UI thread only — emitted via signal
 
     # ─── action slots ─────────────────────────────────────────────────
+    def _auth_busy(self) -> bool:
+        """One auth exchange at a time: two concurrent ones would race
+        the rotating refresh token (the second response parks a token
+        the server has already superseded). Also disables re-entry."""
+        if self._auth_in_flight:
+            return True
+        self._auth_in_flight = True
+        for w in (
+            self.btn_sign_in,
+            self.btn_sign_up,
+            self.btn_forgot,
+            self.btn_google,
+            self.btn_github,
+        ):
+            w.setEnabled(False)
+        return False
+
+    def _auth_idle(self) -> None:
+        self._auth_in_flight = False
+        self.set_configured(True)
+
     def _on_sign_in(self) -> None:
+        if self._auth_busy():
+            return
         email = clean_email(self.email.text())
         err = validate_email(email) or validate_password(self.password.text())
         if err:
+            self._auth_idle()
             self._set_feedback(err)
             return
         self._set_feedback("signing in …")
@@ -191,14 +216,18 @@ class AccountTab(QWidget):
         )
 
     def _on_sign_up(self) -> None:
+        if self._auth_busy():
+            return
         email = clean_email(self.email.text())
         err = validate_email(email) or validate_password(self.password.text())
         if err:
+            self._auth_idle()
             self._set_feedback(err)
             return
         try:
             flow = self._oauth.start_email_flow("signup")
         except RuntimeError as exc:
+            self._auth_idle()
             self._set_feedback(str(exc))
             return
         self._set_feedback("creating account …")
@@ -219,14 +248,18 @@ class AccountTab(QWidget):
         )
 
     def _on_forgot(self) -> None:
+        if self._auth_busy():
+            return
         email = clean_email(self.email.text())
         err = validate_email(email)
         if err:
+            self._auth_idle()
             self._set_feedback(err)
             return
         try:
             flow = self._oauth.start_email_flow("recover")
         except RuntimeError as exc:
+            self._auth_idle()
             self._set_feedback(str(exc))
             return
         self._set_feedback("sending reset link …")
@@ -239,9 +272,12 @@ class AccountTab(QWidget):
         )
 
     def _on_provider(self, provider: str) -> None:
+        if self._auth_busy():
+            return
         try:
             url = self._oauth.start(provider)
         except RuntimeError as exc:
+            self._auth_idle()
             self._set_feedback(str(exc))
             return
         self._set_feedback(f"finish signing in with {provider.upper()} in your browser")
@@ -256,6 +292,7 @@ class AccountTab(QWidget):
     # ─── network results (UI thread, via signals) ─────────────────────
     def _on_auth_done(self, tag: str, result: object) -> None:
         assert isinstance(result, AuthResult)
+        self._auth_idle()  # re-enable buttons whoever it was
         if tag == "sign-in":
             if result.ok:
                 self._set_feedback("")
@@ -286,6 +323,9 @@ class AccountTab(QWidget):
         adoption, e.g. an OAuth callback lands via the running instance)."""
         info = self._session.session_info
         active = self._session.is_signed_in()
+        # the OAuth callback path repaints through here too — release the
+        # in-flight lock so the next sign-in attempt isn't blocked
+        self._auth_in_flight = False
         self._signed_out_form.setVisible(not active)
         self._signed_in_panel.setVisible(active)
         if active:

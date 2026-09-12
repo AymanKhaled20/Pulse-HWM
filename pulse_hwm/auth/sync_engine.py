@@ -77,13 +77,13 @@ class SyncWorker(QRunnable):
         status, remote_settings, token = self._fetch(
             "user_settings", "user_id=eq." + user_id
         )
-        if status >= 400:
+        if status < 0 or status >= 400:
             return "", False, f"cloud unavailable ({status})"
         status, remote_sites, token = self._fetch(
             "user_sites",
             f"user_id=eq.{user_id}&order=updated_at.desc&limit=500",
         )
-        if status >= 400:
+        if status < 0 or status >= 400:
             return "", False, f"cloud unavailable ({status})"
 
         local_settings = self._db.get_settings_with_ts()
@@ -94,6 +94,15 @@ class SyncWorker(QRunnable):
         )
         plan.push_settings = settings_plan.push_settings
         plan.pull_settings = settings_plan.pull_settings
+
+        if (
+            not plan.push_sites
+            and not plan.push_settings
+            and not plan.pull_settings
+            and not plan.pull_sites
+            and not plan.pull_site_tombstones
+        ):
+            return "in sync", True, ""  # nothing moved: skip UI reload choreography
 
         # ── push remote updates first: pulls applied after land on a
         # server that already knows about our locally-newer rows ──────

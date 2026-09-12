@@ -91,9 +91,14 @@ class SessionManager:
             return False
         result = self._client.refresh(parked)
         if not result.ok:
+            self.last_error = result.error
+            if result.network_error:
+                # the server never answered — keep the parked token and
+                # retry on the next tick/launch; only a real rejection
+                # (invalid grant) means the session is dead
+                return False
             # stale token: forget it; the user just signs in again
             self._store.clear_refresh_token()
-            self.last_error = result.error
             return False
         self._adopt(result, provider="password")  # provider unknown — fine
         return True

@@ -30,6 +30,9 @@ class AuthResult:
     # verification link first — no tokens exist yet
     needs_email_confirmation: bool = False
     error: str = ""
+    # True only when the request never reached the server (offline/DNS
+    # down): the caller must NOT treat this as a rejected session
+    network_error: bool = False
 
 
 def _parse_error(payload: object, fallback: str) -> str:
@@ -151,7 +154,9 @@ class SupabaseClient:
                 json={"refresh_token": refresh_token},
             )
         except httpx.HTTPError:
-            return AuthResult(error="network error refreshing the session")
+            return AuthResult(
+                error="network error refreshing the session", network_error=True
+            )
         if r.status_code >= 400:
             # invalid/expired refresh token: the caller should forget the session
             return AuthResult(error=_parse_error(r.json(), "session expired"))

@@ -108,11 +108,20 @@ class Database:
         self._apply_migrations()
 
     def _apply_migrations(self) -> None:
-        """Run each pending _MIGRATIONS entry once (idempotent, locked)."""
+        """Run each pending _MIGRATIONS entry once (idempotent, locked).
+
+        Crash-safe: the whole migration + its version stamp run inside
+        ONE transaction. sqlite3.executescript() would autocommit
+        statement-by-statement, so a power loss mid-migration could
+        leave a half-altered schema with no version recorded — and the
+        app would then die on `duplicate column` at every launch.
+        DDL is transactional in SQLite, so this is safe.
+        """
         with self._lock:
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER NOT NULL)"
             )
+            self._conn.commit()
             row = self._conn.execute(
                 "SELECT MAX(version) AS v FROM schema_meta"
             ).fetchone()
@@ -120,11 +129,18 @@ class Database:
             for version, sql in _MIGRATIONS:
                 if version <= current:
                     continue
-                self._conn.executescript(sql)
-                self._conn.execute(
-                    "INSERT INTO schema_meta (version) VALUES (?)", (version,)
-                )
-                self._conn.commit()
+                statements = [s.strip() for s in sql.split(";") if s.strip()]
+                try:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    for statement in statements:
+                        self._conn.execute(statement)
+                    self._conn.execute(
+                        "INSERT INTO schema_meta (version) VALUES (?)", (version,)
+                    )
+                    self._conn.commit()
+                except Exception:
+                    self._conn.rollback()
+                    raise
 
     def close(self) -> None:
         with self._lock:

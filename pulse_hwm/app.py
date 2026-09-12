@@ -157,6 +157,14 @@ def run() -> int:
 
     single.url_received.connect(handle_incoming_url)
 
+    # cold launch can itself carry the callback (the link was clicked
+    # while the app was closed, so the exe relaunched with the URL in
+    # argv) — the pipe only covers warm handoffs between live instances
+    from pulse_hwm.single_instance import auth_urls_from_args
+
+    for url in auth_urls_from_args(sys.argv[1:]):
+        QTimer.singleShot(100, lambda u=url: handle_incoming_url(u))
+
     # silent session restore from Credential Manager on boot
     def resume_session() -> None:
         resumed = session.try_resume()
@@ -186,12 +194,24 @@ def run() -> int:
     sync_timer.start(_SYNC_TICK_MS)
 
     def on_sync_done(summary: str, ok: bool, _error: str) -> None:
-        if not ok or not summary or summary == "not signed in":
+        # "in sync" = nothing moved; reloading the form on that would
+        # clobber a half-edited Settings form every 60 s
+        if not ok or not summary or summary in ("not signed in", "in sync"):
             return
         # cloud may have updated syncable settings (theme etc.) — reapply
         merged = app_settings.load(db)
         theme_manager.apply(merged.theme_color, merged.theme_font, persist=False)
         theme_manager.set_body_px(merged.font_size)
+        # push merged values into the Settings form so the next SAVE can't
+        # clobber cloud-newer rows with stale spinbox values, and update
+        # the website monitor cadence/thresholds live
+        if window._settings_tab is not None:
+            window._settings_tab.load_from(merged)
+        monitor.reconfigure(
+            interval_s=merged.website_interval_s,
+            timeout_s=merged.website_timeout_s,
+            ssl_warn_days=merged.ssl_warn_days,
+        )
 
     sync_engine.finished.connect(on_sync_done)
 

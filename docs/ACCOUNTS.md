@@ -46,9 +46,9 @@ service-role key never leaves the Supabase dashboard.
 8. **Dev**: register the scheme for local testing (no installer):
    ```powershell
    New-Item -Path "HKCU:\Software\Classes\pulsehwm\shell\open\command" -Force
-   Set-ItemValue HKCU:\Software\Classes\pulsehwm "(Default)" "URL:Pulse-HWM Auth Protocol"
+   Set-ItemProperty HKCU:\Software\Classes\pulsehwm "(Default)" "URL:Pulse-HWM Auth Protocol"
    Set-ItemProperty HKCU:\Software\Classes\pulsehwm -Name "URL Protocol" -Value ""
-   Set-ItemValue HKCU:\Software\Classes\pulsehwm\shell\open\command "(Default)" '"C:\path\to\PulseHWM.exe" "%1"'
+   Set-ItemProperty HKCU:\Software\Classes\pulsehwm\shell\open\command "(Default)" '"C:\path\to\PulseHWM.exe" "%1"'
    ```
    (the installed exe writes these keys automatically via Inno Setup)
 
