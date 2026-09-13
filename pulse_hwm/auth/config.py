@@ -6,12 +6,19 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 # ── PUBLIC values, not secrets ─────────────────────────────────────────
-# Supabase URLs + publishable keys are designed to ship inside clients;
-# Row Level Security is the actual security boundary. They still come
-# from .env so a dev build can point at a different project, and so the
-# secret scanners never see anything resembling a key in source code.
+# The Worker URL + client key are public client values (ownership is
+# enforced server-side by the Worker; RLS stand-in). They ship inside
+# the exe so ANY fresh install works with zero configuration; .env
+# still overrides for dev builds / pointing at a different project.
 #
-# NEVER put the service_role key here (or anywhere else in the repo).
+# NEVER put Worker secrets (JWT key, Brevo key, OAuth secrets) anywhere
+# in the repo — they live only in the Worker via `wrangler secret put`.
+
+# filled after `npx wrangler deploy` + `wrangler secret put` step
+# (placeholder keeps builds working; empty = accounts disabled)
+DEFAULT_BASE_URL = "https://pulsehwm-cloud.workers.dev"
+
+DEFAULT_PUBLISHABLE_KEY = "pulsehwm-public"
 
 
 @dataclass(frozen=True)
@@ -28,6 +35,8 @@ class AuthConfig:
 def auth_config() -> AuthConfig:
     load_dotenv(override=False)
     return AuthConfig(
-        base_url=os.environ.get("SUPABASE_URL", "").strip().rstrip("/"),
-        publishable_key=os.environ.get("SUPABASE_PUBLISHABLE_KEY", "").strip(),
+        base_url=os.environ.get("CLOUD_URL", "").strip().rstrip("/")
+        or DEFAULT_BASE_URL,
+        publishable_key=os.environ.get("CLOUD_CLIENT_KEY", "").strip()
+        or DEFAULT_PUBLISHABLE_KEY,
     )

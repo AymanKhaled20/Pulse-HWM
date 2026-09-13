@@ -40,3 +40,8 @@ Thumbs.db
 
 # ── Logs ────────────────────────────────────────────────
 *.log
+
+# cloudflare workers (wrangler artifacts)
+workers/.wrangler/
+workers/node_modules/
+workers/.dev.vars
