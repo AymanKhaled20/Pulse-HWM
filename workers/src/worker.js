@@ -557,6 +557,12 @@ async function oauthAuthorize(env, url, origin) {
       state,
       prompt: "select_account",
     });
+    // Google wants space-separated scopes as %20 — URLSearchParams emits
+    // "+" and Google's validator now treats those as literal characters
+    authorizeUrl.search = authorizeUrl.search.replace(
+      "scope=openid+email+profile",
+      "scope=openid%20email%20profile"
+    );
   } else if (provider === "github") {
     authorizeUrl = new URL("https://github.com/login/oauth/authorize");
     authorizeUrl.search = new URLSearchParams({
