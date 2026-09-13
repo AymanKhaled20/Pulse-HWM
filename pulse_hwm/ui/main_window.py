@@ -24,6 +24,9 @@ class MainWindow(QMainWindow):
         alerts=None,
         processes_collector=None,
         theme_manager=None,
+        session_manager=None,
+        oauth_coordinator=None,
+        auth_configured: bool = False,
     ):
         super().__init__()
         self._theme_manager = theme_manager
@@ -84,6 +87,21 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(
                 StdoutPlaceholder("THEMES — manager unavailable"), "THEMES"
             )
+        if session_manager is not None and oauth_coordinator is not None:
+            from pulse_hwm.ui.account_tab import AccountTab
+
+            self._account_tab = AccountTab(session_manager, oauth_coordinator, db=db)
+            if not auth_configured:
+                self._account_tab.apply_cloud_offline(
+                    "accounts disabled — no Supabase project configured"
+                )
+                self._account_tab.set_configured(False)
+            else:
+                self._account_tab.set_configured(True)
+            self.tabs.addTab(self._account_tab, "ACCOUNT")
+        else:
+            self._account_tab = None
+            self.tabs.addTab(StdoutPlaceholder("ACCOUNT — unavailable"), "ACCOUNT")
         if db is not None and alerts is not None and websites_monitor is not None:
             from pulse_hwm.ui.settings_tab import SettingsTab
 
@@ -122,6 +140,17 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "_scanlines"):
             self._scanlines.setGeometry(0, 0, self.width(), self.height())
+
+    # ── accounts: slots invoked by app.py callback routing ───────────
+    def on_oauth_result(self, ok: bool, error: str) -> None:
+        if self._account_tab is None:
+            return
+        self._account_tab.refresh_from_session()
+        self._account_tab._set_feedback("" if error == "" else error)
+
+    def show_account_feedback(self, message: str) -> None:
+        if self._account_tab is not None:
+            self._account_tab._set_feedback(message)
 
     # ── overall state LED ──────────────────────────────────
     def on_site_checked(self, result: dict) -> None:

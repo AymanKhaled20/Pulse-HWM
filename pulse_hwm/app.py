@@ -23,6 +23,15 @@ def run() -> int:
 
     QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
+    # single-instance: a login-link click re-launches the exe while we
+    # may already be running. If an instance exists, hand the URL over
+    # and exit BEFORE creating QApplication (QLocalSocket works pre-loop;
+    # waitFor* calls are synchronous).
+    from pulse_hwm.single_instance import try_handoff
+
+    if not try_handoff(sys.argv[1:]):
+        return 0
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
@@ -99,6 +108,18 @@ def run() -> int:
         ),
     )
 
+    # ── accounts / cloud sync wiring ──────────────────────────────────
+    from pulse_hwm.auth.config import auth_config
+    from pulse_hwm.auth.oauth import OauthCoordinator, parse_callback_url
+    from pulse_hwm.auth.rest import SupabaseClient
+    from pulse_hwm.auth.session import SessionManager
+
+    auth_cfg = auth_config()
+    supa = SupabaseClient(auth_cfg.base_url, auth_cfg.publishable_key)
+    session = SessionManager(supa)
+    coordinator = OauthCoordinator(supa)
+    _SYNC_TICK_MS = 60 * 1000  # automatic compare-and-merge cadence
+
     window = MainWindow(
         hardware_collector=collector,
         websites_monitor=monitor,
@@ -106,8 +127,122 @@ def run() -> int:
         alerts=alerts,
         processes_collector=processes_collector,
         theme_manager=theme_manager,
+        session_manager=session,
+        oauth_coordinator=coordinator,
+        auth_configured=auth_cfg.is_configured(),
     )
     window.show()
+
+    # ── incoming auth callbacks (pulsehwm:// handoff from a relaunched process)
+    from pulse_hwm.single_instance import SingleInstance
+
+    single = SingleInstance()
+
+    def handle_incoming_url(url: str) -> None:
+        callback = parse_callback_url(url)
+        if not callback.ok:
+            window.show_account_feedback(f"login link problem: {callback.error}")
+            return
+        # cold launch: this process never issued the sign-in, but the
+        # verifier is parked in Credential Manager — rebuild the flow
+        coordinator.restore_pending()
+        pending = coordinator.pending
+        if pending is None:
+            window.show_account_feedback("no sign-in in progress — link expired")
+            return
+        result = session.adopt_pkce_result(
+            callback.code, pending.flow_id, pending.provider
+        )
+        coordinator.clear_pending()  # verifier consumed (single-use)
+        window.on_oauth_result(result.ok, result.error)
+        if result.ok:
+            session_started()
+
+    single.url_received.connect(handle_incoming_url)
+
+    # cold launch can itself carry the callback (the link was clicked
+    # while the app was closed, so the exe relaunched with the URL in
+    # argv) — the pipe only covers warm handoffs between live instances
+    from pulse_hwm.single_instance import auth_urls_from_args
+
+    for url in auth_urls_from_args(sys.argv[1:]):
+        QTimer.singleShot(100, lambda u=url: handle_incoming_url(u))
+
+    # silent session restore from Credential Manager on boot
+    def resume_session() -> None:
+        resumed = session.try_resume()
+        if resumed:
+            window.on_oauth_result(True, "")
+
+    QTimer.singleShot(20, resume_session)
+
+    def session_started() -> None:
+        # sign-in (and OAuth adoption) both kick a sync immediately
+        sync_engine.sync_now()
+
+    # ── sync engine (automatic ~60 s compare-and-merge; payloads tiny) ─
+    from PySide6.QtCore import QThreadPool
+
+    from pulse_hwm.auth.sync_engine import SyncEngine
+
+    sync_engine = SyncEngine(session, supa, db, parent=None)
+    sync_engine.attach_pool(QThreadPool.globalInstance())
+    _was_signed_in = {"v": session.is_signed_in()}
+
+    def _sync_feedback(summary: str, ok: bool, error: str) -> None:
+        window.show_account_feedback(summary or error)
+        # only an actual SIGN-OUT (signed in → signed out because the
+        # parked token was rejected) should repaint; showing "session
+        # expired" on a never-signed-in install every 60 s would be noise
+        signed_in = session.is_signed_in()
+        if _was_signed_in["v"] and not signed_in:
+            window.on_oauth_result(False, "session expired — sign in again")
+        _was_signed_in["v"] = signed_in
+
+    sync_engine.finished.connect(_sync_feedback)
+    if window._account_tab is not None:
+        window._account_tab.sync_requested.connect(sync_engine.sync_now)
+    sync_timer = QTimer()
+    sync_timer.timeout.connect(sync_engine.sync_now)
+    sync_timer.start(_SYNC_TICK_MS)
+
+    def on_sync_done(summary: str, ok: bool, _error: str) -> None:
+        # "in sync" = nothing moved; reloading the form on that would
+        # clobber a half-edited Settings form every 60 s
+        if not ok or not summary or summary in ("not signed in", "in sync"):
+            return
+        # cloud may have updated syncable settings (theme etc.) — reapply
+        merged = app_settings.load(db)
+        theme_manager.apply(merged.theme_color, merged.theme_font, persist=False)
+        theme_manager.set_body_px(merged.font_size)
+        # push merged values into the Settings form so the next SAVE can't
+        # clobber cloud-newer rows with stale spinbox values, and update
+        # the website monitor cadence/thresholds live
+        if window._settings_tab is not None:
+            window._settings_tab.load_from(merged)
+        monitor.reconfigure(
+            interval_s=merged.website_interval_s,
+            timeout_s=merged.website_timeout_s,
+            ssl_warn_days=merged.ssl_warn_days,
+        )
+        # pulled sites (adds AND tombstones) must repaint the WEBSITES list
+        if window._sites_tab is not None:
+            window._sites_tab.reload_sites()
+
+    sync_engine.finished.connect(on_sync_done)
+
+    def shutdown() -> None:
+        websites_thread.quit()
+        hardware_thread.quit()
+        processes_thread.quit()
+        websites_thread.wait(3000)
+        hardware_thread.wait(2500)
+        processes_thread.wait(2500)
+        single.close()
+        supa.close()
+        db.close()
+
+    app.aboutToQuit.connect(shutdown)
 
     # being a good citizen: apply boot-time resource mode from settings
     set_low_priority_mode(settings.limit_resources)
@@ -138,17 +273,6 @@ def run() -> int:
     hardware_thread.start()
     websites_thread.start()
     processes_thread.start()
-
-    def shutdown() -> None:
-        websites_thread.quit()
-        hardware_thread.quit()
-        processes_thread.quit()
-        websites_thread.wait(3000)
-        hardware_thread.wait(2500)
-        processes_thread.wait(2500)
-        db.close()
-
-    app.aboutToQuit.connect(shutdown)
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("[pulse] system tray unavailable")

@@ -53,6 +53,22 @@ LIMITS = {
     "font_size": (14, 18),
 }
 
+# Cloud sync classification (per plan): portable preferences sync;
+# hardware/performance keys are per-device and NEVER leave the machine.
+SYNCABLE_KEYS = frozenset(
+    {
+        "theme_color",
+        "theme_font",
+        "font_size",
+        "sound_enabled",
+        "desktop_enabled",
+        "webhooks_enabled",
+        "ssl_warn_days",
+        "website_interval_s",
+        "website_timeout_s",
+    }
+)
+
 
 def load(db: Database) -> AppSettings:
     env = config.env()
