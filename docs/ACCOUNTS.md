@@ -41,11 +41,11 @@ GOOGLE_CLIENT_ID / GITHUB_CLIENT_ID are public ids → `vars` in
 `workers/wrangler.jsonc` (not secrets). Non-secret Brevo values also
 belong there if you'd rather not use secrets.
 
-## Redirect URLs to register
-- **Supabase/Worker Google OAuth client**: redirect
-  `https://<your-worker>.workers.dev/cb/google`
-- **GitHub OAuth app**: callback
-  `https://<your-worker>.workers.dev/cb/github`
+## Redirect URLs to register (done during the v1.1.1 deploy)
+- **Google OAuth client** (`905085029470-…`):
+  `https://pulsehwm-cloud.pulsehwm27.workers.dev/cb/google`
+- **GitHub OAuth app** (`Ov23liy6BmcDeKrLQHKK`):
+  `https://pulsehwm-cloud.pulsehwm27.workers.dev/cb/github`
 - **Desktop deep link** (unchanged): `pulsehwm://auth-callback` —
   registered by the installer (HKCU registry keys) or, for dev runs of
   `python -m pulse_hwm` on other machines, by the same two PowerShell
@@ -70,3 +70,16 @@ belong there if you'd rather not use secrets.
   immediately (dev/self-host mode). 300/day free remains the practical cap.
 - Free D1 caps: 500 MB, 5M rows read/day — private-sync usage is nowhere near.
 - Everything is small, versioned, and auditable in `workers/`.
+
+## Deployment facts (2026-09-13, initial go-live)
+- Worker `pulsehwm-cloud`, URL `https://pulsehwm-cloud.pulsehwm27.workers.dev`
+  (subdomain `pulsehwm27`), D1 `pulsehwm-data` in region EEUR, schema applied.
+- All secrets set via `wrangler secret put`; client IDs live in `vars`
+  inside `wrangler.jsonc`. `workers/.dev.vars` mirrors them locally
+  (gitignored) for `wrangler dev`.
+- Smoke-tested live: signup (Brevo email sent), PKCE exchange with verifier
+  check, password grant (wrong password rejected), `/rest/v1` upsert + fenced
+  read (foreign user 403), refresh rotation, replay-kill of the token family.
+- Google + GitHub OAuth button flows verified up to the provider consent
+  page; complete one real sign-in per provider on a normal browser window
+  (the debugged Brave tab freezes provider consent) to finish that check.

@@ -214,7 +214,9 @@ async function refreshRotate(env, rawToken) {
   )
     .bind(hash)
     .first();
-  if (!row || row.expires_at < nowIso()) {
+  // a revoked token existing here means it was replayed after rotation —
+  // treat the whole family (incl. the current token) as stolen
+  if (!row || row.revoked || row.expires_at < nowIso()) {
     if (row && row.revoked) {
       // replayed a rotated token: the family may be stolen — kill it all
       await env.DB.prepare(`UPDATE refresh_tokens SET revoked = 1 WHERE family_id = ?`)
