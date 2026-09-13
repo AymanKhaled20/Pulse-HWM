@@ -14,9 +14,8 @@ from dotenv import load_dotenv
 # NEVER put Worker secrets (JWT key, Brevo key, OAuth secrets) anywhere
 # in the repo — they live only in the Worker via `wrangler secret put`.
 
-# filled after `npx wrangler deploy` + `wrangler secret put` step
-# (placeholder keeps builds working; empty = accounts disabled)
-DEFAULT_BASE_URL = "https://pulsehwm-cloud.workers.dev"
+# real workers.dev URL after deploy (subdomain = pulsehwm27)
+DEFAULT_BASE_URL = "https://pulsehwm-cloud.pulsehwm27.workers.dev"
 
 DEFAULT_PUBLISHABLE_KEY = "pulsehwm-public"
 

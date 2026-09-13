@@ -592,7 +592,7 @@ async function oauthCallback(env, url, provider) {
   if (!profile.email) return Response.redirect(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, 302);
   const email = profile.email.toLowerCase();
 
-    if (request.method === "GET") {
+  let user = await env.DB.prepare(`SELECT id, email FROM users WHERE email = ?`)
     .bind(email)
     .first();
   if (!user) {
@@ -665,12 +665,12 @@ async function rest(request, env, table) {
     let okRows = 0;
     for (const raw of bodyRows) {
       if (!raw || typeof raw !== "object") continue;
-      const pkVal = row[spec.pk];
+      const pkVal = raw[spec.pk];
       if (pkVal === undefined || pkVal === null || String(pkVal) === "") continue;
       const cols = spec.columns.filter((c) => c !== spec.pk);
       const vals = [];
       for (const c of cols) {
-        let v = row[c];
+        let v = raw[c];
         if (spec.cast[c] === "int") v = v ? 1 : 0;
         vals.push(v === undefined ? null : v);
       }
@@ -682,7 +682,7 @@ async function rest(request, env, table) {
         `INSERT INTO ${table} (${colList}) VALUES (${placeholders.join(", ")})
          ON CONFLICT (user_id, ${spec.pk}) DO UPDATE SET ${updates}`
       )
-        .bind(uid, ...vals, row[spec.pk])
+        .bind(uid, ...vals, raw[spec.pk])
         .run();
       okRows += 1;
     }
