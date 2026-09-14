@@ -32,8 +32,11 @@ class _ColorCard(QWidget):
         super().__init__(parent)
         self._ct = color_theme
         self._active = False  # resolved once by ThemesTab._refresh_active()
-        self.setFixedHeight(62)
+        self.apply_theme()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def apply_theme(self) -> None:
+        self.setFixedHeight(T.s(62))
 
     def set_active(self, on: bool) -> None:
         if self._active != on:
@@ -74,8 +77,11 @@ class _FontCard(QWidget):
         super().__init__(parent)
         self._ft = font_theme
         self._active = False
-        self.setFixedHeight(78)
+        self.apply_theme()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def apply_theme(self) -> None:
+        self.setFixedHeight(T.s(78))
 
     def set_active(self, on: bool) -> None:
         if self._active != on:
@@ -121,13 +127,13 @@ class ThemesTab(QWidget):
         self._manager = theme_manager
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(T.s(10), T.s(10), T.s(10), T.s(10))
+        layout.setSpacing(T.s(10))
 
         # ── colors ───────────────────────────────────────────────────
         colors_panel = PixelPanel("COLOR THEMES")
         self._color_grid = QGridLayout()
-        self._color_grid.setSpacing(6)
+        self._color_grid.setSpacing(T.s(6))
         self._color_cards: dict[str, _ColorCard] = {}
         for i, ct in enumerate(COLOR_THEMES):
             card = _ColorCard(ct)
@@ -142,7 +148,7 @@ class ThemesTab(QWidget):
         # ── fonts ────────────────────────────────────────────────────
         fonts_panel = PixelPanel("FONTS")
         self._font_rows = QVBoxLayout()
-        self._font_rows.setSpacing(6)
+        self._font_rows.setSpacing(T.s(6))
         self._font_cards: dict[str, _FontCard] = {}
         for ft in FONT_THEMES:
             card = _FontCard(ft)
@@ -165,12 +171,26 @@ class ThemesTab(QWidget):
         default_index = self._size_box.findData(self._manager.body_px)
         self._size_box.setCurrentIndex(max(0, default_index))
         self._size_box.currentIndexChanged.connect(self._choose_size)
+        scale_lbl = QLabel("UI SCALE")
+        scale_lbl.setObjectName("panelTitle")
+        self._scale_box = QComboBox()
+        # chrome scale (paddings/borders/widgets). DEFAULT auto-picks from
+        # the screen size at first boot; smaller % = compact laptop shell
+        for pct in (75, 90, 100, 110, 125):
+            self._scale_box.addItem(
+                f"{pct}%" + ("  (DEFAULT)" if pct == 100 else ""), pct
+            )
+        scale_index = self._scale_box.findData(self._manager.ui_scale)
+        self._scale_box.setCurrentIndex(max(0, scale_index))
+        self._scale_box.currentIndexChanged.connect(self._choose_scale)
         reset = QPushButton("RESET TO DEFAULT (AMBER / CLASSIC)")
         reset.setObjectName("danger")
         reset.clicked.connect(lambda: self._manager.apply("amber", "classic"))
         footer = QHBoxLayout()
         footer.addWidget(size_lbl)
         footer.addWidget(self._size_box)
+        footer.addWidget(scale_lbl)
+        footer.addWidget(self._scale_box)
         footer.addWidget(reset)
         footer.addStretch(1)
         layout.addLayout(footer)
@@ -208,3 +228,10 @@ class ThemesTab(QWidget):
         px = self._size_box.itemData(index)
         if px is not None and int(px) != self._manager.body_px:
             self._manager.set_body_px(int(px))
+
+    def _choose_scale(self, index: int) -> None:
+        pct = self._scale_box.itemData(index)
+        if pct is not None and int(pct) != self._manager.ui_scale:
+            # set_ui_scale re-renders the QSS and calls apply_theme() on
+            # every widget, so add_theme-backed fixed sizes update live
+            self._manager.set_ui_scale(int(pct))

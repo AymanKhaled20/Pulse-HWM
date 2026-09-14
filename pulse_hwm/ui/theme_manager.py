@@ -34,6 +34,7 @@ class ThemeManager:
         self.color_id = "amber"
         self.font_id = "classic"
         self.body_px = theme.BASE_BODY_PX
+        self.ui_scale = 100  # chrome scale, percent (75–125)
         self._listeners: list = []
 
     def add_listener(self, callback) -> None:
@@ -41,14 +42,22 @@ class ThemeManager:
         if callback not in self._listeners:
             self._listeners.append(callback)
 
-    def bootstrap(self, color_id: str, font_id: str, body_px: int) -> None:
+    def bootstrap(
+        self, color_id: str, font_id: str, body_px: int, ui_scale: int = 100
+    ) -> None:
         """Boot-time application of the persisted theme (no saving)."""
         self.body_px = body_px
+        self.ui_scale = int(ui_scale)
         self.apply(color_id, font_id, persist=False)
 
     def set_body_px(self, px: int) -> None:
         """User picked a new UI size in THEMES: scale, re-render, persist."""
         self.body_px = int(px)
+        self.apply(self.color_id, self.font_id)
+
+    def set_ui_scale(self, pct: int) -> None:
+        """User picked a new chrome scale in THEMES: re-render + persist."""
+        self.ui_scale = int(pct)
         self.apply(self.color_id, self.font_id)
 
     def apply(self, color_id: str, font_id: str, persist: bool = True) -> None:
@@ -57,11 +66,13 @@ class ThemeManager:
         self.color_id = color.id
         self.font_id = fonts.id
         theme.set_body_px(self.body_px)
+        theme.set_ui_scale_percent(self.ui_scale)
         self._apply_now(color, fonts)
         if persist and self._db is not None:
             app_settings.save_field(self._db, "theme_color", self.color_id)
             app_settings.save_field(self._db, "theme_font", self.font_id)
             app_settings.save_field(self._db, "font_size", self.body_px)
+            app_settings.save_field(self._db, "ui_scale", self.ui_scale)
 
     # ── internals ─────────────────────────────────────────────────────────
     def _apply_now(self, color, fonts) -> None:

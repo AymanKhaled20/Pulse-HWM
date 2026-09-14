@@ -20,8 +20,12 @@ class GaugeBar(QWidget):
         super().__init__(parent)
         self._value = 0.0
         self._segments = segments
-        self.setFixedHeight(14)
-        self.setMinimumWidth(80)
+        self.apply_theme()
+
+    def apply_theme(self) -> None:
+        # geometry scales with the UI scale factor (THEMES tab / screen size)
+        self.setFixedHeight(T.s(14))
+        self.setMinimumWidth(T.s(80))
 
     def set_value(self, pct: float) -> None:
         self._value = max(0.0, min(1.0, pct))
@@ -63,7 +67,10 @@ class CpuCoreGrid(QWidget):
     def __init__(self, cores: list[float] | None = None, parent=None):
         super().__init__(parent)
         self._values: list[float] = cores or []
-        self.setMinimumHeight(44)
+        self.apply_theme()
+
+    def apply_theme(self) -> None:
+        self.setMinimumHeight(T.s(44))
 
     def set_values(self, values: list[float]) -> None:
         self._values = list(values)
@@ -110,9 +117,12 @@ class Led(QWidget):
         super().__init__(parent)
         self._color = color
         self._on = on
-        self.setFixedSize(14, 14)
+        self.apply_theme()
         self._blink_timer = None
         self._blink_on = True
+
+    def apply_theme(self) -> None:
+        self.setFixedSize(T.s(14), T.s(14))
 
     def set_state(self, on: bool, color: str | None = None) -> None:
         self._on = on
