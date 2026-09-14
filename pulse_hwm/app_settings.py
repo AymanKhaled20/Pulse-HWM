@@ -26,6 +26,7 @@ class AppSettings:
     theme_color: str = "amber"  # id from ui/palettes.py COLOR_THEMES
     theme_font: str = "classic"  # id from ui/palettes.py FONT_THEMES
     font_size: int = 18  # UI base size in px; THEMES tab dropdown (14–18)
+    ui_scale: int = 100  # chrome scale in % (75–125); device-local, never synced
 
 
 _INT_KEYS = {
@@ -36,6 +37,7 @@ _INT_KEYS = {
     "process_interval_s",
     "process_max_rows",
     "font_size",
+    "ui_scale",
 }
 _FLOAT_KEYS = {"website_timeout_s"}
 _BOOL_KEYS = {"sound_enabled", "desktop_enabled", "webhooks_enabled", "limit_resources"}
@@ -51,6 +53,7 @@ LIMITS = {
     "process_interval_s": (1, 60),
     "process_max_rows": (50, 2_000),
     "font_size": (14, 18),
+    "ui_scale": (75, 125),
 }
 
 # Cloud sync classification (per plan): portable preferences sync;
@@ -125,6 +128,9 @@ def load(db: Database) -> AppSettings:
     values.font_size = int(read("font_size", int, values.font_size))
     lo, hi = LIMITS["font_size"]
     values.font_size = max(lo, min(hi, values.font_size))
+    values.ui_scale = int(read("ui_scale", int, values.ui_scale))
+    lo, hi = LIMITS["ui_scale"]
+    values.ui_scale = max(lo, min(hi, values.ui_scale))
     return values
 
 
