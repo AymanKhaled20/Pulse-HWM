@@ -52,7 +52,7 @@ class DashboardTab(QWidget):
         outer.setContentsMargins(10, 10, 10, 10)
 
         grid = QGridLayout()
-        grid.setSpacing(10)
+        grid.setSpacing(8)
         outer.addLayout(grid)
 
         # row 0 — system / gpu / temps (temps panel spans down the right rail)
@@ -86,11 +86,10 @@ class DashboardTab(QWidget):
         tracker = PixelPanel("TOP PROCESSES")
         tracker.body().addWidget(self._make_proc_table())
 
-        # HISTORY takes the majority so the plots stay as tall as the
-        # original layout (see the reference screenshot); TOP PROCESSES
-        # still gets a readable chunk below
-        outer.addWidget(history, 2)
-        outer.addWidget(tracker, 1)
+        # HISTORY gets the majority and TOP PROCESSES a readable chunk —
+        # BOTH grow/shrink with the window (their children are stretchable)
+        outer.addWidget(history, 3)
+        outer.addWidget(tracker, 2)
 
         collector.updated.connect(self._on_sample)
 
@@ -240,7 +239,10 @@ class DashboardTab(QWidget):
         self.proc_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.proc_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.proc_table.setShowGrid(False)
-        self.proc_table.setFixedHeight(190)
+        # NOT a fixed height: the table is a stretch member of the outer
+        # layout, so it grows when the window is maximized and shrinks
+        # (fewer visible rows) instead of clipping on small screens
+        self.proc_table.setMinimumHeight(120)
         return self.proc_table
 
     # ── layout helpers ─────────────────────────────────────

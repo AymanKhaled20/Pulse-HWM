@@ -34,9 +34,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(1280, 840)
-        # windowed (restored-down) size can never shrink past this, so the
-        # layout keeps ALL text readable with no scrollbars needed
-        self.setMinimumSize(1180, 820)
+        # windowed (restored-down) size can never shrink past this —
+        # matches the dashboard's true layout minimum so content NEVER
+        # clips: below this, shrink is refused (1366×768 laptops still fit)
+        self.setMinimumSize(1000, 700)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
 
@@ -94,7 +95,7 @@ class MainWindow(QMainWindow):
             self._account_tab = AccountTab(session_manager, oauth_coordinator, db=db)
             if not auth_configured:
                 self._account_tab.apply_cloud_offline(
-                    "accounts disabled — no Supabase project configured"
+                    "accounts disabled — no cloud auth configured"
                 )
                 self._account_tab.set_configured(False)
             else:
