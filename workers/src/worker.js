@@ -393,7 +393,7 @@ async function route(request, env) {
     const code = url.searchParams.get("code") || "";
     const redirect = url.searchParams.get("redirect_to") || "pulsehwm://auth-callback";
     const sep = redirect.includes("?") ? "&" : "?";
-    return Response.redirect(`${redirect}${sep}code=${code}`, 302);
+    return handoffHtml(`${redirect}${sep}code=${code}`);
   }
 
   // ── PostgREST-shaped storage (ownership fenced to the JWT user) ────
@@ -555,10 +555,12 @@ async function oauthAuthorize(env, url, origin) {
       response_type: "code",
       scope: "openid email profile",
       state,
-      prompt: "select_account",
+      // NO prompt param: Google's v3 account-chooser spins forever on the
+      // consent handoff when prompt=select_account is set (observed live).
+      // Without it a signed-in session goes straight to consent/consented.
     });
     // Google wants space-separated scopes as %20 — URLSearchParams emits
-    // "+" and Google's validator now treats those as literal characters
+    // "+" and Google's consent handoff hangs on it (observed live).
     authorizeUrl.search = authorizeUrl.search.replace(
       "scope=openid+email+profile",
       "scope=openid%20email%20profile"
@@ -577,14 +579,34 @@ async function oauthAuthorize(env, url, origin) {
   return Response.redirect(authorizeUrl.toString(), 302);
 }
 
+// ── custom-scheme handoff ─────────────────────────────────────────────
+
+// Browsers can't render a custom scheme: a bare 3xx to pulsehwm:// leaves
+// Firefox/Chrome spinning on a blank tab forever. Serve a tiny HTML page
+// that navigates to the scheme instead, with a visible manual link.
+function handoffHtml(target, note) {
+  // only our scheme / https may be handed off (redirect_to comes from URLs)
+  const ok = /^pulsehwm:|^https:\/\//i.test(target);
+  const safe = (ok ? target : "pulsehwm://auth-callback").replace(/["<>\\]/g, "");
+  const msg = note || "Returning to Pulse-HWM&hellip;";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Pulse-HWM</title>` +
+    `<style>body{background:#0b0b12;color:#d8d8e8;font-family:monospace;display:flex;` +
+    `align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}` +
+    `a{color:#7fd18f}</style></head><body><div><p>${msg}</p>` +
+    `<p><a href="${safe}">If nothing happened, click here</a></p></div>` +
+    `<script>location.replace("${safe}");</script></body></html>`;
+  return new Response(html, {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
+
 async function oauthCallback(env, url, provider) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
   const errDesc = url.searchParams.get("error_description") || url.searchParams.get("error") || "";
   const back = "pulsehwm://auth-callback";
-  const seep = errDesc ? "?error_description=" : "?code=";
   if (errDesc) {
-    return Response.redirect(`${back}${seep}${encodeURIComponent(errDesc)}`, 302);
+    return handoffHtml(`${back}?error_description=${encodeURIComponent(errDesc)}`, `Sign-in failed: ${errDesc}`);
   }
   const row = await env.DB.prepare(`SELECT * FROM oauth_states WHERE state = ?`)
     .bind(state)
@@ -596,8 +618,8 @@ async function oauthCallback(env, url, provider) {
     return fail(400, "unknown or expired sign-in state");
   }
   const profile = await providerProfile(env, provider, code, url.origin);
-  if (!profile) return Response.redirect(`${back}?error_description=${encodeURIComponent("provider sign-in failed")}`, 302);
-  if (!profile.email) return Response.redirect(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, 302);
+  if (!profile) return handoffHtml(`${back}?error_description=${encodeURIComponent("provider sign-in failed")}`, "Provider sign-in failed &mdash; close this tab and try again.");
+  if (!profile.email) return handoffHtml(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, "Provider did not share an email &mdash; close this tab and try again.");
   const email = profile.email.toLowerCase();
 
   let user = await env.DB.prepare(`SELECT id, email FROM users WHERE email = ?`)
@@ -616,7 +638,7 @@ async function oauthCallback(env, url, provider) {
   }
   // the app code is PKCE-bound like any other intent code
   const appCode = await makeIntent(env, user.id, `oauth-${provider}`, row.code_challenge);
-  return Response.redirect(`${back}?code=${encodeURIComponent(appCode)}`, 302);
+  return handoffHtml(`${back}?code=${encodeURIComponent(appCode)}`);
 }
 
 // ── data (PostgREST shapes; fenced to the JWT user) ───────────────────
