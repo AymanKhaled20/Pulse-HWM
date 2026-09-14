@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -142,6 +143,14 @@ class MainWindow(QMainWindow):
             self._scanlines.setGeometry(0, 0, self.width(), self.height())
 
     # ── accounts: slots invoked by app.py callback routing ───────────
+    def bring_to_front(self) -> None:
+        """Unminimize + focus the window when an auth callback arrives —
+        the user is still in the browser and needs to see the result."""
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
     def on_oauth_result(self, ok: bool, error: str) -> None:
         if self._account_tab is None:
             return
@@ -150,6 +159,9 @@ class MainWindow(QMainWindow):
 
     def show_account_feedback(self, message: str) -> None:
         if self._account_tab is not None:
+            # a feedback-only message on the auth path means the flow is
+            # over — release the button lock so the user can retry
+            self._account_tab.release_auth_lock()
             self._account_tab._set_feedback(message)
 
     # ── overall state LED ──────────────────────────────────

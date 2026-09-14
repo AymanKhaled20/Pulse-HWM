@@ -139,8 +139,13 @@ def run() -> int:
     single = SingleInstance()
 
     def handle_incoming_url(url: str) -> None:
+        # the user is still sitting in the browser — surface the window
+        window.bring_to_front()
         callback = parse_callback_url(url)
         if not callback.ok:
+            # dead flow: drop the parked verifier so no later callback can
+            # restore it, and release the buttons for a clean retry
+            coordinator.reject_pending()
             window.show_account_feedback(f"login link problem: {callback.error}")
             return
         # cold launch: this process never issued the sign-in, but the

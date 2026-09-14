@@ -324,8 +324,12 @@ class AccountTab(QWidget):
         info = self._session.session_info
         active = self._session.is_signed_in()
         # the OAuth callback path repaints through here too — release the
-        # in-flight lock so the next sign-in attempt isn't blocked
+        # in-flight lock AND re-enable the buttons (the OAuth flow never
+        # schedules a task, so _on_auth_done/_auth_idle never fire for it;
+        # without this the provider buttons stayed greyed out forever).
+        # persist_enabled() keeps the unconfigured-cloud state respected.
         self._auth_in_flight = False
+        self.set_configured(self.persist_enabled())
         self._signed_out_form.setVisible(not active)
         self._signed_in_panel.setVisible(active)
         if active:
@@ -337,6 +341,13 @@ class AccountTab(QWidget):
             self.status.setText("SIGNED OUT")
             self.btn_sync_now.setEnabled(False)
             self.password.clear()
+
+    def release_auth_lock(self) -> None:
+        """Auth flow ended without a network result (bad/expired callback
+        link, provider error): clear the in-flight latch and re-enable
+        the buttons so the user can simply try again."""
+        self._auth_in_flight = False
+        self.set_configured(self.persist_enabled())
 
     def apply_cloud_offline(self, message: str) -> None:
         """Sync engine / config reports problems here."""
