@@ -52,9 +52,9 @@ class PixelPlot(QWidget):
         layout = pg.QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._plot)
-        # keep the plot area as tall as the original HISTORY layout even
-        # when the processes table below grows its row height
-        self.setMinimumHeight(180)
+        # compressible floor for the plot area: small windows/laptops can
+        # shrink charts instead of clipping the rows below them
+        self.setMinimumHeight(110)
         self.apply_theme()
 
     def apply_theme(self) -> None:

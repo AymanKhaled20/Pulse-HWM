@@ -205,17 +205,16 @@ class ProcessesTab(QWidget):
                 # Manager style, the parent shows the COMBINED footprint
                 kids = rd.get("children") or []
                 if kids:
+                    # app rows carry their adopted background helpers: Task-
+                    # Manager style, the parent shows the COMBINED footprint.
+                    # Stay COLLAPSED — the combined numbers are all a glance
+                    # needs; the helper processes are one click away
                     kids_cpu = rd["cpu"] + sum(k["cpu"] for k in kids)
                     kids_pct = rd["mem_pct"] + sum(k["mem_pct"] for k in kids)
                     kids_rss = rd["mem_rss"] + sum(k["mem_rss"] for k in kids)
                     row_item.setText(COL_CPU, f"{kids_cpu:.1f}")
                     row_item.setText(COL_MEM_PCT, f"{kids_pct:.1f}")
                     row_item.setText(COL_RAM, human_bytes(kids_rss))
-                    # auto-expand ONCE (first time kids arrive): a manual
-                    # collapse must survive every 3s snapshot redraw
-                    if row_item.data(0, Qt.ItemDataRole.UserRole) is None:
-                        row_item.setData(0, Qt.ItemDataRole.UserRole, "auto-expanded")
-                        row_item.setExpanded(True)
                     for kid in kids:
                         seen_pids.add(int(kid["pid"]))
                         self._upsert_row(row_item, kid)
@@ -280,8 +279,10 @@ class ProcessesTab(QWidget):
         item.setData(0, Qt.ItemDataRole.UserRole, category)
         item.setFirstColumnSpanned(True)
         self.tree.addTopLevelItem(item)
-        # BACKGROUND is usually the biggest pile: collapsed, but one click away
-        item.setExpanded(category != "BACKGROUND")
+        # COMPACTED BY DEFAULT: every group starts collapsed — the banner
+        # alone shows name + member count, so the tab opens as a short
+        # readable list instead of a wall of processes. One click expands.
+        item.setExpanded(False)
         return item
 
     def _upsert_row(self, parent: QTreeWidgetItem, rd: dict) -> QTreeWidgetItem:
