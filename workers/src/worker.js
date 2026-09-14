@@ -391,7 +391,10 @@ export default {
     try {
       return await route(request, env);
     } catch (err) {
-      return fail(500, `worker error: ${String(err && err.message).slice(0, 120)}`);
+      // log for observability; the client gets a generic 500 — internal
+      // messages (D1 schemas, stack traces) must never leave the worker
+      console.error("unhandled worker error:", err);
+      return fail(500, "internal error");
     }
   },
 };
@@ -477,11 +480,14 @@ function safeRedirectTo(v) {
 
 async function authSignup(request, env) {
   const body = await request.json().catch(() => ({}));
+  const url = new URL(request.url);
   const email = String(body.email || "").toLowerCase();
   const password = String(body.password || "");
   const challenge = String(body.code_challenge || "");
   if (!email.includes("@")) return fail(400, "unable to validate email address");
   if (password.length < 8) return fail(400, "password must be at least 8 characters");
+  // bound the expensive PBKDF2 work: absurd inputs can't burn Worker CPU
+  if (password.length > 200) return fail(400, "password is too long");
 
   const existing = await env.DB.prepare(`SELECT * FROM users WHERE email = ?`)
     .bind(email)
@@ -501,9 +507,13 @@ async function authSignup(request, env) {
     const salt = randHex();
     const hash = await hashPassword(password, salt, env.HASH_PEPPER || env.JWT_SECRET);
     const id = "u" + randHex(12);
+    // no confirm-email mode (no Brevo) also verifies immediately — else the
+    // account starts usable but the password grant would reject it later
+    // as "email not confirmed" once the first session expires
+    const verified = requireEmail ? 0 : 1;
     await env.DB.prepare(
       `INSERT INTO users (id, email, password_hash, provider, email_verified, created_at)
-       VALUES (?, ?, ?, 'password', 0, ?)`
+       VALUES (?, ?, ?, 'password', ${verified}, ?)`
     )
       .bind(id, email, `${salt}$${hash}`, nowIso())
       .run();
@@ -519,7 +529,11 @@ async function authSignup(request, env) {
   }
 
   const code = await makeIntent(env, user.id, "signup-verify", challenge);
-  const redirectTo = safeRedirectTo(body.redirect_to);
+  // the client sends redirect_to as a QUERY param (rest.py contract) —
+  // accept both spellings, always through the allowlist
+  const redirectTo = safeRedirectTo(
+    url.searchParams.get("redirect_to") || body.redirect_to
+  );
   const link = new URL(request.url);
   link.pathname = "/auth/confirm";
   link.search = `?code=${code}&redirect_to=${encodeURIComponent(redirectTo)}`;
@@ -592,7 +606,9 @@ async function authRecover(request, env) {
     const code = await makeIntent(env, user.id, "recover", challenge);
     const link = new URL(request.url);
     link.pathname = "/auth/confirm";
-    link.search = `?code=${code}&redirect_to=${encodeURIComponent("pulsehwm://auth-callback")}`;
+    // honour the client's redirect contract (query param), allowlisted
+    const redirectTo = safeRedirectTo(link.searchParams.get("redirect_to"));
+    link.search = `?code=${code}&redirect_to=${encodeURIComponent(redirectTo)}`;
     await sendMail(env, email, linkMail(link.toString()));
   }
   return json({}); // shape parity: no enumeration, no tokens
