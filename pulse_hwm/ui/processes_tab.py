@@ -25,7 +25,6 @@ from pulse_hwm.processes import (
     terminate_process,
     trim_working_set,
 )
-from pulse_hwm.ui import theme as T
 from pulse_hwm.util import human_bytes
 
 COL_PID, COL_CPU, COL_MEM_PCT, COL_RAM, COL_USER = 1, 2, 3, 4, 5
@@ -104,8 +103,8 @@ class ProcessesTab(QWidget):
         self._pid_items: dict[int, tuple[QTreeWidgetItem, QTreeWidgetItem]] = {}
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(T.s(10), T.s(10), T.s(10), T.s(10))
-        outer.setSpacing(T.s(8))
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(8)
 
         # ── toolbar ────────────────────────────────────────────────────────
         bar = QHBoxLayout()
@@ -115,7 +114,7 @@ class ProcessesTab(QWidget):
         bar.addStretch(1)
         self.search = QLineEdit()
         self.search.setPlaceholderText("FILTER…")
-        self.search.setFixedWidth(T.s(180))
+        self.search.setFixedWidth(180)
         self.search.textChanged.connect(self._apply_filter)
         bar.addWidget(self.search)
         trim_btn = QPushButton("TRIM MEMORY")

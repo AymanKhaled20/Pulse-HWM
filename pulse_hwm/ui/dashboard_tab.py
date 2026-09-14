@@ -49,10 +49,10 @@ class DashboardTab(QWidget):
         self._temp_names: tuple[str, ...] = ()
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(T.s(10), T.s(10), T.s(10), T.s(10))
+        outer.setContentsMargins(10, 10, 10, 10)
 
         grid = QGridLayout()
-        grid.setSpacing(T.s(10))
+        grid.setSpacing(10)
         outer.addLayout(grid)
 
         # row 0 — system / gpu / temps (temps panel spans down the right rail)
@@ -177,7 +177,7 @@ class DashboardTab(QWidget):
         left.addStretch(1)
         row.addLayout(left, 1)
         self.core_grid = CpuCoreGrid()
-        self.core_grid.setMinimumWidth(T.s(240))
+        self.core_grid.setMinimumWidth(240)
         row.addWidget(self.core_grid, 2)
         body.addLayout(row)
         return panel
@@ -204,7 +204,7 @@ class DashboardTab(QWidget):
     def _make_disk_panel(self) -> PixelPanel:
         panel = PixelPanel("DISKS")
         self.disk_rows_container = QVBoxLayout()
-        self.disk_rows_container.setSpacing(T.s(4))
+        self.disk_rows_container.setSpacing(4)
         self.disk_io_row = QHBoxLayout()
         self.disk_read = StatRow("READ")
         self.disk_write = StatRow("WRITE")
@@ -240,7 +240,7 @@ class DashboardTab(QWidget):
         self.proc_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.proc_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.proc_table.setShowGrid(False)
-        self.proc_table.setFixedHeight(T.s(190))
+        self.proc_table.setFixedHeight(190)
         return self.proc_table
 
     # ── layout helpers ─────────────────────────────────────
@@ -248,7 +248,7 @@ class DashboardTab(QWidget):
         row = QHBoxLayout()
         lbl = QLabel(label)
         lbl.setObjectName("muted")
-        lbl.setFixedWidth(T.s(46))
+        lbl.setFixedWidth(46)
         row.addWidget(lbl)
         row.addWidget(gauge, 1)
         row.addWidget(value)
@@ -327,7 +327,7 @@ class DashboardTab(QWidget):
                 row = QHBoxLayout()
                 mount_lbl = QLabel(d["mount"])
                 mount_lbl.setObjectName("muted")
-                mount_lbl.setFixedWidth(T.s(48))
+                mount_lbl.setFixedWidth(48)
                 row.addWidget(mount_lbl)
                 row.addWidget(gauge, 1)
                 row.addWidget(label)
@@ -460,11 +460,8 @@ class DashboardTab(QWidget):
 class GaugeLed(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.apply_theme()
+        self.setFixedSize(14, 14)
         self.setProperty("ok", True)
-
-    def apply_theme(self) -> None:
-        self.setFixedSize(T.s(14), T.s(14))
 
     def set_state(self, on: bool, color=None) -> None:
         self.setProperty("ok", on)

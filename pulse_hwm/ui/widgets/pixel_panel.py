@@ -3,8 +3,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
-from pulse_hwm.ui import theme as T
-
 
 class PixelPanel(QFrame):
     """Bordered panel with optional title. objectName=pixelPanel for QSS."""
@@ -13,18 +11,13 @@ class PixelPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("pixelPanel")
         self._layout = QVBoxLayout(self)
-        self.apply_theme()
+        self._layout.setContentsMargins(10, 8, 10, 10)
+        self._layout.setSpacing(6)
         self._title = None
         if title:
             self._title = QLabel(title.upper())
             self._title.setObjectName("panelTitle")
             self._layout.addWidget(self._title)
-
-    def apply_theme(self) -> None:
-        # margins scale with the UI chrome scale; called again by the
-        # theme manager whenever the scale changes
-        self._layout.setContentsMargins(T.s(10), T.s(8), T.s(10), T.s(10))
-        self._layout.setSpacing(T.s(6))
 
     def body(self) -> QVBoxLayout:
         return self._layout

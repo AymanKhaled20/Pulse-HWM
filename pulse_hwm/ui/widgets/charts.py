@@ -54,11 +54,11 @@ class PixelPlot(QWidget):
         layout.addWidget(self._plot)
         # keep the plot area as tall as the original HISTORY layout even
         # when the processes table below grows its row height
+        self.setMinimumHeight(180)
         self.apply_theme()
 
     def apply_theme(self) -> None:
         """Re-apply the active palette to cached pens/brushes/backgrounds."""
-        self.setMinimumHeight(T.s(180))
         accent = T.PRIMARY if self._accent == "primary" else T.HIGHLIGHT
         pen = pg.mkPen(QColor(accent), width=1, style=pg.QtCore.Qt.PenStyle.SolidLine)
         self._curve.setPen(pen)

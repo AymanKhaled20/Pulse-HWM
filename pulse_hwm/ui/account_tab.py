@@ -16,7 +16,6 @@ from pulse_hwm.auth.oauth import OauthCoordinator
 from pulse_hwm.auth.rest import AuthResult
 from pulse_hwm.auth.session import SessionManager
 from pulse_hwm.auth.validators import clean_email, validate_email, validate_password
-from pulse_hwm.ui import theme as T
 
 # The ACCOUNT tab: sign-in / sign-up / sign-out + SYNC NOW.
 #
@@ -77,8 +76,8 @@ class AccountTab(QWidget):
         self._signals.open_url.connect(self._open_browser)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(T.s(10), T.s(10), T.s(10), T.s(10))
-        outer.setSpacing(T.s(8))
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(8)
 
         hero = QHBoxLayout()
         self.title = QLabel("ACCOUNT")

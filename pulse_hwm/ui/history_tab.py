@@ -35,8 +35,8 @@ class HistoryTab(QWidget):
         self._db = db
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(T.s(10), T.s(10), T.s(10), T.s(10))
-        layout.setSpacing(T.s(10))
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
         charts_row = QHBoxLayout()
         self.cpu_plot = PixelPlot()
