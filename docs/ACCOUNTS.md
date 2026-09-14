@@ -68,7 +68,9 @@ belong there if you'd rather not use secrets.
 - No free-tier pausing (Workflows/D1 free tier doesn't hibernate).
 - Emails: Brevo when configured; without it, signup issues tokens
   immediately (dev/self-host mode). 300/day free remains the practical cap.
-- Free D1 caps: 500 MB, 5M rows read/day — private-sync usage is nowhere near.
+- Free D1 caps: 500 MB, 5M rows read/day, 100k rows written/day — all reset
+  at 00:00 UTC daily; private-sync usage is nowhere near. If a cap is ever
+  hit, the recovery path is upgrading the account to a Workers Paid plan.
 - Everything is small, versioned, and auditable in `workers/`.
 
 ## Deployment facts (2026-09-13, initial go-live)
