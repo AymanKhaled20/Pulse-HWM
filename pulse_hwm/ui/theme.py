@@ -81,77 +81,10 @@ MIN_FONT_PX = 14
 BASE_BODY_PX = 18  # shipped default
 _body_px = BASE_BODY_PX
 
-# ── UI chrome scale ────────────────────────────────────────────
-# ONE multiplier for all non-font geometry: paddings, borders, scrollbar
-# widths, fixed widget sizes, margins, window minimum size. Fonts keep
-# their own knob (body_px) so a font-size choice never double-scales.
-# Expressed as an integer PERCENT in settings (75–125), stored as a
-# float multiplier here. s() is the only helper widgets may use — every
-# hardcoded px in a widget must go through it (or a token in theme.qss).
-UI_SCALE_MIN = 0.75
-UI_SCALE_MAX = 1.25
-_ui_scale = 1.0
-
-
-def ui_scale() -> float:
-    return _ui_scale
-
-
-def set_ui_scale(scale: float) -> None:
-    global _ui_scale
-    _ui_scale = max(UI_SCALE_MIN, min(UI_SCALE_MAX, float(scale)))
-
-
-def s(px: int | float) -> int:
-    """Scale a raw pixel value by the UI scale (never below 1px)."""
-    return max(1, round(px * _ui_scale))
-
-
-def auto_ui_scale_for_height(screen_h: int) -> int:
-    """Percent scale picked at first boot from the screen height (pure).
-    Small laptop panels need a compact shell; desktops get the default."""
-    if screen_h <= 768:
-        return 75
-    if screen_h <= 900:
-        return 90
-    return 100
-
-
 # integer px per role — QSS emits these as "Npx" (a unitless "font-size: 24;"
 # is a QSS parse error and Qt silently drops the rule: it once shrank every
 # table/UI font to the ~12px system default)
 SIZES: dict[str, int] = {}
-
-# chrome geometry (px, scaled by _ui_scale) — consumed by render_qss()
-CHROME: dict[str, int] = {}
-
-
-def _rebuild_chrome() -> None:
-    """Derive every chrome (non-font) size from the UI scale."""
-    s = _ui_scale
-    b = max(1, round(2 * s))  # the thematic 2px border
-    CHROME.update(
-        {
-            "border": b,
-            "border1": max(1, round(1 * s)),
-            "spacing": max(2, round(2 * s)),  # letter-spacing, separators
-            "tab_pad_v": max(3, round(8 * s)),
-            "tab_pad_h": max(6, round(18 * s)),
-            "btn_pad_v": max(3, round(7 * s)),
-            "btn_pad_h": max(6, round(14 * s)),
-            "in_pad_v": max(2, round(4 * s)),
-            "in_pad_h": max(4, round(8 * s)),
-            "scroll": max(8, round(14 * s)),
-            "handle": max(12, round(24 * s)),
-            "indicator": max(10, round(16 * s)),
-            "spin_btn": max(10, round(16 * s)),
-            "combo_dd": max(14, round(24 * s)),
-            "pad2": max(2, round(2 * s)),
-            "pad6": max(3, round(6 * s)),
-            "menu_pad_v": max(3, round(6 * s)),
-            "menu_pad_h": max(16, round(28 * s)),
-        }
-    )
 
 
 def _rebuild_sizes() -> None:
@@ -185,15 +118,6 @@ def set_body_px(px: int) -> None:
     global _body_px
     _body_px = max(MIN_FONT_PX, min(BASE_BODY_PX, int(px)))
     _rebuild_sizes()
-
-
-def set_ui_scale_percent(pct: int) -> None:
-    """Set chrome scale from the persisted percent (75–125); rebuild chrome."""
-    set_ui_scale(int(pct) / 100.0)
-    _rebuild_chrome()
-
-
-_rebuild_chrome()
 
 
 def tick_font() -> QFont:
@@ -263,27 +187,6 @@ def render_qss(color: ColorTheme, fonts: FontTheme) -> str:
         "TABLE_PX_LG": f"{SIZES['table_lg']}px",
         "STAT_PX": f"{SIZES['stat']}px",
         "HEADER_PX": f"{SIZES['display']}px",
-        # chrome geometry (scaled by UI scale — chrome tokens, see CHROME)
-        "BORDER": f"{CHROME['border']}px",
-        "BORDER1": f"{CHROME['border1']}px",
-        "SPACING": f"{CHROME['spacing']}px",
-        "TAB_PAD_V": f"{CHROME['tab_pad_v']}px",
-        "TAB_PAD_H": f"{CHROME['tab_pad_h']}px",
-        "BTN_PAD_V": f"{CHROME['btn_pad_v']}px",
-        "BTN_PAD_H": f"{CHROME['btn_pad_h']}px",
-        "BTN_PRESS_V": f"{CHROME['btn_pad_v'] + 1}px",
-        "BTN_PRESS_H": f"{max(2, CHROME['btn_pad_h'] - 1)}px",
-        "IN_PAD_V": f"{CHROME['in_pad_v']}px",
-        "IN_PAD_H": f"{CHROME['in_pad_h']}px",
-        "SCROLL": f"{CHROME['scroll']}px",
-        "HANDLE": f"{CHROME['handle']}px",
-        "INDICATOR": f"{CHROME['indicator']}px",
-        "SPIN_BTN": f"{CHROME['spin_btn']}px",
-        "COMBO_DD": f"{CHROME['combo_dd']}px",
-        "PAD2": f"{CHROME['pad2']}px",
-        "PAD6": f"{CHROME['pad6']}px",
-        "MENU_PAD_V": f"{CHROME['menu_pad_v']}px",
-        "MENU_PAD_H": f"{CHROME['menu_pad_h']}px",
     }
     return string.Template(template).substitute(subs)
 

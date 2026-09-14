@@ -49,23 +49,9 @@ def run() -> int:
     # Fonts first (QFontDatabase has no styling), then the SAVED theme —
     # before any window is built, so the app never flashes default colors.
     load_fonts()
-    # UI scale: use the saved value; on first run auto-pick from the screen
-    # size so laptops boot compact instead of oversized
-    saved_scale = db.get_setting("ui_scale", "")
-    if saved_scale == "":
-        from pulse_hwm.ui.theme import auto_ui_scale_for_height
-
-        screen = QGuiApplication.primaryScreen()
-        settings.ui_scale = auto_ui_scale_for_height(
-            screen.availableGeometry().height() if screen else 1080
-        )
-        db.set_setting("ui_scale", str(settings.ui_scale))
     theme_manager = ThemeManager(app, db)
     theme_manager.bootstrap(
-        settings.theme_color,
-        settings.theme_font,
-        settings.font_size,
-        ui_scale=settings.ui_scale,
+        settings.theme_color, settings.theme_font, settings.font_size
     )
 
     hardware_thread = QThread()

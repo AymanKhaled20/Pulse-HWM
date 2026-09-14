@@ -26,7 +26,7 @@ QLabel#title {
     font-family: '$TITLE_FONT';
     font-size: $TITLE_PX;
     color: $PRIMARY;
-    letter-spacing: ${SPACING}px;
+    letter-spacing: 2px;
 }
 
 QLabel#panelTitle {
@@ -48,7 +48,7 @@ QLabel#muted, QLabel#unit {
 /* ── pixel panels ───────────────────────────────────────── */
 QFrame#pixelPanel {
     background-color: $PANEL;
-    border: ${BORDER}px solid $LINE;
+    border: 2px solid $LINE;
     border-radius: 0px;
 }
 QFrame#pixelPanel:hover {
@@ -57,7 +57,7 @@ QFrame#pixelPanel:hover {
 
 /* ── tabs ───────────────────────────────────────────────── */
 QTabWidget::pane {
-    border: ${BORDER}px solid $LINE;
+    border: 2px solid $LINE;
     background: $BG;
     top: -1px;
 }
@@ -66,10 +66,10 @@ QTabBar::tab {
     color: $MUTED;
     font-family: '$DISPLAY_FONT';
     font-size: $DISPLAY_PX;
-    padding: ${TAB_PAD_V}px ${TAB_PAD_H}px;
-    border: ${BORDER}px solid $LINE;
+    padding: 8px 18px;
+    border: 2px solid $LINE;
     border-bottom: none;
-    margin-right: ${SPACING}px;
+    margin-right: 2px;
 }
 QTabBar::tab:selected {
     color: $BG;
@@ -84,11 +84,11 @@ QTabBar::tab:hover:!selected {
 /* ── buttons ────────────────────────────────────────────── */
 QPushButton {
     background: $PANEL;
-    border: ${BORDER}px solid $PRIMARY;
+    border: 2px solid $PRIMARY;
     color: $PRIMARY;
     font-family: '$DISPLAY_FONT';
     font-size: $DISPLAY_PX;
-    padding: ${BTN_PAD_V}px ${BTN_PAD_H}px;
+    padding: 7px 14px;
     border-radius: 0px;
 }
 QPushButton:hover {
@@ -98,8 +98,8 @@ QPushButton:hover {
 QPushButton:pressed {
     background: $HIGHLIGHT;
     color: $BG;
-    padding-top: ${BTN_PRESS_V}px;
-    padding-bottom: ${BTN_PRESS_H}px;
+    padding-top: 8px;
+    padding-bottom: 6px;
 }
 QPushButton:disabled {
     border-color: $LINE;
@@ -126,11 +126,11 @@ QPushButton#success:hover {
 /* ── inputs ─────────────────────────────────────────────── */
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
     background: $PANEL_ALT;
-    border: ${BORDER}px solid $LINE;
+    border: 2px solid $LINE;
     color: $TEXT;
     font-family: '$BODY_FONT';
     font-size: $BODY_PX;
-    padding: ${IN_PAD_V}px ${IN_PAD_H}px;
+    padding: 4px 8px;
     border-radius: 0px;
 }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
@@ -138,19 +138,19 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
 }
 QComboBox::drop-down {
     border: none;
-    width: ${COMBO_DD}px;
+    width: 24px;
 }
 QComboBox QAbstractItemView {
     background: $PANEL;
-    border: ${BORDER}px solid $PRIMARY;
+    border: 2px solid $PRIMARY;
     selection-background-color: $PRIMARY;
     selection-color: $BG;
 }
 QSpinBox::up-button, QDoubleSpinBox::up-button,
 QSpinBox::down-button, QDoubleSpinBox::down-button {
     background: $PANEL;
-    border: ${BORDER1}px solid $LINE;
-    width: ${SPIN_BTN}px;
+    border: 1px solid $LINE;
+    width: 16px;
 }
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
@@ -160,7 +160,7 @@ QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
 /* ── tables ─────────────────────────────────────────────── */
 QTableWidget, QTableView {
     background: $PANEL_ALT;
-    border: ${BORDER}px solid $LINE;
+    border: 2px solid $LINE;
     gridline-color: $LINE;
     font-family: '$BODY_FONT';
     font-size: $TABLE_PX;
@@ -170,19 +170,19 @@ QHeaderView::section {
     color: $HIGHLIGHT;
     font-family: '$DISPLAY_FONT';
     font-size: $HEADER_PX;
-    padding: ${PAD6}px;
-    border: ${BORDER1}px solid $LINE;
+    padding: 6px;
+    border: 1px solid $LINE;
     border-radius: 0px;
 }
 QTableCornerButton::section {
     background: $PANEL;
-    border: ${BORDER1}px solid $LINE;
+    border: 1px solid $LINE;
 }
 
 /* ── trees (processes) ──────────────────────────────────── */
 QTreeWidget {
     background: $PANEL_ALT;
-    border: ${BORDER}px solid $LINE;
+    border: 2px solid $LINE;
     font-family: '$BODY_FONT';
     font-size: $TABLE_PX_LG;
 }
@@ -194,12 +194,12 @@ QTreeWidget::item:selected {
 /* ── scrollbars ─────────────────────────────────────────── */
 QScrollBar:vertical {
     background: $BG;
-    width: ${SCROLL}px;
-    border-left: ${BORDER}px solid $LINE;
+    width: 14px;
+    border-left: 2px solid $LINE;
 }
 QScrollBar::handle:vertical {
     background: $PRIMARY;
-    min-height: ${HANDLE}px;
+    min-height: 24px;
     border: none;
 }
 QScrollBar::handle:vertical:hover {
@@ -210,12 +210,12 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 }
 QScrollBar:horizontal {
     background: $BG;
-    height: ${SCROLL}px;
-    border-top: ${BORDER}px solid $LINE;
+    height: 14px;
+    border-top: 2px solid $LINE;
 }
 QScrollBar::handle:horizontal {
     background: $PRIMARY;
-    min-width: ${COMBO_DD}px;
+    min-width: 24px;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0px;
@@ -223,10 +223,10 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 
 /* ── checkboxes / toggles ───────────────────────────────── */
 QCheckBox::indicator, QRadioButton::indicator {
-    width: ${INDICATOR}px;
-    height: ${INDICATOR}px;
+    width: 16px;
+    height: 16px;
     background: $PANEL_ALT;
-    border: ${BORDER}px solid $LINE;
+    border: 2px solid $LINE;
 }
 QCheckBox::indicator:hover, QRadioButton::indicator:hover {
     border-color: $PRIMARY;
@@ -245,13 +245,13 @@ QCheckBox, QRadioButton {
 /* ── menus / tray ───────────────────────────────────────── */
 QMenu {
     background: $PANEL;
-    border: ${BORDER}px solid $PRIMARY;
-    padding: ${PAD2}px;
+    border: 2px solid $PRIMARY;
+    padding: 2px;
 }
 QMenu::item {
     font-family: '$BODY_FONT';
     font-size: $BODY_PX;
-    padding: ${MENU_PAD_V}px ${MENU_PAD_H}px;
+    padding: 6px 28px;
     color: $TEXT;
 }
 QMenu::item:selected {
@@ -259,22 +259,22 @@ QMenu::item:selected {
     color: $BG;
 }
 QMenu::separator {
-    height: ${BORDER}px;
+    height: 2px;
     background: $LINE;
-    margin: ${PAD2}px ${PAD6}px;
+    margin: 2px 6px;
 }
 
 /* ── misc ───────────────────────────────────────────────── */
 QToolTip {
     background: $PANEL;
     color: $HIGHLIGHT;
-    border: ${BORDER1}px solid $PRIMARY;
+    border: 1px solid $PRIMARY;
     font-family: '$BODY_FONT';
     font-size: $DISPLAY_PX;
 }
 QProgressBar {
     background: $PANEL_ALT;
-    border: ${BORDER}px solid $LINE;
+    border: 2px solid $LINE;
     border-radius: 0px;
     text-align: center;
     font-family: '$BODY_FONT';
@@ -286,5 +286,3 @@ QProgressBar::chunk {
 QSplitter::handle {
     background: $LINE;
 }
-
-

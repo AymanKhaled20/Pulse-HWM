@@ -45,10 +45,7 @@ class _LedWidget(QWidget):
         super().__init__(parent)
         self._state = state
         self._blink = False  # True while a manual check cycle is in flight
-        self.apply_theme()
-
-    def apply_theme(self) -> None:
-        self.setFixedSize(T.s(30), T.s(20))
+        self.setFixedSize(30, 20)
 
     def set_state(self, state: str) -> None:
         self._state = state
@@ -79,7 +76,7 @@ class SiteDialog(QDialog):
     def __init__(self, parent=None, site: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle("EDIT SITE" if site else "ADD SITE")
-        self.setMinimumWidth(T.s(420))
+        self.setMinimumWidth(420)
         form = QFormLayout(self)
         site = site or {}
 
@@ -147,8 +144,8 @@ class SitesTab(QWidget):
         self._check_cap.timeout.connect(self._end_check_feedback)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(T.s(10), T.s(10), T.s(10), T.s(10))
-        layout.setSpacing(T.s(10))
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
         top = PixelPanel("SITES")
         self.table = QTableWidget(0, COLUMNS)

@@ -20,7 +20,6 @@ from pulse_hwm.alerts.notifier import AlertChannels
 from pulse_hwm.app_settings import AppSettings
 from pulse_hwm.db import Database
 from pulse_hwm.processes import set_low_priority_mode, trim_working_set
-from pulse_hwm.ui import theme as T
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 from pulse_hwm.util import is_admin
 
@@ -46,8 +45,8 @@ class SettingsTab(QWidget):
             self.processes_reconfigure.connect(processes_collector.reconfigure)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(T.s(10), T.s(10), T.s(10), T.s(10))
-        outer.setSpacing(T.s(10))
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(10)
 
         panel = PixelPanel("MONITORING")
         form = QFormLayout()
@@ -304,6 +303,6 @@ class SettingsTab(QWidget):
         self.test_banner.setVisible(True)
         self.test_banner.setStyleSheet(
             "background-color: #FFD400; color: #0A0A0A;"
-            f"font-family: 'Silkscreen'; font-size: {T.s(14)}px; padding: {T.s(10)}px;"
+            "font-family: 'Silkscreen'; font-size: 14px; padding: 10px;"
         )
         QTimer.singleShot(2500, lambda: self.test_banner.setVisible(False))

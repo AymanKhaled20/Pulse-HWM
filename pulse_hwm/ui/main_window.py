@@ -33,15 +33,10 @@ class MainWindow(QMainWindow):
         self._theme_manager = theme_manager
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
-        # default boot size + the shrink floor scale with the UI chrome
-        # scale (theme.s): laptops can still open a compact window
-        from pulse_hwm.ui import theme as T
-
-        self.resize(T.s(1280), T.s(840))
+        self.resize(1280, 840)
         # windowed (restored-down) size can never shrink past this, so the
-        # layout keeps ALL text readable — lowered from 1180×820 and now
-        # scale-aware so small screens aren't locked out of compact layouts
-        self.setMinimumSize(T.s(920), T.s(640))
+        # layout keeps ALL text readable with no scrollbars needed
+        self.setMinimumSize(1180, 820)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
 
