@@ -308,6 +308,8 @@ async function consumeIntent(env, authCode, verifier) {
 
 /** Exchange a provider authorization code for a normalized user profile. */
 async function providerProfile(env, provider, code, origin) {
+  // returns {email, uid} on success or {error} on failure — the error text
+  // travels to the handoff page so failures are never silent guesses
   if (provider === "google") {
     const r = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -320,12 +322,13 @@ async function providerProfile(env, provider, code, origin) {
         grant_type: "authorization_code",
       }),
     });
-    if (!r.ok) return null;
+    if (!r.ok) return { error: `google token http ${r.status}` };
     const t = await r.json();
+    if (t.error) return { error: `google token: ${t.error}` };
     const me = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
       headers: { Authorization: `Bearer ${t.access_token}` },
     });
-    if (!me.ok) return null;
+    if (!me.ok) return { error: `google userinfo http ${me.status}` };
     const p = await me.json();
     return { email: String(p.email || ""), uid: `google:${p.sub}` };
   }
@@ -340,18 +343,26 @@ async function providerProfile(env, provider, code, origin) {
         redirect_uri: `${origin}/cb/github`,
       }),
     });
-    if (!r.ok) return null;
+    if (!r.ok) return { error: `github token http ${r.status}` };
     const t = await r.json();
-    if (!t.access_token) return null;
+    // GitHub answers 200 with an error body for bad/expired codes
+    if (t.error) return { error: `github token: ${t.error}` };
+    if (!t.access_token) return { error: "github token: no access_token" };
+    // GitHub API rejects requests with no User-Agent (403) — Workers'
+    // fetch sends none by default, so set one explicitly
+    const ghHeaders = {
+      "user-agent": "PulseHWM-Auth",
+      accept: "application/vnd.github+json",
+    };
     const me = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${t.access_token}`, accept: "application/vnd.github+json" },
+      headers: { ...ghHeaders, Authorization: `Bearer ${t.access_token}` },
     });
-    if (!me.ok) return null;
+    if (!me.ok) return { error: `github user http ${me.status}` };
     const p = await me.json();
     let email = p.email;
     if (!email) {
       const em = await fetch("https://api.github.com/user/emails", {
-        headers: { Authorization: `Bearer ${t.access_token}`, accept: "application/vnd.github+json" },
+        headers: { ...ghHeaders, Authorization: `Bearer ${t.access_token}` },
       });
       if (em.ok) {
         const list = await em.json();
@@ -361,7 +372,7 @@ async function providerProfile(env, provider, code, origin) {
     }
     return { email: String(email || ""), uid: `github:${p.id}` };
   }
-  return null;
+  return { error: "unsupported provider" };
 }
 
 // ── the router ────────────────────────────────────────────────────────
@@ -620,9 +631,16 @@ function handoffHtml(target, note) {
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Pulse-HWM</title>` +
     `<style>body{background:#0b0b12;color:#d8d8e8;font-family:monospace;display:flex;` +
     `align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}` +
-    `a{color:#7fd18f}</style></head><body><div><p>${msg}</p>` +
-    `<p><a href="${safe}">If nothing happened, click here</a></p></div>` +
-    `<script>location.replace("${safe}");</script></body></html>`;
+    `a{color:#7fd18f}button{background:#1a1a2e;color:#d8d8e8;border:1px solid #3a3a5e;` +
+    `font-family:monospace;font-size:14px;padding:8px 16px;cursor:pointer;margin-top:12px}` +
+    `</style></head><body><div><p>${msg}</p>` +
+    `<p><a href="${safe}">If nothing happened, click here</a></p>` +
+    `<button onclick="go()">Open Pulse-HWM</button></div>` +
+    // location.replace to a custom scheme is silently blocked by some
+    // browsers without a user gesture; location.href + a real click
+    // handler give the handler two chances to fire
+    `<script>function go(){window.location.href="${safe}";}` +
+    `setTimeout(go,400);</script></body></html>`;
   return new Response(html, {
     headers: { "content-type": "text/html; charset=utf-8" },
   });
@@ -647,8 +665,13 @@ async function oauthCallback(env, url, provider) {
     return fail(400, "unknown or expired sign-in state");
   }
   const profile = await providerProfile(env, provider, code, url.origin);
-  if (!profile) return handoffHtml(`${back}?error_description=${encodeURIComponent("provider sign-in failed")}`, "Provider sign-in failed &mdash; close this tab and try again.");
-  if (!profile.email) return handoffHtml(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, "Provider did not share an email &mdash; close this tab and try again.");
+  if (profile.error)
+    return handoffHtml(
+      `${back}?error_description=${encodeURIComponent(profile.error)}`,
+      `Sign-in failed: ${profile.error}`
+    );
+  if (!profile.email)
+    return handoffHtml(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, "Provider did not share an email &mdash; close this tab and try again.");
   const email = profile.email.toLowerCase();
 
   let user = await env.DB.prepare(`SELECT id, email FROM users WHERE email = ?`)
