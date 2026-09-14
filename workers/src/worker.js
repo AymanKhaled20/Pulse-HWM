@@ -26,29 +26,24 @@ const enc = new TextEncoder();
 
 // ── utilities ──────────────────────────────────────────────────────────
 
-/** Return the current UTC time in the database's ISO format. */
 function nowIso() {
   return new Date().toISOString().replace("Z", "+00:00");
 }
 
-/** Return a database-formatted UTC time a number of seconds from now. */
 function isoIn(seconds) {
   return new Date(Date.now() + seconds * 1000).toISOString().replace("Z", "+00:00");
 }
 
-/** Encode bytes as unpadded base64url text. */
 function b64url(bytes) {
   let s = "";
   for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** Serialize a value as JSON and encode it as base64url text. */
 function b64urlJson(obj) {
   return b64url(enc.encode(JSON.stringify(obj)));
 }
 
-/** Decode base64url text into bytes. */
 function fromB64url(text) {
   const pad = text.replace(/-/g, "+").replace(/_/g, "/");
   return Uint8Array.from(
@@ -57,21 +52,18 @@ function fromB64url(text) {
   );
 }
 
-/** Generate a cryptographically random base64url token. */
 function randToken(nBytes = 32) {
   const b = new Uint8Array(nBytes);
   crypto.getRandomValues(b);
   return b64url(b);
 }
 
-/** Generate a cryptographically random hexadecimal string. */
 function randHex(nBytes = 16) {
   const b = new Uint8Array(nBytes);
   crypto.getRandomValues(b);
   return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-/** Hash text with SHA-256 and return its hexadecimal digest. */
 async function sha256Hex(text) {
   const d = await crypto.subtle.digest("SHA-256", enc.encode(text));
   return [...new Uint8Array(d)]
@@ -80,12 +72,10 @@ async function sha256Hex(text) {
 }
 
 // PKCE challenge = base64url(sha256(verifier)) — must equal pkce.py
-/** Derive the PKCE challenge for a verifier. */
 async function pkceChallenge(verifier) {
   return b64url(await crypto.subtle.digest("SHA-256", enc.encode(verifier)));
 }
 
-/** Sign a payload as an HS256 JSON Web Token. */
 async function hmacJwtSign(secret, payload) {
   const head = b64urlJson({ alg: "HS256", typ: "JWT" });
   const body = b64urlJson(payload);
@@ -100,7 +90,6 @@ async function hmacJwtSign(secret, payload) {
   return `${head}.${body}.${b64url(sig)}`;
 }
 
-/** Verify and decode an HS256 token, returning null when invalid. */
 async function hmacJwtVerify(secret, token) {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
@@ -124,7 +113,13 @@ async function hmacJwtVerify(secret, token) {
   }
   if (!ok) return null;
   try {
-    return JSON.parse(new TextDecoder().decode(fromB64url(parts[1])));
+    const payload = JSON.parse(new TextDecoder().decode(fromB64url(parts[1])));
+    // expired access tokens must never authenticate anything, even though
+    // the signature is still valid
+    if (!payload || typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now()) {
+      return null;
+    }
+    return payload;
   } catch {
     return null;
   }
@@ -132,7 +127,6 @@ async function hmacJwtVerify(secret, token) {
 
 const ITER = 20000;
 
-/** Derive a hexadecimal key from text using PBKDF2-SHA256. */
 async function pbkdf2Hex(text, saltText, iterations = ITER) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -151,14 +145,19 @@ async function pbkdf2Hex(text, saltText, iterations = ITER) {
     .join("");
 }
 
-/** Hash a password using the per-user salt and server-side pepper. */
 async function hashPassword(password, saltHex, pepper) {
   return pbkdf2Hex(password, saltHex + "|" + pepper);
 }
 
 // ── email (Brevo HTTP API) ─────────────────────────────────────────────
 
-/** Send an account email through Brevo when email delivery is configured. */
+// the branded icon served from /branding/logo.png (16-color quantized,
+// 160px ≈ 4 KB) — embedded as base64 so the worker needs no external asset
+const EMAIL_LOGO_PNG_B64 =
+ "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";  //# pulse-scan:allow embedded PNG, not a secret
+
+
+
 async function sendMail(env, to, msg) {
   if (!env.BREVO_API_KEY || !env.SENDER_EMAIL) return false;
   const r = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -179,22 +178,24 @@ async function sendMail(env, to, msg) {
   return r.ok;
 }
 
-/** Build the text and HTML versions of a one-time-link email. */
 function linkMail(url) {
   const safe = url.replace(/&/g, "&amp;");
+  const dark = "#0a0a0a";
   return {
     subject: "Pulse-HWM sign-in link",
     text: `One-time sign-in link (valid 24h):\n${url}\n\nIf you did not request this, ignore the email.`,
-    html: `<p style="font-family:monospace;color:#333">PULSE-HWM</p>
-<p style="font-family:sans-serif">Open this one-time link to finish signing in (valid 24h):<br>
-<a href="${safe}">Confirm sign-in</a></p>
-<p style="color:#888;font-family:sans-serif">If you did not request this, ignore this email.</p>`,
+    html: `<div style="max-width:480px;margin:0 auto;padding:24px;background:#0a0a0a;color:#e8e8e8;font-family:sans-serif;border:1px solid #2e2e2e;border-radius:6px">
+<img src="https://pulsehwm-cloud.pulsehwm27.workers.dev/branding/logo.png" alt="Pulse-HWM" width="80" height="80" style="display:block;margin:0 auto 12px;border-radius:4px">
+<div style="font-family:monospace;font-size:12px;letter-spacing:3px;color:#6a6a6a;text-align:center">PULSE-HWM</div>
+<p style="font-family:sans-serif;font-size:15px;color:#e8e8e8">Open this one-time link to finish signing in (valid 24h):</p>
+<p style="text-align:center;margin:20px 0"><a href="${safe}" style="background:#ffd400;color:#0a0a0a;font-family:monospace;font-size:14px;font-weight:bold;text-decoration:none;padding:12px 28px;border-radius:4px;display:inline-block">CONFIRM SIGN-IN</a></p>
+<p style="color:#6a6a6a;font-family:sans-serif;font-size:12px">If you did not request this, ignore this email.</p>
+</div>`,
   };
 }
 
 // ── tokens ─────────────────────────────────────────────────────────────
 
-/** Mint an access token and persisted refresh token for a user. */
 async function mintTokens(env, user) {
   const iat = Math.floor(Date.now() / 1000);
   const ttl = Number(env.ACCESS_TTL_S || 3600);
@@ -222,7 +223,6 @@ async function mintTokens(env, user) {
 
 // Replay of an already-rotated refresh token = the family was stolen;
 // Supabase-style: kill the whole family so any thief is locked out too.
-/** Rotate a refresh token and revoke its family if replay is detected. */
 async function refreshRotate(env, rawToken) {
   const hash = await sha256Hex(rawToken);
   const row = await env.DB.prepare(
@@ -242,9 +242,22 @@ async function refreshRotate(env, rawToken) {
     }
     return null;
   }
-  await env.DB.prepare(`UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?`)
-    .bind(hash)
+  // the consume MUST be atomic: condition on the token still being active
+  // so two replays racing the same token can never both mint replacements
+  const consumed = await env.DB.prepare(
+    `UPDATE refresh_tokens SET revoked = 1
+     WHERE token_hash = ? AND revoked = 0 AND expires_at > ?`
+  )
+    .bind(hash, nowIso())
     .run();
+  if (!consumed.meta || consumed.meta.changes !== 1) {
+    // we lost the race (or the row flipped since the SELECT) — that is
+    // token reuse: the family may be stolen, kill it all
+    await env.DB.prepare(`UPDATE refresh_tokens SET revoked = 1 WHERE family_id = ?`)
+      .bind(row.family_id)
+      .run();
+    return null;
+  }
   const access = await hmacJwtSign(env.JWT_SECRET, {
     sub: row.user_id,
     email: row.email,
@@ -268,7 +281,6 @@ async function refreshRotate(env, rawToken) {
   };
 }
 
-/** Validate a bearer token and return its payload. */
 async function bearerPayload(env, request) {
   const auth = request.headers.get("Authorization") || "";
   if (!auth.startsWith("Bearer ")) return null;
@@ -277,7 +289,6 @@ async function bearerPayload(env, request) {
 
 // ── intent codes (email-link / OAuth app codes) ───────────────────────
 
-/** Persist a one-time, PKCE-bound authentication intent. */
 async function makeIntent(env, userId, kind, challenge) {
   const code = randToken();
   await env.DB.prepare(
@@ -289,7 +300,6 @@ async function makeIntent(env, userId, kind, challenge) {
   return code;
 }
 
-/** Consume and validate a one-time authentication intent. */
 async function consumeIntent(env, authCode, verifier) {
   const row = await env.DB.prepare(`SELECT * FROM intent_codes WHERE code = ?`)
     .bind(authCode)
@@ -306,7 +316,6 @@ async function consumeIntent(env, authCode, verifier) {
 
 // ── provider exchanges ─────────────────────────────────────────────────
 
-/** Exchange a provider authorization code for a normalized user profile. */
 async function providerProfile(env, provider, code, origin) {
   // returns {email, uid} on success or {error} on failure — the error text
   // travels to the handoff page so failures are never silent guesses
@@ -378,7 +387,6 @@ async function providerProfile(env, provider, code, origin) {
 // ── the router ────────────────────────────────────────────────────────
 
 export default {
-  /** Handle an incoming Cloudflare Worker request. */
   async fetch(request, env, ctx) {
     try {
       return await route(request, env);
@@ -388,13 +396,22 @@ export default {
   },
 };
 
-/** Route a request to the matching auth or storage endpoint. */
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = request.method;
 
   if (path === "/") return json({ app: "PulseHWM cloud", ok: true });
+
+  // branded icon emailed in sign-in / reset links (see EMAIL_LOGO_PNG_B64)
+  if (path === "/branding/logo.png" && method === "GET") {
+    return new Response(atob(EMAIL_LOGO_PNG_B64), {
+      headers: {
+        "content-type": "image/png",
+        "cache-control": "public, max-age=86400",
+      },
+    });
+  }
 
   // ── auth ────────────────────────────────────────────────────────────
   if (path === "/auth/v1/signup" && method === "POST") {
@@ -407,13 +424,22 @@ async function route(request, env) {
     return authRecover(request, env);
   }
   if (path === "/auth/v1/logout" && method === "POST") {
-    // client-side sign-out only; other devices may keep their sessions
+    // server-side sign-out: revoke every active refresh token for the
+    // bearer-token user (all sessions on all devices)
+    const p = await bearerPayload(env, request);
+    if (!p || !p.sub) return fail(401, "invalid credentials");
+    await env.DB.prepare(
+      `UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ? AND revoked = 0`
+    )
+      .bind(p.sub)
+      .run();
     return json({});
   }
   if (path === "/auth/v1/user" && method === "GET") {
     const p = await bearerPayload(env, request);
     if (!p) return fail(401, "invalid credentials");
-    return json({ sub: p.sub, email: p.email });
+    // the client reads `id` (session._adopt), keep email as-is
+    return json({ id: p.sub, email: p.email });
   }
   if (path === "/auth/v1/authorize" && method === "GET") {
     return oauthAuthorize(env, url, url.origin);
@@ -425,7 +451,9 @@ async function route(request, env) {
   }
   if (path === "/auth/confirm" && method === "GET") {
     const code = url.searchParams.get("code") || "";
-    const redirect = url.searchParams.get("redirect_to") || "pulsehwm://auth-callback";
+    // allowlist: only the app callback may be a confirm target — anything
+    // else would make the emailed links an open redirect to any https URL
+    const redirect = safeRedirectTo(url.searchParams.get("redirect_to"));
     const sep = redirect.includes("?") ? "&" : "?";
     return handoffHtml(`${redirect}${sep}code=${code}`);
   }
@@ -440,7 +468,13 @@ async function route(request, env) {
 
 // ── signup ─────────────────────────────────────────────────────────────
 
-/** Register a password user and begin verification when email is enabled. */
+// redirect_to MUST be the app deep link: accepting arbitrary URLs would
+// turn the emailed one-time links into an open redirect / phishing vector
+function safeRedirectTo(v) {
+  const s = String(v || "");
+  return s.startsWith("pulsehwm://auth-callback") ? s : "pulsehwm://auth-callback";
+}
+
 async function authSignup(request, env) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || "").toLowerCase();
@@ -474,14 +508,10 @@ async function authSignup(request, env) {
       .bind(id, email, `${salt}$${hash}`, nowIso())
       .run();
     user = { id, email };
-  } else {
-    // unconfirmed signup retried: update password, re-use the same user
-    const salt = randHex();
-    const hash = await hashPassword(password, salt, env.HASH_PEPPER || env.JWT_SECRET);
-    await env.DB.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`)
-      .bind(`${salt}$${hash}`, user.id)
-      .run();
   }
+  // unconfirmed signup retried: re-use the same user row but do NOT
+  // overwrite its password hash from a pre-auth request — the stored
+  // credentials only come from the first (unverified) signup attempt
 
   if (!requireEmail) {
     const tokens = await mintTokens(env, user);
@@ -489,7 +519,7 @@ async function authSignup(request, env) {
   }
 
   const code = await makeIntent(env, user.id, "signup-verify", challenge);
-  const redirectTo = String(body.redirect_to || "pulsehwm://auth-callback");
+  const redirectTo = safeRedirectTo(body.redirect_to);
   const link = new URL(request.url);
   link.pathname = "/auth/confirm";
   link.search = `?code=${code}&redirect_to=${encodeURIComponent(redirectTo)}`;
@@ -500,7 +530,6 @@ async function authSignup(request, env) {
 
 // ── token grant endpoint ───────────────────────────────────────────────
 
-/** Exchange a supported auth grant for session tokens. */
 async function authToken(request, env, grantType) {
   const body = await request.json().catch(() => ({}));
   if (grantType === "password") {
@@ -552,7 +581,6 @@ async function authToken(request, env, grantType) {
 
 // ── password reset email ───────────────────────────────────────────────
 
-/** Send a password-recovery link without revealing account existence. */
 async function authRecover(request, env) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || "").toLowerCase();
@@ -572,7 +600,6 @@ async function authRecover(request, env) {
 
 // ── OAuth provider authorize/callback ─────────────────────────────────
 
-/** Persist OAuth state and redirect to the requested provider. */
 async function oauthAuthorize(env, url, origin) {
   const provider = url.searchParams.get("provider") || "";
   const challenge = url.searchParams.get("code_challenge") || "";
@@ -622,12 +649,22 @@ async function oauthAuthorize(env, url, origin) {
 // Browsers can't render a custom scheme: a bare 3xx to pulsehwm:// leaves
 // Firefox/Chrome spinning on a blank tab forever. Serve a tiny HTML page
 // that navigates to the scheme instead, with a visible manual link.
-/** Return a safe HTML bridge from the browser to the desktop app. */
+// provider-supplied error text (errDesc) must never reach the HTML raw,
+// so every dynamic note is escaped here.
+const HTML_ENTITIES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => HTML_ENTITIES[c]);
+}
+
 function handoffHtml(target, note) {
   // only our scheme / https may be handed off (redirect_to comes from URLs)
   const ok = /^pulsehwm:|^https:\/\//i.test(target);
   const safe = (ok ? target : "pulsehwm://auth-callback").replace(/["<>\\]/g, "");
-  const msg = note || "Returning to Pulse-HWM&hellip;";
+  // notes are plain text callers-by-contract: escape fully; entities used
+  // in caller notes are written with ASCII text instead so nothing double-
+  // escapes
+  const msg = note ? escapeHtml(note) : "Returning to Pulse-HWM&hellip;";
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Pulse-HWM</title>` +
     `<style>body{background:#0b0b12;color:#d8d8e8;font-family:monospace;display:flex;` +
     `align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}` +
@@ -646,7 +683,6 @@ function handoffHtml(target, note) {
   });
 }
 
-/** Finish a provider callback and hand a PKCE-bound code to the app. */
 async function oauthCallback(env, url, provider) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
@@ -671,7 +707,7 @@ async function oauthCallback(env, url, provider) {
       `Sign-in failed: ${profile.error}`
     );
   if (!profile.email)
-    return handoffHtml(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, "Provider did not share an email &mdash; close this tab and try again.");
+    return handoffHtml(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, "Provider did not share an email - close this tab and try again.");
   const email = profile.email.toLowerCase();
 
   let user = await env.DB.prepare(`SELECT id, email FROM users WHERE email = ?`)
@@ -711,7 +747,6 @@ const DATA_TABLES = {
   },
 };
 
-/** Read or upsert JWT-owned rows using the PostgREST-compatible shape. */
 async function rest(request, env, table) {
   const spec = DATA_TABLES[table];
   if (!spec) return fail(404, "unknown table");
@@ -775,7 +810,6 @@ async function rest(request, env, table) {
   return fail(405, "method not allowed");
 }
 
-/** Return a JSON response. */
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -783,7 +817,6 @@ function json(data, status = 200) {
   });
 }
 
-/** Return an error response in the shape expected by the client. */
 function fail(status, msg) {
   return json({ msg, error_description: msg }, status);
 }
