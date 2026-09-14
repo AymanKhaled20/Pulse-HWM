@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Generate assets/icons/pulse.ico from the pixel heartbeat design (Pillow)."""
+"""Build all Pulse-HWM brand assets from the master logo PNG.
+
+Source: PULSE wordmark + pixel monitor logo (assets/branding/logo.png).
+Produces:
+  assets/branding/logo.png        full master logo (512px wide)
+  assets/icons/pulse.ico          multi-size Windows icon (monitor mark)
+  assets/icons/pulse.png          256px icon mark (used by tray/theme code)
+
+The icon is the top band of the master (monitor + stand, no wordmark),
+trimmed to its bright pixels and padded to a square on the #0A0A0A bg.
+"""
 
 from __future__ import annotations
 
@@ -7,48 +17,51 @@ from pathlib import Path
 
 from PIL import Image
 
-ASSETS = Path(__file__).resolve().parent.parent / "pulse_hwm" / "assets" / "icons"
-ASSETS.mkdir(parents=True, exist_ok=True)
-
-GRID = [
-    "....X...",
-    "....X...",
-    "...XX...",
-    "X..X.XX.",
-    "XX.X.X.X",
-    ".XXX..XX",
-    "..X.....",
-    "........",
-]
-
-AMBER = (255, 212, 0)
-BLACK = (10, 10, 10)
-OUTLINE = (46, 46, 46)
-
-SIZES = [16, 24, 32, 48, 64, 128, 256]
+REPO = Path(__file__).resolve().parent.parent
+ASSETS = REPO / "pulse_hwm" / "assets"
+BRANDING = ASSETS / "branding"
+ICONS = ASSETS / "icons"
+ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
+BG = (10, 10, 10, 255)
 
 
-def render(scale: int) -> Image.Image:
-    size = 8 * scale
-    img = Image.new("RGBA", (size, size), BLACK + (255,))
-    for y, row in enumerate(GRID):
-        for x, ch in enumerate(row):
-            if ch == "X":
-                for dy in range(scale):
-                    for dx in range(scale):
-                        img.putpixel((x * scale + dx, y * scale + dy), AMBER + (255,))
-    return img
+def crop_icon_mark(master: Image.Image) -> Image.Image:
+    """Drop the wordmark: the monitor mark lives ABOVE the 'PULSE' text,
+    so take a luminance-threshold bbox of the top band."""
+    w, h = master.size
+    band = master.crop((0, 0, w, int(h * 0.66)))
+    mask = band.convert("L").point(lambda v: 255 if v > 18 else 0)
+    mark = band.crop(mask.getbbox())
+    side = max(mark.size)
+    square = Image.new("RGBA", (side, side), BG)
+    square.paste(mark, ((side - mark.width) // 2, (side - mark.height) // 2))
+    return square
 
 
 def main() -> None:
-    images = [render(s) for s in SIZES]
-    icon_path = ASSETS / "pulse.ico"
-    images[0].save(
-        icon_path, format="ICO", sizes=[(s, s) for s in SIZES], append_images=images[1:]
+    import sys
+
+    if len(sys.argv) != 2:
+        sys.exit("usage: python scripts/build_icon.py <master-logo.png>")
+    master = Image.open(sys.argv[1]).convert("RGBA")
+
+    BRANDING.mkdir(parents=True, exist_ok=True)
+    ICONS.mkdir(exist_ok=True)
+    master.resize(
+        (512, round(512 * master.height / master.width)),
+        Image.Resampling.LANCZOS,
+    ).save(BRANDING / "logo.png")
+
+    mark = crop_icon_mark(master)
+    mark.resize((256, 256), Image.Resampling.LANCZOS).save(ICONS / "pulse.png")
+    mark.resize((256, 256), Image.Resampling.LANCZOS).save(
+        ICONS / "pulse.ico",
+        format="ICO",
+        sizes=[(s, s) for s in ICON_SIZES],
     )
-    png_path = ASSETS / "pulse.png"
-    render(16).resize((256, 256), Image.Resampling.NEAREST).save(png_path)
-    print(f"wrote {icon_path} and {png_path}")
+    print(
+        f"wrote {BRANDING / 'logo.png'}, {ICONS / 'pulse.ico'}, {ICONS / 'pulse.png'}"
+    )
 
 
 if __name__ == "__main__":
