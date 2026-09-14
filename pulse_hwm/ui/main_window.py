@@ -158,6 +158,7 @@ class MainWindow(QMainWindow):
         self._account_tab._set_feedback("" if error == "" else error)
 
     def show_account_feedback(self, message: str) -> None:
+        """Display a terminal authentication message and unlock the form."""
         if self._account_tab is not None:
             # a feedback-only message on the auth path means the flow is
             # over — release the button lock so the user can retry

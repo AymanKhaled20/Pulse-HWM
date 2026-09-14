@@ -32,6 +32,7 @@ class AuthConfig:
 
 
 def auth_config() -> AuthConfig:
+    """Load public cloud settings, falling back to the hosted service."""
     load_dotenv(override=False)
     return AuthConfig(
         base_url=os.environ.get("CLOUD_URL", "").strip().rstrip("/")

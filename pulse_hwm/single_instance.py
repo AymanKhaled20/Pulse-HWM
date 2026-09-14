@@ -60,6 +60,7 @@ class SingleInstance(QObject):
     url_received = Signal(str)
 
     def __init__(self, parent=None):
+        """Create the cross-integrity local server for auth URL handoffs."""
         super().__init__(parent)
         self._buffers: dict[QLocalSocket, bytes] = {}
         # a crash can leave the pipe name stale — clear it first or

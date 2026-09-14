@@ -26,24 +26,29 @@ const enc = new TextEncoder();
 
 // ── utilities ──────────────────────────────────────────────────────────
 
+/** Return the current UTC time in the database's ISO format. */
 function nowIso() {
   return new Date().toISOString().replace("Z", "+00:00");
 }
 
+/** Return a database-formatted UTC time a number of seconds from now. */
 function isoIn(seconds) {
   return new Date(Date.now() + seconds * 1000).toISOString().replace("Z", "+00:00");
 }
 
+/** Encode bytes as unpadded base64url text. */
 function b64url(bytes) {
   let s = "";
   for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/** Serialize a value as JSON and encode it as base64url text. */
 function b64urlJson(obj) {
   return b64url(enc.encode(JSON.stringify(obj)));
 }
 
+/** Decode base64url text into bytes. */
 function fromB64url(text) {
   const pad = text.replace(/-/g, "+").replace(/_/g, "/");
   return Uint8Array.from(
@@ -52,18 +57,21 @@ function fromB64url(text) {
   );
 }
 
+/** Generate a cryptographically random base64url token. */
 function randToken(nBytes = 32) {
   const b = new Uint8Array(nBytes);
   crypto.getRandomValues(b);
   return b64url(b);
 }
 
+/** Generate a cryptographically random hexadecimal string. */
 function randHex(nBytes = 16) {
   const b = new Uint8Array(nBytes);
   crypto.getRandomValues(b);
   return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
+/** Hash text with SHA-256 and return its hexadecimal digest. */
 async function sha256Hex(text) {
   const d = await crypto.subtle.digest("SHA-256", enc.encode(text));
   return [...new Uint8Array(d)]
@@ -72,10 +80,12 @@ async function sha256Hex(text) {
 }
 
 // PKCE challenge = base64url(sha256(verifier)) — must equal pkce.py
+/** Derive the PKCE challenge for a verifier. */
 async function pkceChallenge(verifier) {
   return b64url(await crypto.subtle.digest("SHA-256", enc.encode(verifier)));
 }
 
+/** Sign a payload as an HS256 JSON Web Token. */
 async function hmacJwtSign(secret, payload) {
   const head = b64urlJson({ alg: "HS256", typ: "JWT" });
   const body = b64urlJson(payload);
@@ -90,6 +100,7 @@ async function hmacJwtSign(secret, payload) {
   return `${head}.${body}.${b64url(sig)}`;
 }
 
+/** Verify and decode an HS256 token, returning null when invalid. */
 async function hmacJwtVerify(secret, token) {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
@@ -121,6 +132,7 @@ async function hmacJwtVerify(secret, token) {
 
 const ITER = 20000;
 
+/** Derive a hexadecimal key from text using PBKDF2-SHA256. */
 async function pbkdf2Hex(text, saltText, iterations = ITER) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -139,12 +151,14 @@ async function pbkdf2Hex(text, saltText, iterations = ITER) {
     .join("");
 }
 
+/** Hash a password using the per-user salt and server-side pepper. */
 async function hashPassword(password, saltHex, pepper) {
   return pbkdf2Hex(password, saltHex + "|" + pepper);
 }
 
 // ── email (Brevo HTTP API) ─────────────────────────────────────────────
 
+/** Send an account email through Brevo when email delivery is configured. */
 async function sendMail(env, to, msg) {
   if (!env.BREVO_API_KEY || !env.SENDER_EMAIL) return false;
   const r = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -165,6 +179,7 @@ async function sendMail(env, to, msg) {
   return r.ok;
 }
 
+/** Build the text and HTML versions of a one-time-link email. */
 function linkMail(url) {
   const safe = url.replace(/&/g, "&amp;");
   return {
@@ -179,6 +194,7 @@ function linkMail(url) {
 
 // ── tokens ─────────────────────────────────────────────────────────────
 
+/** Mint an access token and persisted refresh token for a user. */
 async function mintTokens(env, user) {
   const iat = Math.floor(Date.now() / 1000);
   const ttl = Number(env.ACCESS_TTL_S || 3600);
@@ -206,6 +222,7 @@ async function mintTokens(env, user) {
 
 // Replay of an already-rotated refresh token = the family was stolen;
 // Supabase-style: kill the whole family so any thief is locked out too.
+/** Rotate a refresh token and revoke its family if replay is detected. */
 async function refreshRotate(env, rawToken) {
   const hash = await sha256Hex(rawToken);
   const row = await env.DB.prepare(
@@ -251,6 +268,7 @@ async function refreshRotate(env, rawToken) {
   };
 }
 
+/** Validate a bearer token and return its payload. */
 async function bearerPayload(env, request) {
   const auth = request.headers.get("Authorization") || "";
   if (!auth.startsWith("Bearer ")) return null;
@@ -259,6 +277,7 @@ async function bearerPayload(env, request) {
 
 // ── intent codes (email-link / OAuth app codes) ───────────────────────
 
+/** Persist a one-time, PKCE-bound authentication intent. */
 async function makeIntent(env, userId, kind, challenge) {
   const code = randToken();
   await env.DB.prepare(
@@ -270,6 +289,7 @@ async function makeIntent(env, userId, kind, challenge) {
   return code;
 }
 
+/** Consume and validate a one-time authentication intent. */
 async function consumeIntent(env, authCode, verifier) {
   const row = await env.DB.prepare(`SELECT * FROM intent_codes WHERE code = ?`)
     .bind(authCode)
@@ -286,6 +306,7 @@ async function consumeIntent(env, authCode, verifier) {
 
 // ── provider exchanges ─────────────────────────────────────────────────
 
+/** Exchange a provider authorization code for a normalized user profile. */
 async function providerProfile(env, provider, code, origin) {
   if (provider === "google") {
     const r = await fetch("https://oauth2.googleapis.com/token", {
@@ -346,6 +367,7 @@ async function providerProfile(env, provider, code, origin) {
 // ── the router ────────────────────────────────────────────────────────
 
 export default {
+  /** Handle an incoming Cloudflare Worker request. */
   async fetch(request, env, ctx) {
     try {
       return await route(request, env);
@@ -355,6 +377,7 @@ export default {
   },
 };
 
+/** Route a request to the matching auth or storage endpoint. */
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -406,6 +429,7 @@ async function route(request, env) {
 
 // ── signup ─────────────────────────────────────────────────────────────
 
+/** Register a password user and begin verification when email is enabled. */
 async function authSignup(request, env) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || "").toLowerCase();
@@ -465,6 +489,7 @@ async function authSignup(request, env) {
 
 // ── token grant endpoint ───────────────────────────────────────────────
 
+/** Exchange a supported auth grant for session tokens. */
 async function authToken(request, env, grantType) {
   const body = await request.json().catch(() => ({}));
   if (grantType === "password") {
@@ -516,6 +541,7 @@ async function authToken(request, env, grantType) {
 
 // ── password reset email ───────────────────────────────────────────────
 
+/** Send a password-recovery link without revealing account existence. */
 async function authRecover(request, env) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || "").toLowerCase();
@@ -535,6 +561,7 @@ async function authRecover(request, env) {
 
 // ── OAuth provider authorize/callback ─────────────────────────────────
 
+/** Persist OAuth state and redirect to the requested provider. */
 async function oauthAuthorize(env, url, origin) {
   const provider = url.searchParams.get("provider") || "";
   const challenge = url.searchParams.get("code_challenge") || "";
@@ -584,6 +611,7 @@ async function oauthAuthorize(env, url, origin) {
 // Browsers can't render a custom scheme: a bare 3xx to pulsehwm:// leaves
 // Firefox/Chrome spinning on a blank tab forever. Serve a tiny HTML page
 // that navigates to the scheme instead, with a visible manual link.
+/** Return a safe HTML bridge from the browser to the desktop app. */
 function handoffHtml(target, note) {
   // only our scheme / https may be handed off (redirect_to comes from URLs)
   const ok = /^pulsehwm:|^https:\/\//i.test(target);
@@ -600,6 +628,7 @@ function handoffHtml(target, note) {
   });
 }
 
+/** Finish a provider callback and hand a PKCE-bound code to the app. */
 async function oauthCallback(env, url, provider) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
@@ -659,6 +688,7 @@ const DATA_TABLES = {
   },
 };
 
+/** Read or upsert JWT-owned rows using the PostgREST-compatible shape. */
 async function rest(request, env, table) {
   const spec = DATA_TABLES[table];
   if (!spec) return fail(404, "unknown table");
@@ -722,6 +752,7 @@ async function rest(request, env, table) {
   return fail(405, "method not allowed");
 }
 
+/** Return a JSON response. */
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -729,6 +760,7 @@ function json(data, status = 200) {
   });
 }
 
+/** Return an error response in the shape expected by the client. */
 function fail(status, msg) {
   return json({ msg, error_description: msg }, status);
 }

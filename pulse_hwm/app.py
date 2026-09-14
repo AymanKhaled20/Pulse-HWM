@@ -5,6 +5,7 @@ import traceback
 
 
 def run() -> int:
+    """Start the desktop application and wire its background services."""
     if "--selftest" in sys.argv:
         return _selftest()
     from pulse_hwm import config
@@ -139,6 +140,7 @@ def run() -> int:
     single = SingleInstance()
 
     def handle_incoming_url(url: str) -> None:
+        """Adopt an authentication callback forwarded by another instance."""
         # the user is still sitting in the browser — surface the window
         window.bring_to_front()
         callback = parse_callback_url(url)
