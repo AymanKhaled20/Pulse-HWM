@@ -109,8 +109,7 @@ export async function publishRelease(request, env) {
   const sha256 = String(body.sha256 || "").toLowerCase();
   const publishedAt = String(body.published_at || "");
   const manifest = String(body.manifest || "");
-  const manifestSig = String(body.manifest_sig || "");
-  const minSupported = String(body.min_supported || "");
+  const manifestSig = String(body.manifest_sig || "");  const minSupported = String(body.min_supported || "");
   const mandatory = body.mandatory ? 1 : 0;
   const notes = String(body.notes || "").slice(0, 20000);
   const htmlUrl = String(body.html_url || "");
@@ -126,7 +125,12 @@ export async function publishRelease(request, env) {
   // the manifest is what the app will verify with the embedded Ed25519
   // public key — it must agree with the standalone fields AND name EXACTLY
   // the asset that corresponds to this version (no mismatched pairs)
-  if (manifest) {
+  // REQUIRED: the desktop client hard-refuses any release without a valid
+  // manifest + signature, so publishing one would blind every check
+  if (!manifest || !manifestSig) {
+    return fail(400, "manifest and manifest_sig are required");
+  }
+  {
     let m = null;
     try {
       m = JSON.parse(manifest);
@@ -148,7 +152,10 @@ export async function publishRelease(request, env) {
   for (const r of existing) {
     if (!maxExisting || cmpSemver(r.version, maxExisting.version) > 0) maxExisting = r;
   }
-  if (maxExisting && cmpSemver(version, maxExisting.version) <= 0) {
+  // reject only STRICTLY older versions: an idempotent re-run of CI for
+  // the newest version must reach the ON CONFLICT upsert below (same
+  // version = metadata refresh), matching scripts/publish_release.py docs
+  if (maxExisting && cmpSemver(version, maxExisting.version) < 0) {
     return fail(
       409,
       `refusing an update that is not newer than ${maxExisting.version} (anti-downgrade)`

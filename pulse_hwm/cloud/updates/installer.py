@@ -64,18 +64,23 @@ def pick_download_url(release: dict, worker_base: str) -> str:
 
 def expect_sha256(release: dict) -> str:
     """The sha256 that the SIGNED manifest binds us to (never the decorated
-    top-level copy alone)."""
+    top-level copy alone — an unverified release dict must not pick it)."""
     signed = parse_manifest(str(release.get("manifest", "") or "")) or {}
-    sha = str(signed.get("sha256", "") or release.get("sha256", "") or "").lower()
+    sha = str(signed.get("sha256", "") or "").lower()
     if len(sha) != 64 or not all(c in "0123456789abcdef" for c in sha):
         raise UpdateError("release has no signed sha256")
     return sha
 
 
 def asset_name_of(release: dict) -> str:
-    signed = parse_manifest(str(release.get("manifest", "") or "")) or {}
-    name = str(signed.get("asset_name", "") or release.get("asset_name", "") or "")
-    if not name.startswith("PulseHWM-Setup-") or not name.endswith(".exe"):
+    signed = parse_manifest(str(release.get("manifest", "")) or "") or {}
+    name = str(signed.get("asset_name", "") or "")
+    if (
+        not name.startswith("PulseHWM-Setup-")
+        or not name.endswith(".exe")
+        # reject anything that can traverse: path separators / dot-dot
+        or name != Path(name).name
+    ):
         raise UpdateError("unexpected installer filename")
     return name
 

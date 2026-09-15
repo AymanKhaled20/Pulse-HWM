@@ -67,5 +67,7 @@ jobs:
       - name: Bundle check (esbuild via wrangler dry-run)
         # must run FROM workers/ so wrangler reads workers/wrangler.jsonc —
         # from the repo root it falls back to static-assets detection and dies
+        # pinned Wrangler: `@latest` executes whichever npm snapshot exists,
+        # one tested version across CI keeps the bundle check reproducible
         working-directory: workers
-        run: npx --yes wrangler@latest deploy --dry-run --outdir=/tmp/dry
+        run: npx --yes wrangler@4.53.0 deploy --dry-run --outdir=/tmp/dry

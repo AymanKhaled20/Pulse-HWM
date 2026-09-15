@@ -113,7 +113,10 @@ def parse_callback_url(url: str) -> CallbackResult:
     so split query params manually instead of urlsplit games.
     """
     raw = (url or "").strip()
-    if not raw.lower().startswith("pulsehwm://"):
+    # exact target only: Windows forwards suffixed variants (e.g.
+    # pulsehwm://auth-callback?x.evil host lookalikes) to Pulse as well
+    callback_target = raw.split("?", 1)[0].rstrip("/").lower()
+    if callback_target != "pulsehwm://auth-callback":
         return CallbackResult(error="not a pulsehwm callback")
     query_start = raw.find("?")
     if query_start < 0:

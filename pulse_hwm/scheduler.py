@@ -93,7 +93,7 @@ class Scheduler(QObject):
         return max(0.0, job.next_run_monotonic - time.monotonic())
 
     # —— engine ——————————————————————————————————————————————————————————
-    def _reschedule(self, job: _Job, first: bool, missed_once: bool = False) -> None:
+    def _reschedule(self, job: _Job, first: bool) -> None:
         if first and job.immediate:
             delay = 0.0  # due on the very next tick (~250 ms), not a period in
         else:

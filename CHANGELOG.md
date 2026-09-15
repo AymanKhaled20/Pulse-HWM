@@ -43,7 +43,6 @@ both the GitHub release body and the in-app update banner — write for users.
   never holds; installers are hash-pinned and Authenticode-gated before run,
   with anti-downgrade (client + server) and download host allowlists.
 
-### Fixed
 ## [1.1.6] - 2026-09-15
 ### Fixed
 - Alert toggles are genuinely honored: saved 8-BIT SOUND / DESKTOP TOAST /

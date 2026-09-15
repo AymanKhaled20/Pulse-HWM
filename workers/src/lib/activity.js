@@ -32,14 +32,20 @@ export async function touchAndCheck(env, uid, windowDays) {
     return true;
   }
   const seenMs = Date.parse(row.last_seen_at || "");
+  // decide entitlement FIRST from the stored value; never refresh the
+  // window for an account that just failed the gate, or a single retry
+  // would re-arm the window and defeat the gate entirely
+  const active =
+    !windowDays || windowDays <= 0
+      ? true
+      : !Number.isNaN(seenMs) && now - seenMs <= windowDays * 86400 * 1000;
   const stale = Number.isNaN(seenMs) || now - seenMs >= ACTIVITY_TOUCH_MIN_S * 1000;
-  if (stale) {
+  if (active && stale) {
     await env.DB.prepare(
       `UPDATE user_update_state SET last_seen_at = ?, last_check_at = ? WHERE user_id = ?`
     )
       .bind(nowIso(), nowIso(), uid)
       .run();
   }
-  if (!windowDays || windowDays <= 0) return true;
-  return !Number.isNaN(seenMs) && now - seenMs <= windowDays * 86400 * 1000;
+  return active;
 }

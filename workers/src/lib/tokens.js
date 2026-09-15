@@ -53,15 +53,36 @@ async function refreshRotate(env, rawToken) {
     }
     return null;
   }
-  // the consume MUST be atomic: condition on the token still being active
-  // so two replays racing the same token can never both mint replacements
-  const consumed = await env.DB.prepare(
-    `UPDATE refresh_tokens SET revoked = 1
-     WHERE token_hash = ? AND revoked = 0 AND expires_at > ?`
-  )
-    .bind(hash, nowIso())
-    .run();
-  if (!consumed.meta || consumed.meta.changes !== 1) {
+  // the consume AND the replacement INSERT live in ONE atomic D1 batch:
+  // per-statement run() calls are separate transactions, so a racing replay
+  // could revoke the family between consume and insert and leave that fresh
+  // replacement active. Batch guarantees the whole state change is atomic.
+  const refresh = randToken();
+  const replacementHash = await sha256Hex(refresh);
+  const access = await hmacJwtSign(env.JWT_SECRET, {
+    sub: row.user_id,
+    email: row.email,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + Number(env.ACCESS_TTL_S || 3600),
+  });
+  const consumed = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE refresh_tokens SET revoked = 1
+       WHERE token_hash = ? AND revoked = 0 AND expires_at > ?`
+    ).bind(hash, nowIso()),
+    env.DB.prepare(
+      `INSERT INTO refresh_tokens (token_hash, user_id, family_id, expires_at, revoked, created_at)
+       VALUES (?, ?, ?, ?, 0, ?)`
+    )
+      .bind(
+        replacementHash,
+        row.user_id,
+        row.family_id,
+        isoIn(Number(env.REFRESH_TTL_S || 2592000)),
+        nowIso()
+      ),
+  ]);
+  if (!consumed || !consumed[0] || consumed[0].meta?.changes !== 1) {
     // we lost the race (or the row flipped since the SELECT) — that is
     // token reuse: the family may be stolen, kill it all
     await env.DB.prepare(`UPDATE refresh_tokens SET revoked = 1 WHERE family_id = ?`)
@@ -69,19 +90,6 @@ async function refreshRotate(env, rawToken) {
       .run();
     return null;
   }
-  const access = await hmacJwtSign(env.JWT_SECRET, {
-    sub: row.user_id,
-    email: row.email,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + Number(env.ACCESS_TTL_S || 3600),
-  });
-  const refresh = randToken();
-  await env.DB.prepare(
-    `INSERT INTO refresh_tokens (token_hash, user_id, family_id, expires_at, revoked, created_at)
-     VALUES (?, ?, ?, ?, 0, ?)`
-  )
-    .bind(await sha256Hex(refresh), row.user_id, row.family_id, isoIn(Number(env.REFRESH_TTL_S || 2592000)), nowIso())
-    .run();
   return {
     tokens: {
       access_token: access,

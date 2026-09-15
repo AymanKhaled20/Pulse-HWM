@@ -63,7 +63,10 @@ async function rest(request, env, table) {
       if (!raw || typeof raw !== "object") continue;
       const pkVal = raw[spec.pk];
       if (pkVal === undefined || pkVal === null || String(pkVal) === "") continue;
-      const cols = spec.columns.filter((c) => c !== spec.pk);
+      // user_id is supplied from the JWT and prepended below; never take it
+      // from the body and never list it twice — a duplicate column in an
+      // INSERT column list makes every sync write fail (SQLite)
+      const cols = spec.columns.filter((c) => c !== spec.pk && c !== "user_id");
       const vals = [];
       for (const c of cols) {
         let v = raw[c];

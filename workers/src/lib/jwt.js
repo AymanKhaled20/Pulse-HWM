@@ -1,6 +1,6 @@
 // HS256 JWT sign/verify + bearer extraction (moved verbatim).
 
-import { enc, b64urlJson, fromB64url } from "./encoding.js";
+import { b64url, enc, b64urlJson, fromB64url } from "./encoding.js";
 
 async function hmacJwtSign(secret, payload) {
   const head = b64urlJson({ alg: "HS256", typ: "JWT" });

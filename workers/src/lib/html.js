@@ -14,8 +14,12 @@ function escapeHtml(s) {
 }
 
 function handoffHtml(target, note) {
-  // only our scheme / https may be handed off (redirect_to comes from URLs)
-  const ok = /^pulsehwm:|^https:\/\//i.test(target);
+  // only our EXACT scheme target / https may be handed off (redirect_to
+  // comes from URLs); a suffixed variant (pulsehwm://auth-callback.evil)
+  // is still registered to Pulse on Windows and could interrupt an active
+  // sign-in with junk params
+  const matchesCallback = /^pulsehwm:\/\/auth-callback(\?|$)/i.test(target);
+  const ok = matchesCallback || /^https:\/\//i.test(target);
   const safe = (ok ? target : "pulsehwm://auth-callback").replace(/["<>\\]/g, "");
   // notes are plain text callers-by-contract: escape fully; entities used
   // in caller notes are written with ASCII text instead so nothing double-

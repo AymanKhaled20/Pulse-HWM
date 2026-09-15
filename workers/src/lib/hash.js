@@ -1,6 +1,6 @@
 // SHA-256 / PBKDF2 / PKCE challenge helpers (moved verbatim).
 
-import { enc } from "./encoding.js";
+import { b64url, enc } from "./encoding.js";
 
 async function sha256Hex(text) {
   const d = await crypto.subtle.digest("SHA-256", enc.encode(text));

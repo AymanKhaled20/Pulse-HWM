@@ -21,7 +21,11 @@ YOU push tag v1.2.1
 
 Everyone without a session sees only the ACCOUNT-tab CTA
 ("LOG IN TO GET THE LATEST OF PULSE — INCLUDING SECURITY FIXES").
-Update binaries are members-only end to end.
+Update binaries are gated: the update metadata and any Worker-hosted
+download require a registered + active account, while the GitHub release
+assets (the default delivery path today, and the fallback when R2 is not
+provisioned) are public. Uploading to the private R2 bucket happens only
+when `R2_ENABLED=true`.
 
 ## Trust model (why this is safe)
 
@@ -157,9 +161,10 @@ signed. Until then the Ed25519 + SHA-256 pair carries the security.
    git tag v1.2.1
    git push origin v1.2.1
    ```
-   That is the whole job: CI builds the installer, uploads it to R2 and
-   publishes metadata; member installs update themselves within ~6 h
-   (or on next launch / manual tray "CHECK FOR UPDATES").
+   That is the whole job: CI builds the installer, uploads it to R2 (only
+   when `R2_ENABLED=true` — otherwise the GitHub release asset is the
+   delivery path) and publishes metadata; member installs update themselves
+   within ~6 h (or on next launch / manual tray "CHECK FOR UPDATES").
 
 ## Smoke tests (curl)
 

@@ -185,6 +185,9 @@ class AccountTab(QWidget):
         self.lbl_update_notes = QLabel("")
         self.lbl_update_notes.setObjectName("muted")
         self.lbl_update_notes.setWordWrap(True)
+        # server-supplied release notes are not trusted markup — QLabel
+        # defaults to AutoText, which would happily interpret HTML from it
+        self.lbl_update_notes.setTextFormat(Qt.TextFormat.PlainText)
         self.lbl_update_notes.setVisible(False)
         updates_body.addWidget(self.lbl_update_notes)
 

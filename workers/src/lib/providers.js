@@ -25,6 +25,13 @@ async function providerProfile(env, provider, code, origin) {
     });
     if (!me.ok) return { error: `google userinfo http ${me.status}` };
     const p = await me.json();
+    // Google's OIDC email_verified matters: a present `email` is NOT proof
+    // of mailbox ownership (Workspace admins provision addresses freely),
+    // and this email can link a sign-in to an existing account → takeover
+    // vector. Refuse unverified emails instead of trusting them.
+    if (!p.email_verified) {
+      return { error: "google email is not verified" };
+    }
     return { email: String(p.email || ""), uid: `google:${p.sub}` };
   }
   if (provider === "github") {

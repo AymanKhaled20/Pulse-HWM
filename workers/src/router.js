@@ -115,5 +115,7 @@ export async function route(request, env) {
 // turn the emailed one-time links into an open redirect / phishing vector
 function safeRedirectTo(v) {
   const s = String(v || "");
-  return s.startsWith("pulsehwm://auth-callback") ? s : "pulsehwm://auth-callback";
+  // exact target only: Windows forwards suffixed variants (e.g.
+  // pulsehwm://auth-callback.evil) to Pulse too, but they are not ours
+  return s === "pulsehwm://auth-callback" ? s : "pulsehwm://auth-callback";
 }

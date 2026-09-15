@@ -31,7 +31,11 @@ def extract(changelog: str, version: str) -> str:
                 break  # hit the next section; we're done
         elif inside:
             out.append(line)
-    return "\n".join(out).strip() + "\n"
+    # a no-match (or empty-section) release must return "" so the
+    # `extract(...) or text_fallback(...)` fallback actually fires — a
+    # bare "\n" is truthy and would ship a blank release body
+    body = "\n".join(out).strip()
+    return f"{body}\n" if body else ""
 
 
 def main() -> int:

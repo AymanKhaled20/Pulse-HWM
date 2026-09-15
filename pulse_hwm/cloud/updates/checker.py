@@ -145,7 +145,7 @@ class _CheckTask(QRunnable):
         return CheckOutcome(
             state=decision.state,
             reason=decision.reason,
-            release=release if decision.state != "skipped" else release,
+            release=release,
             manual=self._manual,
         )
 

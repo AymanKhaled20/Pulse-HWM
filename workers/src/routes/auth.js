@@ -15,7 +15,9 @@ import { touchAndCheck } from "../lib/activity.js";
 // turn the emailed one-time links into an open redirect / phishing vector
 function safeRedirectTo(v) {
   const s = String(v || "");
-  return s.startsWith("pulsehwm://auth-callback") ? s : "pulsehwm://auth-callback";
+  // exact target only: any suffixed lookalike (pulsehwm://auth-callback.evil)
+  // is still forwarded by Windows to Pulse but must not be accepted
+  return s === "pulsehwm://auth-callback" ? s : "pulsehwm://auth-callback";
 }
 
 async function authSignup(request, env) {
@@ -44,6 +46,12 @@ async function authSignup(request, env) {
 
   let user = existing;
   if (!user) {
+    // when confirmation email is required, a parked signup MUST come with
+    // the PKCE challenge the parked verifier claims — else the confirm
+    // flow can never succeed and the account stays unconfirmed forever
+    if (requireEmail && !challenge) {
+      return fail(400, "code_challenge required");
+    }
     const salt = randHex();
     const hash = await hashPassword(password, salt, env.HASH_PEPPER || env.JWT_SECRET);
     const id = "u" + randHex(12);
@@ -64,6 +72,12 @@ async function authSignup(request, env) {
   // credentials only come from the first (unverified) signup attempt
 
   if (!requireEmail) {
+    // dev/self-host convenience mode still must not mint tokens for an
+    // EXISTING row whose email never got confirmed (e.g. Brevo was enabled
+    // earlier) — that row belongs to a signup the owner never completed
+    if (existing && !confirmed) {
+      return fail(400, "user already registered");
+    }
     const tokens = await mintTokens(env, user);
     return json({ ...tokens, user });
   }
@@ -94,6 +108,9 @@ async function authToken(request, env, grantType) {
     if (!user || !user.password_hash) {
       return fail(400, user ? "this account uses Google/GitHub sign-in" : "invalid login credentials");
     }
+    const password = String(body.password || "");
+    // same input bound as signup: many chars only adds useless PBKDF2 work
+    if (password.length > 200) return fail(400, "password is too long");
     if (!Number(user.email_verified)) {
       return fail(400, "email not confirmed yet — check your inbox");
     }

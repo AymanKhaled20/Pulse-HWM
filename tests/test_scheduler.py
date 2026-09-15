@@ -55,6 +55,13 @@ def test_error_backoff_is_applied(scheduler):
     assert scheduler._jobs["boom"].consecutive_errors == 1
     assert after_error >= 1.0  # at least the interval (backoff doubled under it)
 
+    # a subsequent success resets the counter — a regression that keeps the
+    # backoff active forever would otherwise slip through
+    scheduler._jobs["boom"].callback = lambda: None
+    scheduler._jobs["boom"].next_run_monotonic = 0.0
+    scheduler._tick()
+    assert scheduler._jobs["boom"].consecutive_errors == 0
+
 
 def _fail(counter):
     counter["boom"] += 1

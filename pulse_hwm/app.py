@@ -299,6 +299,8 @@ def run() -> int:
                 db.insert_event(
                     _time.time(), "INFO", "update", f"update available: v{version}"
                 )
+            if window._account_tab is None:
+                return  # the ACCOUNT tab is absent — banner updates lost, but the toast above still leaks the news
             window._account_tab.show_update_available(
                 release,
                 current_version=CURRENT_VERSION,
@@ -313,7 +315,8 @@ def run() -> int:
             # silent when periodic; manual checks explain themselves
             if manual and outcome.reason and outcome.reason != "not signed in":
                 window.show_account_feedback(f"updates: {outcome.reason}")
-            window._account_tab.clear_update_banner()
+            if window._account_tab is not None:
+                window._account_tab.clear_update_banner()
         elif outcome.state == "error":
             # never toast on background check errors; log for diagnostics
             if manual:
@@ -373,21 +376,6 @@ def run() -> int:
         installer.progress.connect(on_install_progress)
         installer.finished.connect(on_install_finished)
         window.update_check_requested.connect(lambda: checker.check_now(manual=True))
-
-    # ── one scheduler for every background job ──────────────────────────
-    from pulse_hwm.scheduler import Scheduler
-
-    scheduler = Scheduler()
-    scheduler.add_job("sync", 60_000, sync_engine.sync_now, immediate=True)
-
-    def check_updates_job() -> None:
-        # a live read every fire so the Settings toggle applies mid-session
-        if app_settings.load(db).update_check_enabled:
-            checker.check_now()
-
-    scheduler.add_job(
-        "update-check", 6 * 3600 * 1000, check_updates_job, immediate=True
-    )
 
     # ── one scheduler for every background job ──────────────────────────
     def trim_memory() -> None:

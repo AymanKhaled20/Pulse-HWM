@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
+import os
 import sys
 
 from pulse_hwm.cloud.updates.policy import parse_manifest
@@ -124,11 +125,9 @@ class WINTRUST_FILE_INFO(ctypes.Structure):
 
 
 class WINTRUST_DATA(ctypes.Structure):
-    class _U(ctypes.Union):
-        _fields_ = [
-            ("pFile", ctypes.c_void_p),
-        ]
-
+    # exact wintrust.h layout: hWVTStateData, pwszURLReference, dwProvFlags,
+    # dwUIContext, pSignatureSettings — a wrong size/offset makes cbStruct
+    # lie or dwUIContext write into another member
     _fields_ = [
         ("cbStruct", ctypes.c_ulong),
         ("pPolicyCallbackData", ctypes.c_void_p),
@@ -139,8 +138,10 @@ class WINTRUST_DATA(ctypes.Structure):
         ("pFile", ctypes.c_void_p),
         ("dwStateAction", ctypes.c_ulong),
         ("hWVTStateData", ctypes.c_void_p),
-        ("pSignatureSettings", ctypes.c_void_p),
+        ("pwszURLReference", ctypes.c_void_p),
+        ("dwProvFlags", ctypes.c_ulong),
         ("dwUIContext", ctypes.c_ulong),
+        ("pSignatureSettings", ctypes.c_void_p),
     ]
 
 
@@ -171,7 +172,9 @@ def authenticode_verified(path: str) -> bool:
     False (never raises) on non-Windows, missing file, or any failure."""
     if not authenticode_available():
         return False
-    if not path or not sys.path:
+    # sys.path is the module search list (never empty) — the guard must
+    # check the actual file, or "missing file" would never early-return
+    if not path or not os.path.isfile(path):
         return False
     try:
         _ = ctypes.windll.wintrust  # library exists → proceed

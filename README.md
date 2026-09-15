@@ -23,9 +23,12 @@ Yellow and black pixel-art look by default, changeable live in the THEMES tab
   and updates. Refresh tokens live in Windows Credential Manager, never files.
   See [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
 - **Secure updates** (member benefit): signed-in accounts are notified when a
-  new version goes live and update in-app with one click — silent download
-  from private storage, Ed25519 release-signature + SHA-256 +
-  Authenticode-verified before anything runs, anti-downgrade built in.
+  new version goes live and update in-app with one click — downloads come
+  from the GitHub release assets by default, or private R2 storage when it
+  is provisioned. Every installer is checked against the Ed25519
+  release-signature + SHA-256 of the signed manifest before anything runs
+  (Authenticode is additionally verified once release signing is enabled
+  and `AUTHENTICODE_REQUIRED` flips), with anti-downgrade built in.
   See [docs/UPDATES.md](docs/UPDATES.md).
 
 ## Install (v1.2.0 — production)

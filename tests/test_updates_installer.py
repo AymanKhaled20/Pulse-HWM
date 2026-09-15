@@ -186,6 +186,7 @@ def test_download_uses_bearer_header(tmp_path):
     calls = {}
     transport = _http_handler(payload, calls)
     download_installer(_release(payload), WORKER, "tok", tmp_path, transport=transport)
+    assert calls.get("auth") == "Bearer tok"
     assert calls.get("url", "").endswith(f"/dl/{ASSET}")
 
 

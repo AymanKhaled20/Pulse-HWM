@@ -1,14 +1,23 @@
+# Pulse-HWM's ONLY version source is pulse_hwm/__init__.py; packaging
+# metadata derives from it so the two can never drift apart.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 # Minimal metadata; the real app lives in pulse_hwm/.
 # Also serves as the repo-root marker used by pulse_hwm/config.py.
 name = "pulse-hwm"
-version = "1.2.0"
+dynamic = ["version"]
 description = "Glorified hardware monitor - a small pixel desktop app"
 requires-python = ">=3.13"
 
 [tool.black]
 line-length = 88
 target-version = ["py313"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pulse_hwm.__version__" }
 
 [tool.ruff]
 line-length = 88

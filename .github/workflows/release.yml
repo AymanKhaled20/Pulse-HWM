@@ -87,10 +87,15 @@ jobs:
           $sha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           "$sha  $asset" | Set-Content -Path 'dist-assets\SHA256SUMS' -Encoding ascii
 
+          # one source of truth for the security-floor fields — the signed
+          # manifest and the unsigned metadata must never drift apart
+          $minSupported = '1.1.6'
+          $mandatory = $false
+
           # the manifest is the EXACT string CI signs and the app verifies
           $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss+00:00')
           $manifest = @"
-          {"version": "$v", "asset_name": "$asset", "sha256": "$sha", "published_at": "$now", "mandatory": false, "min_supported": "1.1.6"}
+          {"version": "$v", "asset_name": "$asset", "sha256": "$sha", "published_at": "$now", "mandatory": $($mandatory.ToString().ToLower()), "min_supported": "$minSupported"}
           "@
           Set-Content -Path "dist-assets\manifest-$v.json" -Value $manifest -Encoding utf8
 
@@ -101,14 +106,19 @@ jobs:
           $sig = python 'scripts\update_signing.py' sign --manifest "dist-assets\manifest-$v.json" --key-env UPDATE_SIGNING_KEY
           Set-Content -Path "dist-assets\manifest-$v.sig" -Value $sig -Encoding ascii
 
+          # release notes for the client: extract OUR version's changelog
+          # section once, reuse it for both the GitHub body and metadata
+          python 'scripts\changelog_notes.py' --version $v --out changelog-body.txt
+          $notes = Get-Content 'changelog-body.txt' -Raw -ErrorAction SilentlyContinue
           $meta = [ordered]@{
             version = $v
             sha256 = $sha
             manifest = $manifest
             manifest_sig = $sig
             published_at = $now
-            mandatory = $false
-            min_supported = '1.1.6'
+            mandatory = $mandatory
+            min_supported = $minSupported
+            notes = $notes
           } | ConvertTo-Json -Compress
           Set-Content -Path 'dist-assets\metadata.json' -Value $meta -Encoding utf8
           Write-Output "staged: $asset ($sha)"
@@ -158,9 +168,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # pinned Wrangler: same tested version as the CI bundle check (see ci.yml)
         run: |
           $v = $env:GITHUB_REF_NAME -replace '^v', ''
-          npx --yes wrangler@latest r2 object put "pulsehwm-releases/PulseHWM-Setup-$v.exe" --file "dist-assets\PulseHWM-Setup-$v.exe" --remote --content-type application/octet-stream
+          npx --yes wrangler@4.53.0 r2 object put "pulsehwm-releases/PulseHWM-Setup-$v.exe" --file "dist-assets\PulseHWM-Setup-$v.exe" --remote --content-type application/octet-stream
 
       - name: Publish metadata to the cloud worker
         env:

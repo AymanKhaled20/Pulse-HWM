@@ -24,12 +24,18 @@ async function consumeIntent(env, authCode, verifier) {
     .bind(authCode)
     .first();
   if (!row || row.expires_at < nowIso()) return null;
-  await env.DB.prepare(`DELETE FROM intent_codes WHERE code = ?`)
-    .bind(authCode)
-    .run();
-  // PKCE: the verifier the parked app holds must hash to the stored challenge
+  // PKCE must be verified BEFORE the one-time consume: a bad verifier has
+  // to leave the valid intent available for a retry with the right one
   const challenge = await pkceChallenge(verifier || "");
   if (challenge !== row.code_challenge) return null;
+  // deleting conditionally on the stored challenge keeps concurrent valid
+  // requests one-time (only the row with the exact challenge is consumed)
+  const deleted = await env.DB.prepare(
+    `DELETE FROM intent_codes WHERE code = ? AND code_challenge = ?`
+  )
+    .bind(authCode, row.code_challenge)
+    .run();
+  if (!deleted.meta || deleted.meta.changes !== 1) return null;
   return row;
 }
 
