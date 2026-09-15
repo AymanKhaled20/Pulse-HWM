@@ -65,4 +65,7 @@ jobs:
           echo "all worker modules parse"
 
       - name: Bundle check (esbuild via wrangler dry-run)
+        # must run FROM workers/ so wrangler reads workers/wrangler.jsonc —
+        # from the repo root it falls back to static-assets detection and dies
+        working-directory: workers
         run: npx --yes wrangler@latest deploy --dry-run --outdir=/tmp/dry
