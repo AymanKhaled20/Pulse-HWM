@@ -22,18 +22,20 @@ from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 # The ACCOUNT tab: sign-in / sign-up / sign-out + SYNC NOW.
 #
 # DELEGATION contract:
-#   * no QThread parking of its own Ã¢â‚¬â€— network work goes to the global
+#   * no QThread parking of its own — network work goes to the global
 #     QThreadPool (TerminateTask pattern) so the UI never blocks;
 #   * the tab NEVER talks to SessionManager across threads: it schedules
 #     tasks, and only the UI thread touches session state afterward;
-#   * sync (phase 7) hangs off sync_requested Ã¢â‚¬â€— this tab neither owns nor
+#   * sync (phase 7) hangs off sync_requested — this tab neither owns nor
 #     knows about the sync engine.
 
 
 class _AuthSignals(QObject):
     """Signal carrier so a QRunnable can talk back to the UI thread."""
 
-    done = Signal(str, object)  # tag, AuthResult (tags: "sign-in", "sign-up", Ã¢â‚¬¦)
+    done = Signal(
+        str, object
+    )  # tag, AuthResult (tags: "sign-in", "sign-up", "recover")
     open_url = Signal(str)  # browser hand-off must happen on the UI thread
 
 
@@ -95,7 +97,7 @@ class AccountTab(QWidget):
         hero.addWidget(self.status)
         outer.addLayout(hero)
 
-        # Ã¢â€—â‚¬Ã¢â€—â‚¬ forms stack: two QWidgets, visibility swaps Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬
+        # ── forms stack: two QWidgets, visibility swaps ──
         self._signed_out_form = QWidget()
         form = QGridLayout(self._signed_out_form)
         form.setContentsMargins(0, 0, 0, 0)
@@ -121,9 +123,7 @@ class AccountTab(QWidget):
         self.btn_forgot.setObjectName("muted")
         form.addWidget(self.btn_forgot, 2, 3)
 
-        divider = QLabel(
-            "Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬  OR CONTINUE WITH  Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬"
-        )
+        divider = QLabel("───  OR CONTINUE WITH  ───")
         divider.setObjectName("muted")
         divider.setAlignment(Qt.AlignmentFlag.AlignCenter)
         form.addWidget(divider, 3, 0, 1, 4)
@@ -134,7 +134,7 @@ class AccountTab(QWidget):
         form.addWidget(self.btn_github, 4, 2)
         outer.addWidget(self._signed_out_form)
 
-        # Ã¢â€—â‚¬Ã¢â€—â‚¬ signed-in panel Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬
+        # ── signed-in panel ──
         self._signed_in_panel = QWidget()
         grid = QGridLayout(self._signed_in_panel)
         grid.setContentsMargins(0, 0, 0, 0)
@@ -214,7 +214,7 @@ class AccountTab(QWidget):
         self._updates_panel.setVisible(False)
         outer.addWidget(self._updates_panel)
 
-        # Ã¢â€—â‚¬Ã¢â€—â‚¬ wire buttons (fire Ã¢â€ â€™ schedule Ã¢â€ â€™ feedback) Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬
+        # ── wire buttons (fire → schedule → feedback) ──
         self.btn_sign_in.clicked.connect(self._on_sign_in)
         self.btn_sign_up.clicked.connect(self._on_sign_up)
         self.btn_forgot.clicked.connect(self._on_forgot)
@@ -229,7 +229,7 @@ class AccountTab(QWidget):
         self._auth_in_flight = False  # re-entry guard, see _auth_busy()
         self.refresh_from_session()
 
-    # Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬ helpers Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬
+    # ─── helpers ───
     def _mk_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setObjectName("muted")
@@ -239,9 +239,9 @@ class AccountTab(QWidget):
         self.feedback.setText(text)
 
     def _open_browser(self, url: str) -> None:
-        QDesktopServices.openUrl(url)  # UI thread only Ã¢â‚¬â€— emitted via signal
+        QDesktopServices.openUrl(url)  # UI thread only — emitted via signal
 
-    # Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬ action slots Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬
+    # ─── action slots ───
     def _auth_busy(self) -> bool:
         """One auth exchange at a time: two concurrent ones would race
         the rotating refresh token (the second response parks a token
@@ -272,7 +272,7 @@ class AccountTab(QWidget):
             self._auth_idle()
             self._set_feedback(err)
             return
-        self._set_feedback("signing in Ã¢â‚¬¦")
+        self._set_feedback("signing in …")
         password = self.password.text()
         self._pool.start(
             _AuthTask(
@@ -295,7 +295,7 @@ class AccountTab(QWidget):
             self._auth_idle()
             self._set_feedback(str(exc))
             return
-        self._set_feedback("creating account Ã¢â‚¬¦")
+        self._set_feedback("creating account …")
         password = self.password.text()
         # PKCE signup: the challenge rides the POST body; the verification
         # email's code later matches our parked verifier
@@ -327,7 +327,7 @@ class AccountTab(QWidget):
             self._auth_idle()
             self._set_feedback(str(exc))
             return
-        self._set_feedback("sending reset link Ã¢â‚¬¦")
+        self._set_feedback("sending reset link …")
         self._pool.start(
             _AuthTask(
                 "recover",
@@ -354,7 +354,7 @@ class AccountTab(QWidget):
         self.refresh_from_session()
         self.signed_out.emit()
 
-    # Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬ network results (UI thread, via signals) Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬
+    # ─── network results (UI thread, via signals) ───
     def _on_auth_done(self, tag: str, result: object) -> None:
         assert isinstance(result, AuthResult)
         self._auth_idle()  # re-enable buttons whoever it was
@@ -368,7 +368,7 @@ class AccountTab(QWidget):
         elif tag == "sign-up":
             if result.needs_email_confirmation:
                 self._set_feedback(
-                    "account created Ã¢â‚¬â€— CHECK YOUR INBOX to confirm, then sign in"
+                    "account created — CHECK YOUR INBOX to confirm, then sign in"
                 )
             elif result.ok:
                 self.refresh_from_session()
@@ -378,7 +378,7 @@ class AccountTab(QWidget):
         elif tag == "recover":
             if result.ok:
                 self._set_feedback(
-                    "reset link sent Ã¢â‚¬â€— CHECK YOUR INBOX (valid a short while)"
+                    "reset link sent — CHECK YOUR INBOX (valid a short while)"
                 )
             else:
                 self._set_feedback(result.error)
@@ -388,7 +388,7 @@ class AccountTab(QWidget):
         adoption, e.g. an OAuth callback lands via the running instance)."""
         info = self._session.session_info
         active = self._session.is_signed_in()
-        # the OAuth callback path repaints through here too Ã¢â‚¬â€— release the
+        # the OAuth callback path repaints through here too — release the
         # in-flight lock AND re-enable the buttons (the OAuth flow never
         # schedules a task, so _on_auth_done/_auth_idle never fire for it;
         # without this the provider buttons stayed greyed out forever).
@@ -426,7 +426,7 @@ class AccountTab(QWidget):
         self._set_feedback(message)
 
     def set_configured(self, on: bool) -> None:
-        """No Supabase keys configured Ã¢â€ â€™ auth is inert, clearly."""
+        """No cloud keys configured → auth is inert, clearly."""
         for w in (
             self.email,
             self.password,

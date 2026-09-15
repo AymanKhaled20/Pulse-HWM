@@ -13,9 +13,9 @@ _VERIFIER_ALPHABET = string.ascii_letters + string.digits + "-._~"
 
 
 def new_code_verifier(length: int = 64) -> str:
-    """Unpacked verifier (43â€“128 chars allowed; 64 is a comfy middle)."""
+    """Unpacked verifier (43–128 chars allowed; 64 is a comfy middle)."""
     if not 43 <= length <= 128:
-        raise ValueError("PKCE verifier must be 43â€“128 chars")
+        raise ValueError("PKCE verifier must be 43–128 chars")
     return "".join(secrets.choice(_VERIFIER_ALPHABET) for _ in range(length))
 
 

@@ -107,7 +107,7 @@ class CallbackResult:
 
 
 def parse_callback_url(url: str) -> CallbackResult:
-    """Windows delivers the whole redirect as 'pulsehwm://auth-callback?â€¦'.
+    """Windows delivers the whole redirect as 'pulsehwm://auth-callback?…'.
 
     urllib treats the CUSTOM SCHEME weirdly (the 'host' is 'auth-callback'),
     so split query params manually instead of urlsplit games.

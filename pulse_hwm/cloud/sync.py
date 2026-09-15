@@ -92,7 +92,7 @@ def plan_settings(
 
 
 def plan_sites(local: list[dict], remote: list[dict], user_id: str) -> SyncPlan:
-    """local rows: dicts with uuid/name/â€¦/updated_at/deleted."""
+    """local rows: dicts with uuid/name/…/updated_at/deleted."""
     plan = SyncPlan()
     remote_by_uuid = {str(r.get("site_uuid")): r for r in remote if r.get("site_uuid")}
     local_by_uuid = {str(r.get("uuid") or ""): r for r in local if r.get("uuid")}

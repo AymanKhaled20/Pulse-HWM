@@ -16,7 +16,7 @@ from pulse_hwm.db import Database
 #
 # Scheduling honesty: instead of hooking every mutation site, a 60 s
 # compare-and-merge tick covers "automatic" — the payloads are tiny
-# (â‰¤20 keys + â‰¤50 site rows) and merge-shortcircuits to one push/pull.
+# (≤20 keys + ≤50 site rows) and merge-shortcircuits to one push/pull.
 
 _TICK_S = 60
 
