@@ -30,7 +30,7 @@ from pulse_hwm.cloud.updates.policy import parse_manifest
 
 TRUSTED_UPDATE_KEYS: frozenset[str] = frozenset(
     {
-        # example: "32-hex-words-here-64-chars-total-..."
+        "e5833140054bf4759842cac97177f4904672f4c8e551a2a2b3b80c4124635726",
     }
 )
 
