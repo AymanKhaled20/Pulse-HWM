@@ -1,12 +1,12 @@
 ﻿# Pulse-HWM
 
-A glorified hardware monitor â€” a small native Windows desktop app with high
+A glorified hardware monitor. a small native Windows desktop app with high
 hopes. Watches your machine (CPU, RAM, disk, network, GPU, temps, battery, top
 processes), tracks the health of websites you care about (status, latency,
 uptime, SSL expiry), and makes a noise when anything goes wrong.
 
 Yellow and black pixel-art look by default, changeable live in the THEMES tab
-(15 color palettes, 15 font sets, adjustable font size â€” all persisted).
+(15 color palettes, 15 font sets, adjustable font size. all persisted).
 
 ## Features
 
@@ -55,7 +55,7 @@ Steps:
 5. Once installed, updates arrive in-app: sign in on the ACCOUNT tab and
    click INSTALL NOW when notified — no manual downloads.
 
-Requirements: Windows 10 / 11 (64-bit). No Python or other prerequisites â€”
+Requirements: Windows 10 / 11 (64-bit). No Python or other prerequisites -
 everything is bundled.
 
 ## Getting started (from source)
@@ -86,9 +86,9 @@ block on detected secrets. Never hardcode keys in code.
 
 ## Stack
 
-Python 3.13 Â· PySide6 (Qt6) Â· pyqtgraph Â· psutil Â· httpx Â· SQLite Â·
-LibreHardwareMonitorLib (vendored binaries, MPL-2.0 â€” see
-[THIRD_PARTY.md](THIRD_PARTY.md)) Â· PyInstaller + Inno Setup.
+Python 3.13 · PySide6 (Qt6) · pyqtgraph · psutil · httpx · SQLite ·
+LibreHardwareMonitorLib (vendored binaries, MPL-2.0 - see
+[THIRD_PARTY.md](THIRD_PARTY.md)) · PyInstaller + Inno Setup.
 
 ## Project structure
 
