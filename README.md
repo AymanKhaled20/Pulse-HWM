@@ -26,9 +26,10 @@ Yellow and black pixel-art look by default, changeable live in the THEMES tab
   new version goes live and update in-app with one click — downloads come
   from the GitHub release assets by default, or private R2 storage when it
   is provisioned. Every installer is checked against the Ed25519
-  release-signature + SHA-256 of the signed manifest before anything runs
-  (Authenticode is additionally verified once release signing is enabled
-  and `AUTHENTICODE_REQUIRED` flips), with anti-downgrade built in.
+  release-signature and the SHA-256 digest listed in the signed manifest
+  before anything runs (Authenticode is additionally verified once release
+  signing is enabled and `AUTHENTICODE_REQUIRED` flips), with anti-downgrade
+  built in.
   See [docs/UPDATES.md](docs/UPDATES.md).
 
 ## Install (v1.2.0 — production)
