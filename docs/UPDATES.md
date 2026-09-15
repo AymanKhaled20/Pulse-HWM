@@ -1,84 +1,176 @@
 # Pulse-HWM update system — design + runbook
 
-An in-app updater is, by definition, a **remote-code-execution path**: it
-downloads and runs code. This document explains how Pulse-HWM keeps that
-path safe, and how to operate it — publishing a release, rotating keys,
-and smoke-testing the pipeline.
+Follow **Part A** top-to-bottom ONCE; after that, publishing a release is
+just "bump the version + CHANGELOG, push a tag" (Part B).
 
-## How it works (end to end)
+An in-app updater is, by definition, a **remote-code-execution path** —
+it downloads and runs code. This document explains how Pulse-HWM keeps that
+path safe, and how to operate it.
+
+## How it works (end to end, 30-second version)
 
 ```
-push tag v1.2.1
- └─ GitHub Actions release.yml (windows-latest; actions pinned by SHA)
-      guard: tag == pulse_hwm.__version__ == installer/version.iss
-      PyInstaller → Inno Setup → PulseHWM-Setup-1.2.1.exe
-      SHA-256 → Ed25519-sign manifest (CI secret only) → SHA256SUMS
-      GitHub release (installer only) → R2 upload → POST /updates/publish
-
-signed-in + ACTIVE app polls GET /updates/latest (Bearer)
-   █ manifest sig verified against the embedded public key (fail-closed)
-   █ strictly-newer + anti-rollback + host allowlist
-   toast + ACCOUNT banner with [INSTALL NOW]
-   █ GET /dl/<asset> (Bearer-gated, private R2 via the worker)
-   █ SHA-256 == signed value; Authenticode (WinVerifyTrust) gates the file
-   █ run Setup.exe /SILENT /NORESTART /LAUNCHAFTER=1 → app quits →
-      installer replaces files → relaunches Pulse
+YOU push tag v1.2.1
+  └─ GitHub Actions release.yml builds the Windows installer,
+     signs its metadata, uploads it to storage, and tells the cloud
+     cloud ── registered + ACTIVE users' Pulse apps poll the cloud
+       they see a toast + [INSTALL NOW] on the ACCOUNT tab
+       app silently downloads, verifies (signature + hash + Windows check),
+       runs the installer and relaunches itself
 ```
 
 Everyone without a session sees only the ACCOUNT-tab CTA
 ("LOG IN TO GET THE LATEST OF PULSE — INCLUDING SECURITY FIXES").
+Update binaries are members-only end to end.
 
 ## Trust model (why this is safe)
 
 | Threat                              | Control |
 | ----------------------------------- | ------- |
-| tampered/ CDN-mitm download         | TLS + SHA-256 bound to the SIGNED manifest |
-| compromised cloud worker            | Ed25519 key lives ONLY in CI — the worker can't forge updates |
-| signed old release (replay/freeze)  | client refuses anything not strictly newer than the highest-seen version; server anti-downgrade 409 |
-| compromised download host           | exact-host allowlist (worker host + GitHub) |
+| tampered/men-in-the-middle download | TLS + SHA-256 bound to the SIGNED manifest |
+| compromised cloud worker            | Ed25519 signing key lives ONLY in CI — the worker can't forge updates |
+| replayed old signed release         | client refuses anything not strictly newer than the highest-seen version; server anti-downgrade 409 |
+| malicious download host             | exact-host allowlist (worker host + GitHub) |
 | downgrade past a security fix       | `min_supported` floor → forced update ("SECURITY UPDATE" banner, no LATER) |
 | unsigned/modified installer on disk | pre-spawn re-hash + WinVerifyTrust (Authenticode hard-required once signing is live) |
-| dormant accounts burning tokens     | activity window `UPDATE_ACTIVITY_DAYS` (default 90) throttled writes |
 
-Client trust anchors: `pulse_hwm/cloud/updates/trust.py` (`TRUSTED_UPDATE_KEYS`,
-`AUTHENTICODE_REQUIRED`). Server validation: `workers/src/routes/updates.js`.
+Client trust anchors: `pulse_hwm/cloud/updates/trust.py`
+(`TRUSTED_UPDATE_KEYS`, `AUTHENTICODE_REQUIRED`).
+Server validation: `workers/src/routes/updates.js`.
 
-## One-time setup checklist
+---
 
-1. **R2 bucket** (front desk file locker):
-   `npx wrangler r2 bucket create pulsehwm-releases` — binding `BUCKET` is
-   already declared in `workers/wrangler.jsonc`.
-2. **D1 schema** (idempotent):
-   `npx wrangler d1 execute pulsehwm-data --remote --file=schema.sql` (cwd `workers/`)
-3. **Worker secret**: `npx wrangler secret put RELEASE_KEY` (long random string).
-4. **Ed25519 keypair**: `python scripts/update_signing.py gen` → paste the
-   `public_hex` into `pulse_hwm/cloud/updates/trust.py`
-   (`TRUSTED_UPDATE_KEYS`); put `private_hex` into the GitHub secret
-   `UPDATE_SIGNING_KEY`. Never email/commit/chat the private key.
-5. **GitHub Actions secrets** (Settings → Secrets → Actions):
-   `UPDATE_SIGNING_KEY`, `RELEASE_KEY`, `CLOUDFLARE_API_TOKEN`,
-   `CLOUDFLARE_ACCOUNT_ID`.
-6. **SignPath (optional, recommended)**: create the OSS project → sign the
-   installer in CI → flip `AUTHENTICODE_REQUIRED = True` in trust.py once
-   every release ships signed. Until then the Ed25519 + SHA-256 pair is the
-   binding identity.
-7. Enable **branch protection** on `main` (CI green + review).
+# PART A — one-time setup (do once, ~15 min of actual work)
 
-## Publishing a release (the routine)
+Prerequisite: `npx wrangler login` works and the `workers/` folder is your
+cwd for anything wrangler-related. Every command below is PowerShell.
 
-1. Update `pulse_hwm/__init__.py` `__version__` and add the matching
-   `## [x.y.z]` section to `CHANGELOG.md` (this text becomes BOTH the GitHub
-   release body AND the in-app banner — write it for users).
-2. Commit on a feature branch, merge to `main` (CI green).
-3. Tag & push: `git tag v1.2.1 && git push origin v1.2.1`.
-4. CI builds/attaches the installer, uploads it to R2, publishes metadata.
-   Nothing else to do — installs update themselves within ~6 h (or on
-   next launch / manual tray check).
+## Step 1 — Deploy the new worker code + database schema
+
+The old deployed worker is still the single-file monolith. Deploy the
+new modular one, then run the schema (it only ADDS two tables; it is
+idempotent, so it is safe to repeat).
+
+```powershell
+cd workers
+npx wrangler deploy
+npx wrangler d1 execute pulsehwm-data --remote --file=schema.sql
+```
+
+✅ Check: `curl.exe https://pulsehwm-cloud.pulsehwm27.workers.dev/` prints
+`{"app":"PulseHWM cloud","ok":true}`.
+
+## Step 2 — Create the R2 bucket (private file locker)
+
+This is where the 63 MB installers live. The bucket is private — nobody
+can download from it directly; your worker streams files out of it only
+to signed-in, active accounts.
+
+```powershell
+npx wrangler r2 bucket create pulsehwm-releases
+```
+
+✅ Check: it appears at dash.cloudflare.com → R2 → Object Storage.
+
+## Step 3 — Make up a RELEASE_KEY and tell BOTH cloud and CI about it
+
+One random string, used in two places. CI will send it when publishing a
+release; the worker compares it before accepting.
+
+```powershell
+# generate a long random value (copy it somewhere safe for step 5)
+.venv\Scripts\python.exe -c "import secrets; print(secrets.token_hex(32))"
+
+cd workers
+npx wrangler secret put RELEASE_KEY      # paste the string when asked
+cd ..                                    # back to the repo root
+```
+
+✅ Check: `npx wrangler secret list` shows `RELEASE_KEY`.
+
+## Step 4 — Create the Ed25519 signing keypair
+
+Why: the cloud must never be ABLE to forge an update. The signing half
+lives only in GitHub Actions; the matching public half is baked into the
+app so every install can verify releases independently of the server.
+
+```powershell
+.venv\Scripts\python.exe scripts\update_signing.py gen
+```
+
+It prints two values:
+
+- **`private_hex`** → you will paste this into GitHub (step 5).
+  Never commit, email or chat it.
+- **`public_hex`** → paste into your code: open
+  `pulse_hwm/cloud/updates/trust.py`, replace the empty
+  `TRUSTED_UPDATE_KEYS` set so it contains the public key:
+
+```python
+TRUSTED_UPDATE_KEYS: frozenset[str] = frozenset(
+    {
+        # example placeholder: "32-hex-words-here-64-chars-total-..."
+    }
+)
+```
+
+## Step 5 — GitHub Actions secrets
+
+Repo page → **Settings** → **Secrets and variables** → **Actions** →
+**New repository secret**. Add all four:
+
+| Name | Value |
+|---|---|
+| `UPDATE_SIGNING_KEY` | the `private_hex` from step 4 |
+| `RELEASE_KEY` | the same string as step 3 |
+| `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com → My Profile → API Tokens → template "Edit Cloudflare Workers" (plus R2 edit permission) |
+| `CLOUDFLARE_ACCOUNT_ID` | the 32-char ID visible in any Cloudflare dashboard URL |
+
+## Step 6 — SignPath code signing (OPTIONAL, do later if you like)
+
+Free code signing for open source (removes the SmartScreen warning on the
+installer). Apply at signpath.org, create a "Pulse-HWM" project, add the
+API token as the GitHub secret `SIGNPATH_API_TOKEN`, and uncomment the
+SignPath block in `.github/workflows/release.yml`. Then flip
+`AUTHENTICODE_REQUIRED = True` in `trust.py` once every release ships
+signed. Until then the Ed25519 + SHA-256 pair carries the security.
+
+## Step 7 — Branch protection + rebuild the app
+
+- Repo → Settings → Branches → add rule for `main`: require the `ci`
+  workflow + one review.
+- Rebuild the app so it embeds the new public key from step 4:
+  `.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm`
+
+## One-time steps you may skip (already done in code)
+
+- `BUCKET` binding, `GITHUB_REPO`, `UPDATE_ACTIVITY_DAYS` — already declared
+  in `workers/wrangler.jsonc`.
+- Client endpoints, policy, trust logic — already in the repo and tested.
+
+---
+
+# PART B — Publishing a release (the routine)
+
+1. Bump `__version__` in `pulse_hwm/__init__.py` (the ONLY version source;
+   CI generates `installer/version.iss` and fails the build if they drift).
+2. Add the matching `## [x.y.z]` section to `CHANGELOG.md` — that text
+   becomes BOTH the GitHub release body AND the in-app update banner,
+   so write it for users.
+3. Merge to `main` (branch protection + CI must be green).
+4. Tag & push:
+   ```powershell
+   git tag v1.2.1
+   git push origin v1.2.1
+   ```
+   That is the whole job: CI builds the installer, uploads it to R2 and
+   publishes metadata; member installs update themselves within ~6 h
+   (or on next launch / manual tray "CHECK FOR UPDATES").
 
 ## Smoke tests (curl)
 
 ```powershell
-# 1. publish (as CI would)
+# 1. publish (exactly what CI would send)
 $json = '{"version":"1.2.1","sha256":"<(certutil -hashfile setup.exe SHA256)>",
   "manifest":"<exact manifest string>","manifest_sig":"<sig>","published_at":"2026-09-20T00:00:00+00:00"}'
 curl.exe -X POST https://pulsehwm-cloud.pulsehwm27.workers.dev/updates/publish `
