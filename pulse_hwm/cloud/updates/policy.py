@@ -1,15 +1,15 @@
-"""Update policy Ã¢â‚¬â€— PURE decision logic. No Qt, no network, no disk.
+"""Update policy — PURE decision logic. No Qt, no network, no disk.
 
 Kept free of side effects so the entire "may I install this update?"
 decision tree is unit-testable (repo convention: pure logic + bridges).
 
 Division of labour:
   * the SERVER enforces registered+active accounts (Bearer token +
-    UPDATE_ACTIVITY_DAYS) Ã¢â‚¬â€— this client never even receives release data
+    UPDATE_ACTIVITY_DAYS) — this client never even receives release data
     when it is signed out;
   * the CLIENT enforces *integrity*: only strictly-newer versions, only
     allowlisted https hosts, and (before this module runs) a fresh
-    Ed25519 signature Ã¢â‚¬â€— so a compromised worker still cannot drive
+    Ed25519 signature — so a compromised worker still cannot drive
     installs older than what we already know about.
 """
 
@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
-# Where update binaries may come from Ã¢â‚¬â€— the worker base host (which streams
+# Where update binaries may come from — the worker base host (which streams
 # the private R2 bucket via /dl/) plus the GitHub release host family for
 # the fallback asset. A compromised server can redirect us at worst inside
 # these, and every file is hash + signature verified afterwards.
@@ -58,7 +58,7 @@ def is_newer(candidate: str, current: str) -> bool:
 
 def is_rollback(candidate: str, highest_seen: str) -> bool:
     """True when the candidate is NOT strictly newer than everything we
-    have ever seen Ã¢â‚¬â€— the anti-replay guard: even a faithfully signed OLD
+    have ever seen — the anti-replay guard: even a faithfully signed OLD
     release must not downgrade a newer install."""
     a, b = parse_version(candidate), parse_version(highest_seen)
     if a is None or b is None:
@@ -85,7 +85,7 @@ def host_of(url: str) -> str:
 
 def host_allowed(url: str, extra_hosts: frozenset[str] = frozenset()) -> bool:
     """https-only + host allowlist (exact host match; the worker base host
-    is passed in by the caller Ã¢â‚¬â€— it varies with self-hosted .env config)."""
+    is passed in by the caller — it varies with self-hosted .env config)."""
     try:
         schema = urlsplit(url).scheme.lower()
     except Exception:
@@ -140,7 +140,7 @@ def chunk_budget_exceeded(total_read: int) -> bool:
     return total_read > MAX_INSTALLER_BYTES
 
 
-# Ã¢â€—â‚¬Ã¢â€—â‚¬ full decision Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬Ã¢â€—â‚¬
+# —— full decision —————————————————————————————————————————————————————
 
 
 def evaluate(
@@ -154,13 +154,13 @@ def evaluate(
     """Full integrity/eligibility decision on a signature-VERIFIED payload.
 
     Order matters (fail fast, least expensive check first):
-      parse version Ã¢â€ â€™ newer?  Ã¢â€ â€™ anti-rollback Ã¢â€ â€™ host allowlist Ã¢â€ â€™ mandatory?
-    Signature verification happens in trust.py BEFORE this is called Ã¢â‚¬â€—
+      parse version → newer?  → anti-rollback → host allowlist → mandatory?
+    Signature verification happens in trust.py BEFORE this is called —
     a badly-signed payload never reaches here, so even though we re-check
     shape, this module only sees trusted data.
 
     `dismissed_version` is the version the user clicked LATER on (optional
-    nudge-suppression, not a security control Ã¢â‚¬â€— the banner still shows).
+    nudge-suppression, not a security control — the banner still shows).
     """
     version = str(latest_release.get("latest") or latest_release.get("version") or "")
     if parse_version(version) is None:

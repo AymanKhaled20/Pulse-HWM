@@ -1,13 +1,13 @@
-"""Installer bridge â€” download, verify, and run the update installer.
+"""Installer bridge — download, verify, and run the update installer.
 
 Deliberately staged so every dangerous step is testable without touching
 the network or spawning anything:
 
   download_installer()  streams ONE allowlisted URL into a staging file
-                        (.part â†’ atomic rename) whose sha256 must equal
+                        (.part → atomic rename) whose sha256 must equal
                         the SIGNED manifest value
   verify_installer()    re-hashes the exact file and (on Windows) runs
-                        WinVerifyTrust â€” both immediately before spawn
+                        WinVerifyTrust — both immediately before spawn
   install_command()     the exact silent command line (single source)
   spawn_installer()     subprocess.Popen with an injectable callable
 
@@ -95,7 +95,7 @@ def download_installer(
 ) -> Path:
     """Stream the installer; returns the FULLY-VERIFIED (hash) path.
 
-    Staged write (.part â†’ atomic rename) means a killed download can never
+    Staged write (.part → atomic rename) means a killed download can never
     leave a half-written installer pretending to be final.
     """
     import httpx
@@ -145,7 +145,7 @@ def download_installer(
     actual = hasher.hexdigest()
     if actual != expect:
         cleanup_staging(final_path)
-        raise UpdateError("checksum mismatch â€” installer not tamper-safe, aborted")
+        raise UpdateError("checksum mismatch — installer not tamper-safe, aborted")
     os.replace(staging_path(final_path), final_path)
     return final_path
 
@@ -175,10 +175,10 @@ def verify_installer(path: Path, expect_sha: str) -> None:
             hasher.update(chunk)
     if hasher.hexdigest() != expect_sha:
         try:
-            Path(path).unlink(missing_ok=True)  # tampered on disk â€” destroy it
+            Path(path).unlink(missing_ok=True)  # tampered on disk — destroy it
         except OSError:
             pass
-        raise UpdateError("checksum no longer matches â€” refusing to install")
+        raise UpdateError("checksum no longer matches — refusing to install")
     if trust.authenticode_available() and not trust.authenticode_verified(str(path)):
         # defense-in-depth: enforced once SignPath signs production
         # releases (flip trust.AUTHENTICODE_REQUIRED)
@@ -189,9 +189,9 @@ def verify_installer(path: Path, expect_sha: str) -> None:
 def install_command(setup_path: Path | str) -> list[str]:
     """The silent, controlled install line.
 
-    /SILENT            â†’ visible progress, no prompts
-    /NORESTART         â†’ Windows decides nothing; we relaunch ourselves
-    /LAUNCHAFTER=1     â†’ the .iss [Code] check relaunches Pulse afterwards
+    /SILENT            → visible progress, no prompts
+    /NORESTART         → Windows decides nothing; we relaunch ourselves
+    /LAUNCHAFTER=1     → the .iss [Code] check relaunches Pulse afterwards
     """
     return [str(setup_path), "/SILENT", "/NORESTART", "/LAUNCHAFTER=1"]
 
@@ -209,7 +209,7 @@ def spawn_installer(cmd: list[str], spawn=None) -> None:  # spawn injectable for
     return proc
 
 
-# â€”â€” bridge: QThreadPool stages + Signals â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
+# —— bridge: QThreadPool stages + Signals —————————————————————————————
 
 
 @dataclass
@@ -269,7 +269,7 @@ class _InstallTask(QRunnable):
 
 
 class UpdateInstaller(QObject):
-    """Client-side face: install(release) â†’ progress/finished Signals."""
+    """Client-side face: install(release) → progress/finished Signals."""
 
     progress = Signal(int, int)
     finished = Signal(object)  # InstallOutcome
