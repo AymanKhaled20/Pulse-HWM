@@ -2,7 +2,7 @@
 # Minimal metadata; the real app lives in pulse_hwm/.
 # Also serves as the repo-root marker used by pulse_hwm/config.py.
 name = "pulse-hwm"
-version = "1.1.5"
+version = "1.2.0"
 description = "Glorified hardware monitor - a small pixel desktop app"
 requires-python = ">=3.13"
 
