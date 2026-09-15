@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pulsehwm-cloud",
-  "main": "src/worker.js",
+  "main": "src/index.js",
   "compatibility_date": "2026-08-01",
   "d1_databases": [
     {
@@ -10,13 +10,26 @@
       "database_id": "e9372826-ada1-49ee-b730-8a7f8013d819"
     }
   ],
+  // installer binary storage for the in-app updater (front-desk streaming:
+  // the worker serves /dl/<asset> straight from this private bucket)
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "pulsehwm-releases"
+    }
+  ],
   "vars": {
     // how long an access JWT lives, seconds (refresh token lives ~30 days)
     "ACCESS_TTL_S": "3600",
     "REFRESH_TTL_S": "2592000",
     "VERIFIER_TTL_S": "900",
     "GOOGLE_CLIENT_ID": "905085029470-sgaomftqprba9uqmje7ltn11bo79lahq.apps.googleusercontent.com",
-    "GITHUB_CLIENT_ID": "Ov23liy6BmcDeKrLQHKK"
+    "GITHUB_CLIENT_ID": "Ov23liy6BmcDeKrLQHKK",
+    // GitHub repo for fallback asset URLs when R2 lacks an object
+    "GITHUB_REPO": "AymanKhaled20/Pulse-HWM",
+    // update entitlement: accounts inactive longer than this (days) get
+    // 403 on /updates/* + /dl/* and must sign in again (window; 0 = off)
+    "UPDATE_ACTIVITY_DAYS": "90"
   },
   "observability": {
     "enabled": true
