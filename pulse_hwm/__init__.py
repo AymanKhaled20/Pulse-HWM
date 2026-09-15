@@ -1,4 +1,4 @@
-﻿"""Pulse-HWM â€” glorified hardware monitor."""
+"""Pulse-HWM — glorified hardware monitor."""
 
-__version__ = "1.1.6"
+__version__ = "1.2.0"
 APP_NAME = "Pulse-HWM"

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from pulse_hwm.auth import pkce
-from pulse_hwm.auth.oauth import (
+from pulse_hwm.cloud import pkce
+from pulse_hwm.cloud.oauth import (
     REDIRECT_URI,
     OauthCoordinator,
     parse_callback_url,

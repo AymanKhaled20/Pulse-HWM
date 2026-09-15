@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pulse_hwm.auth.session import SessionManager
+from pulse_hwm.cloud.session import SessionManager
 
 
 class FakeStore:
@@ -43,7 +43,7 @@ class FakeClient:
         self.logout_calls: list[str] = []
 
     def sign_in_with_password(self, email, password):
-        from pulse_hwm.auth.rest import AuthResult
+        from pulse_hwm.cloud.rest import AuthResult
 
         return AuthResult(
             ok=True,
@@ -52,7 +52,7 @@ class FakeClient:
         )
 
     def refresh(self, token: str):
-        from pulse_hwm.auth.rest import AuthResult
+        from pulse_hwm.cloud.rest import AuthResult
 
         self.refresh_calls.append(token)
         # rotate the refresh token each time, like Supabase does
@@ -66,14 +66,14 @@ class FakeClient:
         self.logout_calls.append(access_token)
 
     def exchange_pkce_code(self, code: str, verifier: str):
-        from pulse_hwm.auth.rest import AuthResult
+        from pulse_hwm.cloud.rest import AuthResult
 
         assert code == "the-code"
         self.verifier_seen = verifier
         return AuthResult(ok=True, tokens=TOK, user={"id": "u-1", "email": "e@x.y"})
 
 
-from pulse_hwm.auth.rest import Tokens  # noqa: E402 — placed here for clarity
+from pulse_hwm.cloud.rest import Tokens  # noqa: E402 — placed here for clarity
 
 TOK = Tokens(access_token="acc", refresh_token="ref")
 
@@ -109,7 +109,7 @@ def test_resume_with_dead_token_clears_session():
 
     class DeadClient(FakeClient):
         def refresh(self, token):
-            from pulse_hwm.auth.rest import AuthResult
+            from pulse_hwm.cloud.rest import AuthResult
 
             return AuthResult(error="session expired")
 
@@ -122,7 +122,7 @@ def test_resume_with_dead_token_clears_session():
 def test_resume_network_error_keeps_refresh_token():
     """Offline 'resume' must NOT forget the parked token — otherwise one
     offline launch signs the user out permanently."""
-    from pulse_hwm.auth.rest import AuthResult
+    from pulse_hwm.cloud.rest import AuthResult
 
     mgr, client, store = make_manager()
     store.refresh = "parked"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -15,7 +15,10 @@ from pulse_hwm.ui.theme import app_icon, status_icon
 
 
 class MainWindow(QMainWindow):
-    """Top-level window: 4 tabs + system-tray behavior."""
+    """Top-level window: tabs + system-tray behavior."""
+
+    # tray → app.py: the user picked "CHECK FOR UPDATES" in the tray menu
+    update_check_requested = Signal()
 
     def __init__(
         self,
@@ -31,12 +34,14 @@ class MainWindow(QMainWindow):
     ):
         super().__init__()
         self._theme_manager = theme_manager
+        self._db = db  # closeEvent + update flows read settings from here
+        self._alerts_ref = alerts  # update notifications use the channel toggles
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(1280, 840)
         # windowed (restored-down) size can never shrink past this —
         # matches the dashboard's true layout minimum so content NEVER
-        # clips: below this, shrink is refused (1366×768 laptops still fit)
+        # clips: below this, shrink is refused (1366Ã—768 laptops still fit)
         self.setMinimumSize(1000, 700)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
@@ -143,7 +148,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_scanlines"):
             self._scanlines.setGeometry(0, 0, self.width(), self.height())
 
-    # ── accounts: slots invoked by app.py callback routing ───────────
+    # —— accounts: slots invoked by app.py callback routing ———————————
     def bring_to_front(self) -> None:
         """Unminimize + focus the window when an auth callback arrives —
         the user is still in the browser and needs to see the result."""
@@ -166,7 +171,7 @@ class MainWindow(QMainWindow):
             self._account_tab.release_auth_lock()
             self._account_tab._set_feedback(message)
 
-    # ── overall state LED ──────────────────────────────────
+    # —— overall state LED ——————————————————————————————————
     def on_site_checked(self, result: dict) -> None:
         site_id = int(result["site_id"])
         if result["ok"]:
@@ -175,7 +180,7 @@ class MainWindow(QMainWindow):
             self._down_sites.add(site_id)
         self.tray.setIcon(status_icon("error" if self._down_sites else "ok"))
 
-    # ── tray ───────────────────────────────────────────────
+    # —— tray ———————————————————————————————————————————————
     def _build_tray(self) -> None:
         self.tray = QSystemTrayIcon(status_icon("ok"), self)
         self.tray.setToolTip(APP_NAME)
@@ -183,9 +188,14 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         show_action = QAction("SHOW", self)
         show_action.triggered.connect(self._show_window)
+        # manual update check: even with auto-checks off, the user keeps a
+        # one-click door into the update system (nice after a toast hint)
+        check_updates_action = QAction("CHECK FOR UPDATES", self)
+        check_updates_action.triggered.connect(self.update_check_requested.emit)
         quit_action = QAction("QUIT", self)
         quit_action.triggered.connect(self._quit_app)
         menu.addAction(show_action)
+        menu.addAction(check_updates_action)
         menu.addSeparator()
         menu.addAction(quit_action)
 
@@ -219,7 +229,14 @@ class MainWindow(QMainWindow):
         self.tray.hide()
         QApplication.quit()
 
-    # ── close → minimize to tray ───────────────────────────
+    def quit_for_update(self) -> None:
+        """Real quit (not close-to-tray): the silent installer must own the
+        process exit to replace files, then it relaunches Pulse itself."""
+        self.tray.hide()
+        QApplication.quit()
+        QApplication.processEvents()  # flush the quit before the swap
+
+    # —— close → minimize to tray ———————————————————————————
     def closeEvent(self, event) -> None:
         self.hide()
         # even this one-shot explainer respects the DESKTOP TOAST toggle

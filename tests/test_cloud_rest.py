@@ -4,15 +4,15 @@ import json
 
 import httpx
 
-from pulse_hwm.auth.rest import SupabaseClient
+from pulse_hwm.cloud.rest import CloudClient
 
 BASE = "https://example.supabase.co"
 KEY = "publishable-key"
 
 
-def _client(handler) -> SupabaseClient:
+def _client(handler) -> CloudClient:
     transport = httpx.MockTransport(handler)
-    return SupabaseClient(BASE, KEY, transport=transport)
+    return CloudClient(BASE, KEY, transport=transport)
 
 
 def _auth_json(**extra) -> httpx.Response:
@@ -105,3 +105,41 @@ def test_rest_select_carries_user_bearer_and_returns_body():
     assert status == 200
     assert body[0]["key"] == "k"
     assert checker.actual == "Bearer acc"
+
+
+# -- updates: GET /updates/latest (Bearer-gated; status 0 = offline) ---
+
+
+def test_latest_release_sends_bearer_and_version():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/updates/latest"
+        assert request.headers["apikey"] == KEY
+        captured["auth"] = request.headers.get("authorization", "")
+        captured["version"] = request.url.params["version"]
+        return httpx.Response(200, json={"latest": "1.2.0", "update_available": True})
+
+    client = _client(handler)
+    status, body = client.latest_release("tok-9", "1.1.6")
+    assert status == 200 and body["latest"] == "1.2.0"
+    assert captured["auth"] == "Bearer tok-9"
+    assert captured["version"] == "1.1.6"
+
+
+def test_latest_release_surfaces_rejections():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"msg": "account inactive"})
+
+    client = _client(handler)
+    status, body = client.latest_release("tok", "1.1.6")
+    assert status == 403  # checker turns this into a friendly "sign in again"
+
+
+def test_latest_release_offline_sentinel():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("offline")
+
+    client = _client(handler)
+    status, body = client.latest_release("tok", "1.1.6")
+    assert status == 0 and body == {}

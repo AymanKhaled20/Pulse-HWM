@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pulse_hwm.auth.validators import clean_email, validate_email, validate_password
+from pulse_hwm.cloud.validators import clean_email, validate_email, validate_password
 
 
 class TestEmail:

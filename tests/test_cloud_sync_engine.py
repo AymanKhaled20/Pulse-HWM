@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pulse_hwm.auth.rest import AuthResult, Tokens
-from pulse_hwm.auth.session import SessionManager
-from pulse_hwm.auth.sync_engine import SyncEngine
+from pulse_hwm.cloud.rest import AuthResult, Tokens
+from pulse_hwm.cloud.session import SessionManager
+from pulse_hwm.cloud.sync_engine import SyncEngine
 from pulse_hwm.db import Database
 
 # One real cycle against a FAKE cloud client + a REAL (tmp) sqlite db:
@@ -25,7 +25,7 @@ class FakeStore:
 
 
 class FakeClient:
-    """Mimics enough of SupabaseClient for one SyncWorker cycle."""
+    """Mimics enough of CloudClient for one SyncWorker cycle."""
 
     def __init__(self, settings_rows, site_rows):
         self.settings_rows = settings_rows
@@ -110,7 +110,7 @@ def test_full_cycle_push_pull(tmp_path):
 
 
 def _sync_worker(session, client, db):
-    from pulse_hwm.auth.sync_engine import SyncWorker
+    from pulse_hwm.cloud.sync_engine import SyncWorker
 
     return SyncWorker(session, client, db, SyncWorker._Signals())
 

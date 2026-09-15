@@ -49,7 +49,7 @@ def _patched(fake):
 
 
 def _manager_with(monkeypatch, fake_keyring: FakeKeyringModule):
-    import pulse_hwm.auth.token_store as ts
+    import pulse_hwm.cloud.token_store as ts
 
     monkeypatch.setattr(ts, "_keyring", lambda: fake_keyring)
     return ts

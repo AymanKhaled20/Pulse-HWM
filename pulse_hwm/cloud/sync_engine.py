@@ -3,8 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, QRunnable, Signal
 
 from pulse_hwm.app_settings import SYNCABLE_KEYS
-from pulse_hwm.auth.session import SessionManager
-from pulse_hwm.auth.sync import SyncPlan, plan_settings, plan_sites
+from pulse_hwm.cloud.session import SessionManager
+from pulse_hwm.cloud.sync import SyncPlan, plan_settings, plan_sites
 from pulse_hwm.db import Database
 
 # SyncEngine: automatic two-way merge of settings + sites.
@@ -16,7 +16,7 @@ from pulse_hwm.db import Database
 #
 # Scheduling honesty: instead of hooking every mutation site, a 60 s
 # compare-and-merge tick covers "automatic" — the payloads are tiny
-# (≤20 keys + ≤50 site rows) and merge-shortcircuits to one push/pull.
+# (â‰¤20 keys + â‰¤50 site rows) and merge-shortcircuits to one push/pull.
 
 _TICK_S = 60
 
@@ -104,8 +104,8 @@ class SyncWorker(QRunnable):
         ):
             return "in sync", True, ""  # nothing moved: skip UI reload choreography
 
-        # ── push remote updates first: pulls applied after land on a
-        # server that already knows about our locally-newer rows ──────
+        # —— push remote updates first: pulls applied after land on a
+        # server that already knows about our locally-newer rows ——————
         pushed_settings = 0
         if plan.push_settings:
             status, _ = self._client.rest_upsert(
@@ -119,7 +119,7 @@ class SyncWorker(QRunnable):
             if status >= 400:
                 return "", False, f"sites push failed ({status})"
 
-        # ── apply pulls locally ─────────────────────────────────────
+        # —— apply pulls locally —————————————————————————————————————
         adopted_settings = 0
         for row in plan.pull_settings:
             if self._db.adopt_cloud_setting(row["key"], row["value"], row["ts"]):
@@ -127,7 +127,7 @@ class SyncWorker(QRunnable):
         adopted_sites = 0
         tombstoned = 0
         for row in plan.pull_sites:
-            from pulse_hwm.auth.sync import _iso_epoch
+            from pulse_hwm.cloud.sync import _iso_epoch
 
             if self._db.upsert_synced_site(
                 str(row["site_uuid"]),

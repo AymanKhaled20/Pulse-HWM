@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pulse_hwm.auth import pkce
-from pulse_hwm.auth import token_store as token_store_default
-from pulse_hwm.auth.rest import SupabaseClient
+from pulse_hwm.cloud import pkce
+from pulse_hwm.cloud import token_store as token_store_default
+from pulse_hwm.cloud.rest import CloudClient
 
 # Custom-scheme OAuth: the app registers pulsehwm:// in the registry
 # (installer), the browser redirects there, and Windows hands the URL to
@@ -34,7 +34,7 @@ class OauthCoordinator:
     flow survives an app restart between click and callback.
     """
 
-    def __init__(self, client: SupabaseClient, store=token_store_default):
+    def __init__(self, client: CloudClient, store=token_store_default):
         self._client = client
         self._store = store
         self.pending: PendingFlow | None = None
@@ -107,7 +107,7 @@ class CallbackResult:
 
 
 def parse_callback_url(url: str) -> CallbackResult:
-    """Windows delivers the whole redirect as 'pulsehwm://auth-callback?…'.
+    """Windows delivers the whole redirect as 'pulsehwm://auth-callback?â€¦'.
 
     urllib treats the CUSTOM SCHEME weirdly (the 'host' is 'auth-callback'),
     so split query params manually instead of urlsplit games.

@@ -40,7 +40,7 @@ def _delete(account: str) -> None:
         pass  # already gone / no backend
 
 
-# ── refresh token (long-lived; the crown jewel) ───────────────────────
+# —— refresh token (long-lived; the crown jewel) ———————————————————————
 
 
 def save_refresh_token(token: str) -> bool:
@@ -65,7 +65,7 @@ def clear_refresh_token() -> None:
     _delete(_REFRESH_ACCOUNT)
 
 
-# ── PKCE verifier parking ────────────────────────────────────────────
+# —— PKCE verifier parking ————————————————————————————————————————————
 # Survives an app restart between "send the verify/reset email" and
 # "the user finally clicks it". Payload: parked_at|verifier|redirect_dst
 
@@ -112,7 +112,7 @@ def clear_pending_flow(flow_id: str) -> None:
     _delete(_verifier_account(flow_id))
 
 
-# ── pending flow pointer ─────────────────────────────────────────────
+# —— pending flow pointer —————————————————————————————————————————————
 # The callback URL carries ONLY the auth code — we need to know which
 # parked verifier matches. In-process, OauthCoordinator.pending remembers
 # it; the pointer below lets a COLD launch (user clicked the email link

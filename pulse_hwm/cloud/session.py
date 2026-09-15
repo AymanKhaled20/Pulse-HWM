@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pulse_hwm.auth import token_store
-from pulse_hwm.auth.rest import AuthResult, SupabaseClient, Tokens
+from pulse_hwm.cloud import token_store
+from pulse_hwm.cloud.rest import AuthResult, CloudClient, Tokens
 
 # SessionManager: owns the CURRENT session for one app run.
 #
@@ -25,18 +25,18 @@ class Session:
 
 
 class SessionManager:
-    def __init__(self, client: SupabaseClient, store=token_store):
+    def __init__(self, client: CloudClient, store=token_store):
         self._client = client
         self._store = store  # injectable: tests park a fake
         self.tokens: Tokens | None = None
         self.session_info = Session()
         self.last_error = ""
 
-    # ── state ─────────────────────────────────────────────────────────
+    # —— state —————————————————————————————————————————————————————————
     def is_signed_in(self) -> bool:
         return self.tokens is not None and self.tokens.is_valid()
 
-    # ── email + password ──────────────────────────────────────────────
+    # —— email + password ——————————————————————————————————————————————
     def sign_up(
         self,
         email: str,
@@ -65,7 +65,7 @@ class SessionManager:
             self._adopt(result, provider="password")
         return result
 
-    # ── OAuth (google / github) ───────────────────────────────────────
+    # —— OAuth (google / github) ———————————————————————————————————————
     def adopt_pkce_result(self, code: str, flow_id: str, provider: str) -> AuthResult:
         """Signature arrives via the custom scheme; finish the exchange."""
         verifier, _redirect = self._store.take_verifier(flow_id)
@@ -77,7 +77,7 @@ class SessionManager:
             self._adopt(result, provider=provider, skip_provider=True)
         return result
 
-    # ── lifecycle ─────────────────────────────────────────────────────
+    # —— lifecycle —————————————————————————————————————————————————————
     def try_resume(self, force: bool = False) -> bool:
         """Silent restore on app start: does Credential Manager still
         hold a live refresh token? Returns True and sets the session.
@@ -114,11 +114,11 @@ class SessionManager:
         self.tokens = None
         self.session_info = Session()
 
-    # ── access token for REST calls ───────────────────────────────────
+    # —— access token for REST calls ———————————————————————————————————
     def bearer(self) -> str:
         return self.tokens.access_token if self.tokens else ""
 
-    # ── internals ─────────────────────────────────────────────────────
+    # —— internals —————————————————————————————————————————————————————
     def _adopt(self, result: AuthResult, provider: str, skip_provider: bool = False):
         tokens = result.tokens
         if tokens is None:

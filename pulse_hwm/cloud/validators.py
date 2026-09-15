@@ -48,7 +48,7 @@ def _normalize(text: str) -> str:
 def clean_email(raw: str) -> str:
     """Trim + lowercase an email before it ever crosses the network.
 
-    Also strips zero-width/format characters (U+200B–200D, U+2060, U+FEFF)
+    Also strips zero-width/format characters (U+200Bâ€“200D, U+2060, U+FEFF)
     — NFKC alone does NOT remove those, and they're a classic look-alike
     trick for cookie/phishing lookalikes."""
     text = _normalize((raw or "").strip().lower())

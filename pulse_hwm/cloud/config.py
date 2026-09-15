@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-# ── PUBLIC values, not secrets ─────────────────────────────────────────
+# —— PUBLIC values, not secrets —————————————————————————————————————————
 # The Worker URL + client key are public client values (ownership is
 # enforced server-side by the Worker; RLS stand-in). They ship inside
 # the exe so ANY fresh install works with zero configuration; .env

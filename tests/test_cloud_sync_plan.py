@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pulse_hwm.app_settings import SYNCABLE_KEYS
-from pulse_hwm.auth.sync import (
+from pulse_hwm.cloud.sync import (
     SyncPlan,
     _iso_epoch,
     _iso_now,

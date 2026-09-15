@@ -69,6 +69,19 @@ class SettingsTab(QWidget):
         panel.body().addLayout(form)
         outer.addWidget(panel)
 
+        updates_panel = PixelPanel("UPDATES")
+        updates_form = QFormLayout()
+        self.update_check_box = QCheckBox("CHECK FOR UPDATES AUTOMATICALLY")
+        self.update_check_box.setToolTip(
+            "Ask the cloud for new releases (signed-in members only); "
+            "notifications follow the ALERTS toggles above"
+        )
+        # same instant-apply contract as the ALERT boxes: clicked, not toggled
+        self.update_check_box.clicked.connect(self._on_update_check_clicked)
+        updates_form.addRow(self.update_check_box)
+        updates_panel.body().addLayout(updates_form)
+        outer.addWidget(updates_panel)
+
         alerts_panel = PixelPanel("ALERTS")
         alerts_form = QFormLayout()
         self.sound_box = QCheckBox("8-BIT SOUND")
@@ -195,6 +208,7 @@ class SettingsTab(QWidget):
         self.proc_interval.setValue(values.process_interval_s)
         self.proc_max_rows.setValue(values.process_max_rows)
         self.limit_resources_box.setChecked(values.limit_resources)
+        self.update_check_box.setChecked(values.update_check_enabled)
 
     def collect(self) -> AppSettings:
         return AppSettings(
@@ -209,6 +223,7 @@ class SettingsTab(QWidget):
             process_interval_s=self.proc_interval.value(),
             process_max_rows=self.proc_max_rows.value(),
             limit_resources=self.limit_resources_box.isChecked(),
+            update_check_enabled=self.update_check_box.isChecked(),
         )
 
     def _apply(self) -> None:
@@ -264,6 +279,12 @@ class SettingsTab(QWidget):
         self.limit_resources_box.blockSignals(True)
         self.limit_resources_box.setChecked(bool(on))
         self.limit_resources_box.blockSignals(False)
+
+    def _on_update_check_clicked(self, on: bool) -> None:
+        """Instant-apply for CHECK FOR UPDATES AUTOMATICALLY — same pattern
+        as the ALERT boxes: persist the single field immediately, so the
+        preference survives restarts without hunting for APPLY."""
+        app_settings.save_field(self._db, "update_check_enabled", bool(on))
 
     def _on_alert_channel_clicked(self, on: bool) -> None:
         """Apply an alert toggle the moment it is clicked.

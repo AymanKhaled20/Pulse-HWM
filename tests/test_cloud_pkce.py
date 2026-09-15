@@ -5,7 +5,7 @@ import hashlib
 
 import pytest
 
-from pulse_hwm.auth import pkce
+from pulse_hwm.cloud import pkce
 
 # RFC 7636 Appendix B worked example (verbatim — see the scan_secrets.py
 # allow-marker policy below): nothing here is a secret.

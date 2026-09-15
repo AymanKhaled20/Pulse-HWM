@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-# ── dataclasses (pure data; ideal for offline testing) ────────────────
+# —— dataclasses (pure data; ideal for offline testing) ————————————————
 
 
 @dataclass
@@ -59,14 +59,15 @@ def _tokens_from(payload: dict) -> Tokens:
     )
 
 
-# ── the client ────────────────────────────────────────────────────────
+# —— the client ————————————————————————————————————————————————————————
 
 
-class SupabaseClient:
-    """Thin HTTPS wrapper over Supabase Auth + PostgREST.
-
-    Deliberately boring: every method returns AuthResult/dict, never
-    raises for HTTP-level problems, and never logs tokens.
+class CloudClient:
+    """Thin HTTPS wrapper over the Pulse cloud Worker (worker-auth +
+    PostgREST-style). The class was once named SupabaseClient because the
+    Worker deliberately keeps Supabase's URL/JSON shapes; the name is
+    honest now. Every method returns AuthResult/dict, never raises for
+    HTTP-level problems, and never logs tokens.
     """
 
     def __init__(
@@ -90,7 +91,7 @@ class SupabaseClient:
     def close(self) -> None:
         self._http.close()
 
-    # ── auth ───────────────────────────────────────────────────────────
+    # —— auth ———————————————————————————————————————————————————————————
     def sign_up(
         self,
         email: str,
@@ -241,7 +242,33 @@ class SupabaseClient:
             return AuthResult(error=_parse_error(r.json(), "session rejected"))
         return AuthResult(ok=True, user=r.json() or {})
 
-    # ── PostgREST (cloud tables; RLS enforces ownership) ──────────────
+    # ── updates (v1.2.0) ─────────────────────────────────────────────────
+    def latest_release(
+        self, access_token: str, current_version: str
+    ) -> tuple[int, dict]:
+        """GET /updates/latest — Bearer-gated, registered+active accounts.
+
+        Returns (status, payload). Status 0 = offline sentinel, 401 = the
+        session was refused (caller may force one refresh + retry),
+        403 = account outside the activity window. Payload is untrusted:
+        `cloud.updates.trust` verifies the Ed25519 manifest signature
+        before `policy.evaluate` acts on it.
+        """
+        try:
+            r = self._http.get(
+                "/updates/latest",
+                params={"version": current_version},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+        except httpx.HTTPError:
+            return 0, {}
+        try:
+            body: dict = r.json() if isinstance(r.json(), dict) else {}
+        except ValueError:
+            body = {}
+        return r.status_code, body
+
+    # —— PostgREST (cloud tables; RLS enforces ownership) ——————————————
     def rest_select(
         self, table: str, query: str, access_token: str
     ) -> tuple[int, list | dict]:

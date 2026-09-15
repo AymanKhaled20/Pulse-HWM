@@ -18,31 +18,38 @@ Yellow and black pixel-art look by default, changeable live in the THEMES tab
 - **Alerts**: tray + desktop toasts, 8-bit sound, Discord/Slack webhooks
 - **History**: charts + event log, SQLite-backed retention
 - **Accounts** (optional): sign in with email/password, Google, or GitHub;
-  cloud-syncs your sites + portable settings (`RLS`-fenced Per-key
-  last-write-wins). The app is 100% functional offline; accounts only add sync.
-  Refresh tokens live in Windows Credential Manager, never files. See
-  [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
+  cloud-syncs your sites + portable settings (server-fenced per-user
+  last-write-wins). The app is 100% functional offline; accounts only add sync
+  and updates. Refresh tokens live in Windows Credential Manager, never files.
+  See [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
+- **Secure updates** (member benefit): signed-in accounts are notified when a
+  new version goes live and update in-app with one click — silent download
+  from private storage, Ed25519 release-signature + SHA-256 +
+  Authenticode-verified before anything runs, anti-downgrade built in.
+  See [docs/UPDATES.md](docs/UPDATES.md).
 
-## Install (v1.1.0 â€” production)
+## Install (v1.2.0 — production)
 
 Grab the latest release from the repo's
 [**Releases** page](https://github.com/AymanKhaled20/Pulse-HWM/releases/latest)
-â€” two downloads are provided:
+— the release ships **one download**:
 
 | File | What it is |
 |---|---|
-| `PulseHWM-Setup-1.0.1.exe` | **Installer (recommended)** â€” one-click, Start-menu icon, optional desktop icon and "start at login" |
-| `PulseHWM-v1.0.1-win64.zip` | Portable build â€” unzip anywhere and run `PulseHWM.exe` directly |
+| `PulseHWM-Setup-<version>.exe` | **The Windows installer** — one-click, Start-menu icon, optional desktop icon and "start at login" |
 
 Steps:
-1. Download **`PulseHWM-Setup-1.0.1.exe`** from the release assets.
-2. Windows SmartScreen may say "unknown publisher" â€” click **More info â†’ Run
-   anyway** (the app is unsigned because code-signing certificates cost money).
+1. Download **`PulseHWM-Setup-<version>.exe`** from the release assets.
+2. Windows SmartScreen may say "unknown publisher" — click **More info → Run
+   anyway** (until code signing is provisioned; every release carries a
+   verifiable `SHA256SUMS` + build provenance).
 3. Follow the wizard (per-user install, no admin rights needed).
-4. Launch **PulseHWM** â€” the icon docks to your system tray; closing the
+4. Launch **PulseHWM** — the icon docks to your system tray; closing the
    window minimizes there instead of quitting. Quit from the tray icon menu.
    Temperature sensing (temps tab/GPU) works best when you ALLOW the
    Administrator prompt on the startup prompt.
+5. Once installed, updates arrive in-app: sign in on the ACCOUNT tab and
+   click INSTALL NOW when notified — no manual downloads.
 
 Requirements: Windows 10 / 11 (64-bit). No Python or other prerequisites â€”
 everything is bundled.
@@ -59,7 +66,8 @@ python -m pulse_hwm
 ```
 
 Run tests with `pytest`. Build the exe with
-`.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm`.
+`.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm` — though releases
+are built automatically in CI when you push a `vX.Y.Z` tag (installer only).
 
 ## Configuration
 
