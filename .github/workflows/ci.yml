@@ -59,6 +59,7 @@ jobs:
           node-version: "22"
 
       - name: Syntax-check every worker module
+        shell: bash
         run: |
           for f in $(find workers/src -name '*.js'); do node --check "$f"; done
           echo "all worker modules parse"
