@@ -1,0 +1,179 @@
+# Pulse-HWM release pipeline (installer-only releases, built here).
+#
+# Trigger: push a tag `vX.Y.Z` (must equal pulse_hwm/__init__.py __version__).
+# Produces: PulseHWM-Setup-<v>.exe  →  GitHub release + R2  →  worker publish.
+#
+# Secrets required (see docs/UPDATES.md):
+#   UPDATE_SIGNING_KEY  — Ed25519 private key, hex (scripts/update_signing.py gen)
+#   RELEASE_KEY         — shared worker publish secret
+# Optional (R2 delivery): CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID and the
+#   repo variable R2_ENABLED=true — until then releases ship on GitHub assets.
+#
+# All third-party actions are pinned by commit SHA.
+
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    env:
+      PULSEHWM_CLOUD_URL: https://pulsehwm-cloud.pulsehwm27.workers.dev
+    steps:
+      - name: Check out source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Version-consistency guard + regenerate installer/version.iss
+        run: |
+          $tag = $env:GITHUB_REF_NAME -replace '^v', ''
+          $match = Select-String -Path 'pulse_hwm\__init__.py' -Pattern '__version__ = "([^"]+)"'
+          $pyver = $match.Matches[0].Groups[1].Value
+          if ($tag -ne $pyver) {
+            Write-Error "tag v$tag does not match pulse_hwm/__init__.py __version__ = $pyver"
+            exit 1
+          }
+          Set-Content -Path 'installer\version.iss' -Value "#define AppVersion `"$tag`"" -Encoding ascii
+          Write-Output "building Pulse-HWM v$tag"
+
+      - name: Build onedir with PyInstaller
+        run: python -m PyInstaller pulse_hwm.spec --noconfirm
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build the Windows installer
+        run: |
+          $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe', 'C:\Program Files\Inno Setup 6\ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { Write-Error 'ISCC.exe not found'; exit 1 }
+          & $iscc.FullName 'installer\pulse-hwm.iss'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Stage release assets (installer, SHA256SUMS, sign manifest)
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $v = $env:GITHUB_REF_NAME -replace '^v', ''
+          $asset = "PulseHWM-Setup-$v.exe"
+          $setup = "installer\output\$asset"
+          if (-not (Test-Path $setup)) { Write-Error "installer missing: $setup"; exit 1 }
+          New-Item -ItemType Directory -Force dist-assets | Out-Null
+          Copy-Item $setup "dist-assets\$asset"
+
+          $sha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$sha  $asset" | Set-Content -Path 'dist-assets\SHA256SUMS' -Encoding ascii
+
+          # one source of truth for the security-floor fields — the signed
+          # manifest and the unsigned metadata must never drift apart
+          $minSupported = '1.1.6'
+          $mandatory = $false
+
+          # the manifest is the EXACT string CI signs and the app verifies
+          $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss+00:00')
+          $manifest = @"
+          {"version": "$v", "asset_name": "$asset", "sha256": "$sha", "published_at": "$now", "mandatory": $($mandatory.ToString().ToLower()), "min_supported": "$minSupported"}
+          "@
+          Set-Content -Path "dist-assets\manifest-$v.json" -Value $manifest -Encoding utf8
+
+          if (-not $env:UPDATE_SIGNING_KEY) {
+            Write-Error 'UPDATE_SIGNING_KEY secret missing — refusing to release unsigned updates'
+            exit 1
+          }
+          $sig = python 'scripts\update_signing.py' sign --manifest "dist-assets\manifest-$v.json" --key-env UPDATE_SIGNING_KEY
+          Set-Content -Path "dist-assets\manifest-$v.sig" -Value $sig -Encoding ascii
+
+          # release notes for the client: extract OUR version's changelog
+          # section once, reuse it for both the GitHub body and metadata
+          python 'scripts\changelog_notes.py' --version $v --out changelog-body.txt
+          $notes = Get-Content 'changelog-body.txt' -Raw -ErrorAction SilentlyContinue
+          $meta = [ordered]@{
+            version = $v
+            sha256 = $sha
+            manifest = $manifest
+            manifest_sig = $sig
+            published_at = $now
+            mandatory = $mandatory
+            min_supported = $minSupported
+            notes = $notes
+          } | ConvertTo-Json -Compress
+          Set-Content -Path 'dist-assets\metadata.json' -Value $meta -Encoding utf8
+          Write-Output "staged: $asset ($sha)"
+
+      # OPTIONAL Authenticode signing (defense-in-depth, removes SmartScreen
+      # warnings). Enable once SignPath OSS verification completes — keep
+      # this action SHA-pinned, then uncomment:
+      # - name: Sign installer with SignPath
+      #   env:
+      #     SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #   uses: SignPath/github-actions/<PIN-COMMIT-SHA>@v1
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+      #     project-slug: pulse-hwm
+      #     signing-policy-id: <from your SignPath project>
+      #     artifact-configuration-path: installer/signpath.xml
+      #     inputArtifactPath: dist-assets/PulseHWM-Setup-<v>.exe
+
+      - name: Build-provenance attestation (SLSA-style)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: dist-assets/PulseHWM-Setup-*.exe
+
+      - name: Extract this version's CHANGELOG section for the release body
+        run: |
+          $v = $env:GITHUB_REF_NAME -replace '^v', ''
+          python 'scripts\changelog_notes.py' --version $v --out changelog-body.txt
+
+      - name: Create the GitHub release (installer only)
+        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
+        with:
+          body_path: changelog-body.txt
+          files: |
+            dist-assets/PulseHWM-Setup-*.exe
+            dist-assets/SHA256SUMS
+            dist-assets/manifest-*.json
+            dist-assets/manifest-*.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer to R2 (private bucket; served via /dl/)
+        # OPTIONAL: skipped unless the repo variable R2_ENABLED=true AND the
+        # Cloudflare secrets exist — GitHub release assets are the fallback
+        # delivery path (and the default until R2 is provisioned).
+        if: ${{ vars.R2_ENABLED == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # pinned Wrangler: same tested version as the CI bundle check (see ci.yml)
+        run: |
+          $v = $env:GITHUB_REF_NAME -replace '^v', ''
+          npx --yes wrangler@4.53.0 r2 object put "pulsehwm-releases/PulseHWM-Setup-$v.exe" --file "dist-assets\PulseHWM-Setup-$v.exe" --remote --content-type application/octet-stream
+
+      - name: Publish metadata to the cloud worker
+        env:
+          RELEASE_KEY: ${{ secrets.RELEASE_KEY }}
+        run: python 'scripts\publish_release.py' --metadata dist-assets\metadata.json

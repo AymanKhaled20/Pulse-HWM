@@ -1,4 +1,4 @@
-﻿"""Task-Manager-style app -> background-process adoption (Brave RAM bug)."""
+"""Task-Manager-style app -> background-process adoption (Brave RAM bug)."""
 
 from __future__ import annotations
 

@@ -22,6 +22,12 @@ class AppSettings:
     process_max_rows: int = 400
     limit_resources: bool = False  # low priority + periodic working-set trim
 
+    # ── updates (v1.2.0) ────────────────────────────────────────────────
+    # auto-update checks; the CHECK/highest-seen/dismiss state keys
+    # (update_*) are device-local internals — deliberately NOT here and
+    # NOT syncable, accessed only via db.set_setting/get_setting.
+    update_check_enabled: bool = True
+
     # ── theme ─────────────────────────────────────────────────────────
     theme_color: str = "amber"  # id from ui/palettes.py COLOR_THEMES
     theme_font: str = "classic"  # id from ui/palettes.py FONT_THEMES
@@ -38,7 +44,13 @@ _INT_KEYS = {
     "font_size",
 }
 _FLOAT_KEYS = {"website_timeout_s"}
-_BOOL_KEYS = {"sound_enabled", "desktop_enabled", "webhooks_enabled", "limit_resources"}
+_BOOL_KEYS = {
+    "sound_enabled",
+    "desktop_enabled",
+    "webhooks_enabled",
+    "limit_resources",
+    "update_check_enabled",
+}
 _STR_KEYS = {"theme_color", "theme_font"}
 _ALL_KEYS = _INT_KEYS | _FLOAT_KEYS | _BOOL_KEYS | _STR_KEYS
 
@@ -118,6 +130,10 @@ def load(db: Database) -> AppSettings:
     )
     values.limit_resources = bool(
         read("limit_resources", str_to_bool, values.limit_resources)
+        in (True, "true", "True", 1)
+    )
+    values.update_check_enabled = bool(
+        read("update_check_enabled", str_to_bool, values.update_check_enabled)
         in (True, "true", "True", 1)
     )
     values.theme_color = str(read("theme_color", str, values.theme_color)) or "amber"

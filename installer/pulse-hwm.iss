@@ -4,7 +4,7 @@
 ; Output: installer\output\PulseHWM-Setup-<version>.exe
 
 #define AppName "Pulse-HWM"
-#define AppVersion "1.1.6"
+#include "version.iss"
 #define AppExeName "PulseHWM.exe"
 #define AppPublisher "Pulse-HWM"
 
@@ -25,6 +25,12 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#AppExeName}
 SetupIconFile=..\pulse_hwm\assets\icons\pulse.ico
+; the running app flags itself with this mutex so setup can detect (and, in
+; silent mode, close) an instance that is still using the files
+AppMutex=PulseHWMAppMutex
+; Restart-Manager closes the app when files are locked (default), never
+; restart-via-RM: the updater controls its own relaunch via /LAUNCHAFTER
+CloseApplications=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -48,6 +54,16 @@ Name: "{userstartup}\PulseHWM"; Filename: "{app}\{#AppExeName}"; Tasks: startupi
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; silent-update relaunch: ONLY when the in-app updater passes /LAUNCHAFTER=1
+Filename: "{app}\{#AppExeName}"; Flags: nowait; Check: LaunchAfter
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\data"
+
+[Code]
+// /LAUNCHAFTER=1 is set by the in-app updater's silent install; normal
+// interactive installs keep the classic postinstall checkbox instead
+function LaunchAfter: Boolean;
+begin
+  Result := ExpandConstant('{param:LAUNCHAFTER|0}') = '1';
+end;

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -44,6 +45,10 @@ class SettingsTab(QWidget):
         if processes_collector is not None:
             self.processes_reconfigure.connect(processes_collector.reconfigure)
 
+        # Five stacked panels overflowed a windowed (or small-screen)
+        # window: everything below the visible height was clipped and the
+        # tab felt cramped. A two-column grid halves the height and lets
+        # each panel use the full tab width instead of the scrollbar.
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(10)
@@ -67,7 +72,18 @@ class SettingsTab(QWidget):
         form.addRow("REQUEST TIMEOUT", self.site_timeout)
         form.addRow("SSL WARNING BEFORE", self.ssl_warn)
         panel.body().addLayout(form)
-        outer.addWidget(panel)
+
+        updates_panel = PixelPanel("UPDATES")
+        updates_form = QFormLayout()
+        self.update_check_box = QCheckBox("CHECK FOR UPDATES AUTOMATICALLY")
+        self.update_check_box.setToolTip(
+            "Ask the cloud for new releases (signed-in members only); "
+            "notifications follow the ALERTS toggles above"
+        )
+        # same instant-apply contract as the ALERT boxes: clicked, not toggled
+        self.update_check_box.clicked.connect(self._on_update_check_clicked)
+        updates_form.addRow(self.update_check_box)
+        updates_panel.body().addLayout(updates_form)
 
         alerts_panel = PixelPanel("ALERTS")
         alerts_form = QFormLayout()
@@ -96,7 +112,6 @@ class SettingsTab(QWidget):
         body = alerts_panel.body()
         body.addLayout(alerts_form)
         body.addLayout(test_row)
-        outer.addWidget(alerts_panel)
 
         resources_panel = PixelPanel("RESOURCES")
         resources_form = QFormLayout()
@@ -145,7 +160,6 @@ class SettingsTab(QWidget):
         resources_note.setWordWrap(True)
         resources_panel.body().addLayout(resources_form)
         resources_panel.body().addWidget(resources_note)
-        outer.addWidget(resources_panel)
 
         data_panel = PixelPanel("DATA")
         data_form = QFormLayout()
@@ -170,7 +184,23 @@ class SettingsTab(QWidget):
         credit.setObjectName("muted")
         credit.setWordWrap(True)
         data_panel.body().addWidget(credit)
-        outer.addWidget(data_panel)
+
+        # assembly: left column MONITORING→DATA, right column
+        # UPDATES→ALERTS→RESOURCES — half the stacked height, so the tab
+        # fits a windowed window at any allowed font size without a
+        # scrollbar and without clipped controls
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+        grid.addWidget(panel, 0, 0)
+        grid.addWidget(data_panel, 1, 0)
+        grid.addWidget(updates_panel, 0, 1)
+        grid.addWidget(alerts_panel, 1, 1)
+        grid.addWidget(resources_panel, 2, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        outer.addLayout(grid)
 
         self.test_banner = QLabel("TEST ALERT DISPATCHED")
         self.test_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -195,6 +225,7 @@ class SettingsTab(QWidget):
         self.proc_interval.setValue(values.process_interval_s)
         self.proc_max_rows.setValue(values.process_max_rows)
         self.limit_resources_box.setChecked(values.limit_resources)
+        self.update_check_box.setChecked(values.update_check_enabled)
 
     def collect(self) -> AppSettings:
         return AppSettings(
@@ -209,6 +240,7 @@ class SettingsTab(QWidget):
             process_interval_s=self.proc_interval.value(),
             process_max_rows=self.proc_max_rows.value(),
             limit_resources=self.limit_resources_box.isChecked(),
+            update_check_enabled=self.update_check_box.isChecked(),
         )
 
     def _apply(self) -> None:
@@ -264,6 +296,12 @@ class SettingsTab(QWidget):
         self.limit_resources_box.blockSignals(True)
         self.limit_resources_box.setChecked(bool(on))
         self.limit_resources_box.blockSignals(False)
+
+    def _on_update_check_clicked(self, on: bool) -> None:
+        """Instant-apply for CHECK FOR UPDATES AUTOMATICALLY — same pattern
+        as the ALERT boxes: persist the single field immediately, so the
+        preference survives restarts without hunting for APPLY."""
+        app_settings.save_field(self._db, "update_check_enabled", bool(on))
 
     def _on_alert_channel_clicked(self, on: bool) -> None:
         """Apply an alert toggle the moment it is clicked.

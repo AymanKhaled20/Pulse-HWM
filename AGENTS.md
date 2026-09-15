@@ -28,11 +28,21 @@ pulse_hwm/                  # application package
   db.py                     # thread-safe SQLite wrapper, schema, retention
   util.py                   # formatting helpers (bytes/rate/uptime/cpu name)
   processes.py              # process listing/classification/termination (no Qt)
+  scheduler.py              # ONE jittered/back-off ticker for background jobs
   collectors/               # telemetry, each runs on its own QThread
     hardware.py             # psutil + GPU/temps polling, HardwareThreadBridge
     websites.py             # HTTP checks + SSL expiry, WebsiteThreadBridge
     processes.py            # full process scan thread, ProcessesThreadBridge
     lhm.py                  # in-process LibreHardwareMonitorLib temp bridge
+  cloud/                    # cloud backend (formerly auth/ — Worker, not Supabase)
+    rest.py                 # CloudClient over the Worker (auth + sync + updates)
+    session.py / token_store.py  # sessions; refresh tokens in Credential Manager
+    sync.py / sync_engine.py    # LWW merge plan + executor
+    config.py               # publishable worker URL/key (non-secrets)
+    updates/
+      policy.py             # PURE update decisions (newer/rollback/hosts)
+      trust.py              # Ed25519 manifest verify + WinVerifyTrust anchors
+      checker.py / installer.py # Qt bridges: check + download/verify/spawn
   alerts/
     notifier.py             # tray/toast, synthesised sound, Discord/Slack webhooks
   ui/
@@ -45,13 +55,17 @@ pulse_hwm/                  # application package
     theme.py / theme.qss    # colors, fonts, pixel icon drawing, app stylesheet
     widgets/                # reusable pixel widgets (charts, gauges, panels, scanline)
   assets/                   # fonts, icons, vendored lhm_runtime
-scripts/                    # scan_secrets.py, gitleaks_guard.py, lhm.py, build_icon.py
+  workers/                  # (repo root) Cloudflare Worker: src/lib + src/routes, D1 + R2
+scripts/                    # secret scanners, update_signing.py, publish_release.py
 tests/                      # pytest suite
-installer/                  # Inno Setup script
+installer/                  # Inno Setup script (+ CI-generated version.iss)
+.github/workflows/          # ci.yml (tests/audit), release.yml (installer builds)
 pulse_hwm.spec              # PyInstaller onedir build spec
 requirements.txt            # runtime deps
 requirements-dev.txt        # dev/test/build deps
 pytest.ini                  # pytest config
+CHANGELOG.md                # single source of release notes (drive the banner)
+docs/                       # ACCOUNTS.md (cloud), UPDATES.md (update runbook)
 ```
 
 ## Conventions
@@ -104,6 +118,20 @@ pytest.ini                  # pytest config
   version), but ASK before committing/pushing/merging to main. Note: a running
   (often admin-elevated) PulseHWM instance locks the exe and can make the
   rebuild fail with access-denied — close/kill it first.
+
+## Releases & update channel
+- VERSION SOURCE: `pulse_hwm/__init__.py` is the ONLY place. CI generates
+  `installer/version.iss` and fails a release if tag != `__version__`. Never
+  hand-edit `version.iss` except a routine bump; never let the two names drift.
+- Releases are installer-ONLY (`PulseHWM-Setup-<v>.exe`, built by CI on tag
+  push). Do not publish portable zips; don't reference source archives.
+- Publishing (CI: `.github/workflows/release.yml`) publishes metadata to the
+  worker which notifies registered+active installs; see `docs/UPDATES.md`.
+  Update banners render the CHANGELOG `[x.y.z]` section verbatim — write it
+  for users.
+- Update trust anchors live in `pulse_hwm/cloud/updates/trust.py`
+  (`TRUSTED_UPDATE_KEYS`, `AUTHENTICODE_REQUIRED`). A change there is a
+  security change — full test suite + reviewer eyes required.
 
 ## Working style
 - I'm a beginner learning as I go: favor clear, well-commented code over

@@ -7,15 +7,17 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from pulse_hwm.auth.oauth import OauthCoordinator
-from pulse_hwm.auth.rest import AuthResult
-from pulse_hwm.auth.session import SessionManager
-from pulse_hwm.auth.validators import clean_email, validate_email, validate_password
+from pulse_hwm.cloud.oauth import OauthCoordinator
+from pulse_hwm.cloud.rest import AuthResult
+from pulse_hwm.cloud.session import SessionManager
+from pulse_hwm.cloud.validators import clean_email, validate_email, validate_password
+from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 
 # The ACCOUNT tab: sign-in / sign-up / sign-out + SYNC NOW.
 #
@@ -31,7 +33,9 @@ from pulse_hwm.auth.validators import clean_email, validate_email, validate_pass
 class _AuthSignals(QObject):
     """Signal carrier so a QRunnable can talk back to the UI thread."""
 
-    done = Signal(str, object)  # tag, AuthResult (tags: "sign-in", "sign-up", …)
+    done = Signal(
+        str, object
+    )  # tag, AuthResult (tags: "sign-in", "sign-up", "recover")
     open_url = Signal(str)  # browser hand-off must happen on the UI thread
 
 
@@ -63,6 +67,10 @@ class AccountTab(QWidget):
     signed_in_changed = Signal(bool)
     signed_out = Signal()
     sync_requested = Signal()
+    # updates (v1.2.0): the tab stays engine-free — it only ASKS; app.py
+    # wires install/dismiss to the real installer + persistence
+    install_update_requested = Signal()
+    update_dismissed = Signal(str)  # version the user clicked LATER on
 
     def __init__(self, session: SessionManager, oauth: OauthCoordinator, db=None):
         super().__init__()
@@ -89,7 +97,7 @@ class AccountTab(QWidget):
         hero.addWidget(self.status)
         outer.addLayout(hero)
 
-        # ── forms stack: two QWidgets, visibility swaps ────────────────
+        # ── forms stack: two QWidgets, visibility swaps ──
         self._signed_out_form = QWidget()
         form = QGridLayout(self._signed_out_form)
         form.setContentsMargins(0, 0, 0, 0)
@@ -126,7 +134,7 @@ class AccountTab(QWidget):
         form.addWidget(self.btn_github, 4, 2)
         outer.addWidget(self._signed_out_form)
 
-        # ── signed-in panel ───────────────────────────────────────────
+        # ── signed-in panel ──
         self._signed_in_panel = QWidget()
         grid = QGridLayout(self._signed_in_panel)
         grid.setContentsMargins(0, 0, 0, 0)
@@ -152,7 +160,64 @@ class AccountTab(QWidget):
         outer.addWidget(self.feedback)
         outer.addStretch(1)
 
-        # ── wire buttons (fire → schedule → feedback) ─────────────────
+        # —— updates: nudge panel (signed-out) + banner (signed-in) ——————
+        # One panel ships both faces — refresh_from_session() swaps what's
+        # visible; app.py connects the button signals to the real installer
+        self._updates_panel = PixelPanel("UPDATES")
+        updates_body = self._updates_panel.body()
+
+        self.cta_updates = QLabel(
+            "LOG IN TO GET THE LATEST OF PULSE — INCLUDING SECURITY FIXES.\n"
+            "Updates, settings sync and site bookmarks are member benefits."
+        )
+        self.cta_updates.setObjectName("muted")
+        self.cta_updates.setWordWrap(True)
+        updates_body.addWidget(self.cta_updates)
+        self.btn_cta_log_in = QPushButton("LOG IN TO GET THE LATEST")
+        updates_body.addWidget(self.btn_cta_log_in)
+
+        self.lbl_update = QLabel("")
+        self.lbl_update.setObjectName("title")
+        self.lbl_update.setWordWrap(True)
+        self.lbl_update.setVisible(False)
+        updates_body.addWidget(self.lbl_update)
+
+        self.lbl_update_notes = QLabel("")
+        self.lbl_update_notes.setObjectName("muted")
+        self.lbl_update_notes.setWordWrap(True)
+        # server-supplied release notes are not trusted markup — QLabel
+        # defaults to AutoText, which would happily interpret HTML from it
+        self.lbl_update_notes.setTextFormat(Qt.TextFormat.PlainText)
+        self.lbl_update_notes.setVisible(False)
+        updates_body.addWidget(self.lbl_update_notes)
+
+        self.update_progress = QProgressBar()
+        self.update_progress.setRange(0, 100)
+        self.update_progress.setVisible(False)
+        updates_body.addWidget(self.update_progress)
+
+        update_row = QHBoxLayout()
+        self.btn_install_now = QPushButton("INSTALL NOW")
+        self.btn_install_now.setObjectName("success")
+        self.btn_install_now.setVisible(False)
+        self.btn_update_later = QPushButton("LATER")
+        self.btn_update_later.setObjectName("muted")
+        self.btn_update_later.setVisible(False)
+        update_row.addWidget(self.btn_install_now)
+        update_row.addWidget(self.btn_update_later)
+        update_row.addStretch(1)
+        updates_body.addLayout(update_row)
+
+        self.lbl_update_status = QLabel("")
+        self.lbl_update_status.setObjectName("muted")
+        self.lbl_update_status.setWordWrap(True)
+        self.lbl_update_status.setVisible(False)
+        updates_body.addWidget(self.lbl_update_status)
+
+        self._updates_panel.setVisible(False)
+        outer.addWidget(self._updates_panel)
+
+        # ── wire buttons (fire → schedule → feedback) ──
         self.btn_sign_in.clicked.connect(self._on_sign_in)
         self.btn_sign_up.clicked.connect(self._on_sign_up)
         self.btn_forgot.clicked.connect(self._on_forgot)
@@ -160,11 +225,14 @@ class AccountTab(QWidget):
         self.btn_github.clicked.connect(lambda: self._on_provider("github"))
         self.btn_sign_out.clicked.connect(self._on_sign_out)
         self.btn_sync_now.clicked.connect(self.sync_requested)
+        self.btn_cta_log_in.clicked.connect(self._cta_login)
+        self.btn_install_now.clicked.connect(self.install_update_requested)
+        self.btn_update_later.clicked.connect(self._on_update_later)
 
         self._auth_in_flight = False  # re-entry guard, see _auth_busy()
         self.refresh_from_session()
 
-    # ─── helpers ───────────────────────────────────────────────────────
+    # ─── helpers ───
     def _mk_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setObjectName("muted")
@@ -176,7 +244,7 @@ class AccountTab(QWidget):
     def _open_browser(self, url: str) -> None:
         QDesktopServices.openUrl(url)  # UI thread only — emitted via signal
 
-    # ─── action slots ─────────────────────────────────────────────────
+    # ─── action slots ───
     def _auth_busy(self) -> bool:
         """One auth exchange at a time: two concurrent ones would race
         the rotating refresh token (the second response parks a token
@@ -289,7 +357,7 @@ class AccountTab(QWidget):
         self.refresh_from_session()
         self.signed_out.emit()
 
-    # ─── network results (UI thread, via signals) ─────────────────────
+    # ─── network results (UI thread, via signals) ───
     def _on_auth_done(self, tag: str, result: object) -> None:
         assert isinstance(result, AuthResult)
         self._auth_idle()  # re-enable buttons whoever it was
@@ -332,6 +400,13 @@ class AccountTab(QWidget):
         self.set_configured(self.persist_enabled())
         self._signed_out_form.setVisible(not active)
         self._signed_in_panel.setVisible(active)
+        # updates CTA shows ONLY while signed out; the signed-in banner
+        # takes over the panel when an offer arrives (see show_update_*)
+        self.cta_updates.setVisible(not active)
+        self.btn_cta_log_in.setVisible(not active)
+        if not active:
+            self._updates_panel.setVisible(True)
+            self._reset_update_banner()
         if active:
             self.lbl_email.setText(info.email)
             self.lbl_provider.setText((info.provider or "password").upper())
@@ -354,7 +429,7 @@ class AccountTab(QWidget):
         self._set_feedback(message)
 
     def set_configured(self, on: bool) -> None:
-        """No Supabase keys configured → auth is inert, clearly."""
+        """No cloud keys configured → auth is inert, clearly."""
         for w in (
             self.email,
             self.password,
@@ -368,6 +443,88 @@ class AccountTab(QWidget):
 
     def persist_enabled(self) -> bool:
         """Whether accounts are usable at all (public keys configured)."""
-        from pulse_hwm.auth.config import auth_config
+        from pulse_hwm.cloud.config import auth_config
 
         return auth_config().is_configured()
+
+    # —— updates (v1.2.0) ————————————————————————————————————————————————
+    def _cta_login(self) -> None:
+        """The nudge button: no downloads, no URLs — just land the user in
+        the sign-in form with a one-line explanation."""
+        self.email.setFocus()
+        self._set_feedback(
+            "Sign in to receive update notifications — including security "
+            "fixes — before they reach the release page."
+        )
+
+    def _on_update_later(self) -> None:
+        self._reset_update_banner()
+        self.update_dismissed.emit(getattr(self, "current_update_version", ""))
+
+    def _reset_update_banner(self) -> None:
+        """Hide the signed-in update rows, leave the CTA decision to
+        refresh_from_session()'s next call."""
+        for w in (
+            self.lbl_update,
+            self.lbl_update_notes,
+            self.update_progress,
+            self.btn_install_now,
+            self.btn_update_later,
+            self.lbl_update_status,
+        ):
+            w.setVisible(False)
+        self._updates_panel.setVisible(not self._session.is_signed_in())
+
+    def show_update_available(
+        self, release: dict, current_version: str, forced: bool = False
+    ) -> None:
+        """Signed-in face: one offer, [INSTALL NOW] [LATER].
+        `forced` (security floor / mandatory) removes the LATER escape."""
+        self.current_update_release = dict(release)
+        self.current_update_version = str(release.get("version", ""))
+        self.lbl_update.setText(
+            f"PULSE v{self.current_update_version} IS AVAILABLE — YOU ARE ON v{current_version}"
+        )
+        notes = (str(release.get("notes", "")) or "").strip()
+        self.lbl_update_notes.setText(notes[:1500])
+        self.lbl_update.setVisible(True)
+        self.lbl_update_notes.setVisible(bool(notes))
+        self.btn_install_now.setVisible(True)
+        self.btn_install_now.setEnabled(True)
+        self.btn_update_later.setVisible(not forced)
+        self.lbl_update_status.setText(
+            "SECURITY UPDATE — RECOMMENDED" if forced else ""
+        )
+        self.lbl_update_status.setVisible(forced)
+        self.update_progress.setVisible(False)
+        self._updates_panel.setVisible(True)
+
+    def show_update_progress(self, done: int, total: int) -> None:
+        """Chunked download feedback; indeterminate when total is -1."""
+        self.btn_install_now.setEnabled(False)
+        self.update_progress.setVisible(True)
+        if total <= 0:
+            self.update_progress.setRange(0, 0)
+        else:
+            self.update_progress.setRange(0, 100)
+            self.update_progress.setValue(int(done * 100 / total))
+        self.lbl_update_status.setText(
+            f"DOWNLOADING {done / 1_000_000:.1f} MB"
+            if total <= 0
+            else f"DOWNLOADING {done / 1_000_000:.1f} / {total / 1_000_000:.1f} MB"
+        )
+        self.lbl_update_status.setVisible(True)
+
+    def show_update_error(self, message: str) -> None:
+        self.lbl_update_status.setText(f"UPDATE FAILED — {message}")
+        self.lbl_update_status.setVisible(True)
+        self.update_progress.setVisible(False)
+        self.btn_install_now.setEnabled(True)
+        self._updates_panel.setVisible(True)
+
+    def show_update_done(self, version: str) -> None:
+        self._reset_update_banner()
+        self._set_feedback(f"Update v{version} installing — Pulse will restart.")
+
+    def clear_update_banner(self) -> None:
+        self._reset_update_banner()

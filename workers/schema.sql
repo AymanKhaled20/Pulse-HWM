@@ -64,3 +64,33 @@ CREATE TABLE IF NOT EXISTS user_sites (
     updated_at      TEXT NOT NULL,
     PRIMARY KEY (user_id, site_uuid)
 );
+
+-- Update channel (v1.2.0). CI publishes a row on every GitHub release;
+-- only REGISTERED + ACTIVE users may read it or download the asset.
+-- manifest is the EXACT string Ed25519-signed by CI — the desktop app
+-- verifies the signature over the raw string (embedded public key), so
+-- no JSON canonicalization is ever needed.
+CREATE TABLE IF NOT EXISTS releases (
+    version        TEXT PRIMARY KEY,          -- X.Y.Z, strictly increasing
+    channel        TEXT NOT NULL DEFAULT 'stable',
+    notes          TEXT NOT NULL DEFAULT '',  -- CHANGELOG section (shown in-app)
+    html_url       TEXT NOT NULL DEFAULT '',  -- GitHub release page
+    asset_name     TEXT NOT NULL,             -- PulseHWM-Setup-<version>.exe
+    sha256         TEXT NOT NULL,             -- of the installer binary
+    manifest       TEXT NOT NULL DEFAULT '',  -- signed JSON (version, asset, sha256)
+    manifest_sig   TEXT NOT NULL DEFAULT '',  -- Ed25519(b64url) over manifest
+    published_at   TEXT NOT NULL,
+    min_supported  TEXT NOT NULL DEFAULT '',  -- security floor; below = forced
+    mandatory      INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL
+);
+
+-- Per-account update entitlement telemetry. last_seen_at is touched
+-- (throttled ≥12h between writes) on authenticated activity; accounts
+-- outside UPDATE_ACTIVITY_DAYS get 403 on /updates/* + /dl/*.
+CREATE TABLE IF NOT EXISTS user_update_state (
+    user_id           TEXT PRIMARY KEY,
+    last_seen_at      TEXT NOT NULL,
+    last_check_at     TEXT NOT NULL DEFAULT '',
+    last_seen_version TEXT NOT NULL DEFAULT ''
+);

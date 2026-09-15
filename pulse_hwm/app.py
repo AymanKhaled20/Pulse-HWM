@@ -38,6 +38,16 @@ def run() -> int:
     app.setApplicationVersion(__version__)
     app.setQuitOnLastWindowClosed(False)  # close = minimize to tray
 
+    # named mutex matches installer/pulse-hwm.iss AppMutex=PulseHWMAppMutex
+    # so Inno detects (and silently closes) a live instance during updates
+    _app_mutex = None
+    try:  # optional probe: the app runs fine without it
+        import win32event
+
+        _app_mutex = win32event.CreateMutexW(None, False, "PulseHWMAppMutex")
+    except Exception:
+        _app_mutex = None
+
     db = open_default()
     db.seed_default_sites()
 
@@ -111,17 +121,29 @@ def run() -> int:
         ),
     )
 
-    # ── accounts / cloud sync wiring ──────────────────────────────────
-    from pulse_hwm.auth.config import auth_config
-    from pulse_hwm.auth.oauth import OauthCoordinator, parse_callback_url
-    from pulse_hwm.auth.rest import SupabaseClient
-    from pulse_hwm.auth.session import SessionManager
+    # —— accounts / cloud sync wiring ——————————————————————————————————
+    from pulse_hwm.cloud.config import auth_config
+    from pulse_hwm.cloud.oauth import OauthCoordinator, parse_callback_url
+    from pulse_hwm.cloud.rest import CloudClient
+    from pulse_hwm.cloud.session import SessionManager
 
     auth_cfg = auth_config()
-    supa = SupabaseClient(auth_cfg.base_url, auth_cfg.publishable_key)
+    supa = CloudClient(auth_cfg.base_url, auth_cfg.publishable_key)
     session = SessionManager(supa)
     coordinator = OauthCoordinator(supa)
-    _SYNC_TICK_MS = 60 * 1000  # automatic compare-and-merge cadence
+
+    # ── updates (v1.2.0): registered+active users get in-app updates ────
+    # metadata: /updates/latest (Bearer); binary: /dl streamed from the
+    # private R2 bucket. Everything passes Ed25519 + sha256 before spawn.
+    from pulse_hwm import __version__ as CURRENT_VERSION
+    from pulse_hwm.cloud.updates.checker import UpdateChecker
+    from pulse_hwm.cloud.updates.installer import UpdateInstaller
+    from pulse_hwm.cloud.updates.policy import is_newer
+
+    checker = UpdateChecker(session, supa, db, CURRENT_VERSION, auth_cfg.base_url)
+    updates_dir = config.data_dir() / "updates"
+    updates_dir.mkdir(parents=True, exist_ok=True)
+    installer = UpdateInstaller(session, auth_cfg.base_url, updates_dir)
 
     window = MainWindow(
         hardware_collector=collector,
@@ -136,7 +158,7 @@ def run() -> int:
     )
     window.show()
 
-    # ── incoming auth callbacks (pulsehwm:// handoff from a relaunched process)
+    # —— incoming auth callbacks (pulsehwm:// handoff from a relaunched process)
     from pulse_hwm.single_instance import SingleInstance
 
     single = SingleInstance()
@@ -186,13 +208,15 @@ def run() -> int:
     QTimer.singleShot(20, resume_session)
 
     def session_started() -> None:
-        # sign-in (and OAuth adoption) both kick a sync immediately
+        # sign-in (and OAuth adoption) both kick a sync immediately, plus
+        # an immediate update check — the daily-use contract for members
         sync_engine.sync_now()
+        scheduler.trigger("update-check")
 
-    # ── sync engine (automatic ~60 s compare-and-merge; payloads tiny) ─
+    # —— sync engine (automatic ~60 s compare-and-merge; payloads tiny) —
     from PySide6.QtCore import QThreadPool
 
-    from pulse_hwm.auth.sync_engine import SyncEngine
+    from pulse_hwm.cloud.sync_engine import SyncEngine
 
     sync_engine = SyncEngine(session, supa, db, parent=None)
     sync_engine.attach_pool(QThreadPool.globalInstance())
@@ -211,9 +235,6 @@ def run() -> int:
     sync_engine.finished.connect(_sync_feedback)
     if window._account_tab is not None:
         window._account_tab.sync_requested.connect(sync_engine.sync_now)
-    sync_timer = QTimer()
-    sync_timer.timeout.connect(sync_engine.sync_now)
-    sync_timer.start(_SYNC_TICK_MS)
 
     def on_sync_done(summary: str, ok: bool, _error: str) -> None:
         # "in sync" = nothing moved; reloading the form on that would
@@ -256,27 +277,138 @@ def run() -> int:
     # being a good citizen: apply boot-time resource mode from settings
     set_low_priority_mode(settings.limit_resources)
 
+    def on_check_done(outcome) -> None:
+        """UI-thread handler for update checks (UpdateChecker.checked)."""
+        release = dict(outcome.release or {})
+        version = str(release.get("version", ""))
+        manual = bool(getattr(outcome, "manual", False))
+        if outcome.state in ("available", "forced") and version:
+            seen = db.get_setting("update_highest_seen", "") or ""
+            if is_newer(version, seen):
+                db.set_setting("update_highest_seen", version)
+            if version != db.get_setting("update_notified_version", ""):
+                db.set_setting("update_notified_version", version)
+                alerts.notify(
+                    "info",
+                    "UPDATE AVAILABLE",
+                    f"Pulse v{version} is ready — you are on v{CURRENT_VERSION}.",
+                    play_sound=False,  # info-level: toast only, never a beep
+                )
+                import time as _time
+
+                db.insert_event(
+                    _time.time(), "INFO", "update", f"update available: v{version}"
+                )
+            if window._account_tab is None:
+                return  # the ACCOUNT tab is absent — banner updates lost, but the toast above still leaks the news
+            window._account_tab.show_update_available(
+                release,
+                current_version=CURRENT_VERSION,
+                forced=outcome.state == "forced",
+            )
+            offer.update({"release": release, "version": version})
+        elif outcome.state == "skipped":
+            if release and is_newer(
+                version, db.get_setting("update_highest_seen", "") or ""
+            ):
+                db.set_setting("update_highest_seen", version)  # seen-and-understood
+            # silent when periodic; manual checks explain themselves
+            if manual and outcome.reason and outcome.reason != "not signed in":
+                window.show_account_feedback(f"updates: {outcome.reason}")
+            if window._account_tab is not None:
+                window._account_tab.clear_update_banner()
+        elif outcome.state == "error":
+            # never toast on background check errors; log for diagnostics
+            if manual:
+                window.show_account_feedback(f"update check failed: {outcome.reason}")
+            import time as _time
+
+            db.insert_event(
+                _time.time(),
+                "ERROR",
+                "update",
+                f"update check failed: {outcome.reason}",
+            )
+
+    checker.checked.connect(on_check_done)
+
+    offer = {"release": None, "version": ""}
+
+    def on_install_requested() -> None:
+        release = offer.get("release")
+        if not release:
+            return
+        installer.install(release)
+
+    def on_install_progress(done: int, total: int) -> None:
+        window._account_tab.show_update_progress(int(done), int(total))
+
+    def on_install_finished(outcome) -> None:
+        installer.clear()
+        if outcome.ok:
+            import time as _time
+
+            db.insert_event(
+                _time.time(), "INFO", "update", f"update installing: v{outcome.version}"
+            )
+            window._account_tab.show_update_done(outcome.version)
+            # the silent installer needs OUR process gone to replace files;
+            # it relaunches Pulse itself (installer [Run] /LAUNCHAFTER check)
+            from PySide6.QtCore import QTimer as _QTimer
+
+            _QTimer.singleShot(1500, window.quit_for_update)
+        else:
+            import time as _time
+
+            db.insert_event(
+                _time.time(), "ERROR", "update", f"update failed: {outcome.error}"
+            )
+            window._account_tab.show_update_error(str(outcome.error))
+
+    if window._account_tab is not None:
+        window._account_tab.install_update_requested.connect(on_install_requested)
+        window._account_tab.update_dismissed.connect(
+            lambda version: (
+                db.set_setting("update_dismissed_version", str(version)),
+                window._account_tab.clear_update_banner(),
+            )
+        )
+        installer.progress.connect(on_install_progress)
+        installer.finished.connect(on_install_finished)
+        window.update_check_requested.connect(lambda: checker.check_now(manual=True))
+
+    # ── one scheduler for every background job ──────────────────────────
     def trim_memory() -> None:
         # re-read on every fire so flipping the toggle in Settings applies
         # without a restart
         if app_settings.load(db).limit_resources:
             trim_working_set()
 
-    trim_timer = QTimer()
-    trim_timer.timeout.connect(trim_memory)
-    trim_timer.start(15 * 60 * 1000)
+    def prune_now() -> dict:
+        kept = app_settings.load(db)
+        return db.prune(kept.retention_days)
+
+    from pulse_hwm.scheduler import Scheduler
+
+    scheduler = Scheduler()
+    scheduler.add_job("sync", 60_000, sync_engine.sync_now, immediate=True)
+
+    def check_updates_job() -> None:
+        # a live read every fire so the Settings toggle applies mid-session
+        if app_settings.load(db).update_check_enabled:
+            checker.check_now()
+
+    scheduler.add_job(
+        "update-check", 6 * 3600 * 1000, check_updates_job, immediate=True
+    )
+    scheduler.add_job("trim", 15 * 60 * 1000, trim_memory, immediate=False)
+    scheduler.add_job("prune", 24 * 3600 * 1000, prune_now, immediate=False)
+    scheduler.start()
 
     alerts.attach_tray(window.tray)
     monitor.site_state_changed.connect(alerts.handle_site_transition)
     monitor.checked.connect(window.on_site_checked)
 
-    def prune_now() -> dict:
-        kept = app_settings.load(db)
-        return db.prune(kept.retention_days)
-
-    prune_timer = QTimer()
-    prune_timer.timeout.connect(prune_now)
-    prune_timer.start(24 * 3600 * 1000)
     prune_now()
 
     hardware_thread.start()
@@ -296,7 +428,7 @@ def _selftest() -> int:
     admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
     probes = {}
 
-    # ── sound probe ──────────────────────────────────────
+    # —— sound probe ——————————————————————————————————————
     try:
         from pulse_hwm.alerts import notifier as _notifier
 
@@ -306,7 +438,7 @@ def _selftest() -> int:
     except Exception:
         probes["sound_played"] = f"EXC: {traceback.format_exc(limit=2)}"
 
-    # ── add-site probe against the real DB ───────────────
+    # —— add-site probe against the real DB ———————————————
     name = "pulse-selftest-probe"
     added = None
     try:
