@@ -77,6 +77,16 @@ class SettingsTab(QWidget):
         alerts_form.addRow(self.sound_box)
         alerts_form.addRow(self.desktop_box)
         alerts_form.addRow(self.webhook_box)
+        # clicked (not toggled) so the load_from() fill at startup can't
+        # trigger a save — only real user clicks apply. Channels take
+        # effect the instant the box is clicked; no APPLY button needed.
+        self._alert_boxes = {
+            self.sound_box: "sound_enabled",
+            self.desktop_box: "desktop_enabled",
+            self.webhook_box: "webhooks_enabled",
+        }
+        for box in self._alert_boxes:
+            box.clicked.connect(self._on_alert_channel_clicked)
         test_row = QHBoxLayout()
         test_btn = QPushButton("TEST ALERT")
         test_btn.setObjectName("success")
@@ -254,6 +264,26 @@ class SettingsTab(QWidget):
         self.limit_resources_box.blockSignals(True)
         self.limit_resources_box.setChecked(bool(on))
         self.limit_resources_box.blockSignals(False)
+
+    def _on_alert_channel_clicked(self, on: bool) -> None:
+        """Apply an alert toggle the moment it is clicked.
+
+        Persists the box and pushes the new channels into the AlertManager
+        so the next alert (TEST button or a real one) honors it — without
+        the user hunting for APPLY in the DATA panel. Clicked-signal (not
+        toggled) means start-up load_from() can't reach here.
+        """
+        key = self._alert_boxes.get(self.sender())
+        if key is None:
+            return
+        app_settings.save_field(self._db, key, bool(on))
+        self._alerts.set_channels(
+            AlertChannels(
+                sound=self.sound_box.isChecked(),
+                desktop=self.desktop_box.isChecked(),
+                webhooks=self.webhook_box.isChecked(),
+            )
+        )
 
     def _restart_as_admin(self) -> None:
         """Quit clean, then Windows relaunches Pulse with the UAC runas verb.

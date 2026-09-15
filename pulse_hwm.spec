@@ -4,13 +4,18 @@
 
 import os
 from glob import glob
-from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, collect_data_files
+
+# certifi's cacert.pem MUST be bundled: httpx builds its SSL context from
+# certifi.where() at startup — if the file is missing the app crashes with
+# FileNotFoundError before the window opens.
+certifi_datas = collect_data_files("certifi")
 
 datas = [
     ("pulse_hwm\\assets\\fonts", "pulse_hwm\\assets\\fonts"),
     ("pulse_hwm\\assets\\icons", "pulse_hwm\\assets\\icons"),
     ("pulse_hwm\\ui\\theme.qss", "pulse_hwm\\ui"),
-]
+] + certifi_datas
 if os.path.isdir("pulse_hwm\\assets\\lhm_runtime"):
     datas.append(("pulse_hwm\\assets\\lhm_runtime", "lhm_runtime"))
 

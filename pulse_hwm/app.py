@@ -100,12 +100,14 @@ def run() -> int:
 
     from pulse_hwm.alerts.notifier import AlertChannels, AlertManager
 
+    # channels come from the SAVED settings — hardcoding defaults here made
+    # the SETTINGS toggles revert at every restart until APPLY was pressed
     alerts = AlertManager(
         db,
         AlertChannels(
-            sound=config.env().alert_sound_enabled,
-            desktop=True,
-            webhooks=True,
+            sound=settings.sound_enabled,
+            desktop=settings.desktop_enabled,
+            webhooks=settings.webhooks_enabled,
         ),
     )
 

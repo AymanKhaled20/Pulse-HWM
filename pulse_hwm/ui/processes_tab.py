@@ -431,10 +431,19 @@ class ProcessesTab(QWidget):
                 message = f"FREED {freed / 1_000_000:.1f} MB"
                 title = "TRIM MEMORY"
             self._set_status(message)
+            # honor the SETTINGS "DESKTOP TOAST" toggle — a disabled
+            # channel must never fire a notification from any tab
             try:
-                send_toast(title, message)
+                toast_wanted = (
+                    self._db is None or app_settings.load(self._db).desktop_enabled
+                )
             except Exception:
-                pass  # toast is garnish; the status line still reports it
+                toast_wanted = False
+            if toast_wanted:
+                try:
+                    send_toast(title, message)
+                except Exception:
+                    pass  # toast is garnish; the status line still reports it
 
         # kernel call is quick but never freeze the UI thread on it
         threading.Thread(target=_work, daemon=True).start()

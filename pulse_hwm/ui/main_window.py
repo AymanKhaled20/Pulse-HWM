@@ -222,7 +222,16 @@ class MainWindow(QMainWindow):
     # ── close → minimize to tray ───────────────────────────
     def closeEvent(self, event) -> None:
         self.hide()
-        if self._first_close and self.tray.isVisible():
+        # even this one-shot explainer respects the DESKTOP TOAST toggle
+        toast_ok = True
+        if self._db is not None:
+            try:
+                from pulse_hwm import app_settings
+
+                toast_ok = app_settings.load(self._db).desktop_enabled
+            except Exception:
+                toast_ok = True
+        if self._first_close and self.tray.isVisible() and toast_ok:
             self.tray.showMessage(
                 "PULSE-HWM",
                 "Still watching your hardware. Monitoring continues in the tray.",
