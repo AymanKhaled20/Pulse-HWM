@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,9 +34,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(1280, 840)
-        # windowed (restored-down) size can never shrink past this, so the
-        # layout keeps ALL text readable with no scrollbars needed
-        self.setMinimumSize(1180, 820)
+        # windowed (restored-down) size can never shrink past this —
+        # matches the dashboard's true layout minimum so content NEVER
+        # clips: below this, shrink is refused (1366×768 laptops still fit)
+        self.setMinimumSize(1000, 700)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
 
@@ -93,7 +95,7 @@ class MainWindow(QMainWindow):
             self._account_tab = AccountTab(session_manager, oauth_coordinator, db=db)
             if not auth_configured:
                 self._account_tab.apply_cloud_offline(
-                    "accounts disabled — no Supabase project configured"
+                    "accounts disabled — no cloud auth configured"
                 )
                 self._account_tab.set_configured(False)
             else:
@@ -142,6 +144,14 @@ class MainWindow(QMainWindow):
             self._scanlines.setGeometry(0, 0, self.width(), self.height())
 
     # ── accounts: slots invoked by app.py callback routing ───────────
+    def bring_to_front(self) -> None:
+        """Unminimize + focus the window when an auth callback arrives —
+        the user is still in the browser and needs to see the result."""
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
     def on_oauth_result(self, ok: bool, error: str) -> None:
         if self._account_tab is None:
             return
@@ -149,7 +159,11 @@ class MainWindow(QMainWindow):
         self._account_tab._set_feedback("" if error == "" else error)
 
     def show_account_feedback(self, message: str) -> None:
+        """Display a terminal authentication message and unlock the form."""
         if self._account_tab is not None:
+            # a feedback-only message on the auth path means the flow is
+            # over — release the button lock so the user can retry
+            self._account_tab.release_auth_lock()
             self._account_tab._set_feedback(message)
 
     # ── overall state LED ──────────────────────────────────

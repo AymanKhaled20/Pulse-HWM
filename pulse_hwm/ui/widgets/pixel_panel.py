@@ -11,8 +11,10 @@ class PixelPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("pixelPanel")
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(10, 8, 10, 10)
-        self._layout.setSpacing(6)
+        # compact margins keep the minimum panel height low so the
+        # dashboard fits inside short (laptop) windows without clipping
+        self._layout.setContentsMargins(10, 6, 10, 8)
+        self._layout.setSpacing(4)
         self._title = None
         if title:
             self._title = QLabel(title.upper())

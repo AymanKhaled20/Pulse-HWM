@@ -4,7 +4,7 @@
 ; Output: installer\output\PulseHWM-Setup-<version>.exe
 
 #define AppName "Pulse-HWM"
-#define AppVersion "1.1.0"
+#define AppVersion "1.1.5"
 #define AppExeName "PulseHWM.exe"
 #define AppPublisher "Pulse-HWM"
 
