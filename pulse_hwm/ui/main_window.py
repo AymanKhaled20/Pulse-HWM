@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 840)
         # windowed (restored-down) size can never shrink past this —
         # matches the dashboard's true layout minimum so content NEVER
-        # clips: below this, shrink is refused (1366Ã—768 laptops still fit)
+        # clips: below this, shrink is refused (1366×768 laptops still fit)
         self.setMinimumSize(1000, 700)
 
         from pulse_hwm.ui.widgets.pixel_panel import StdoutPlaceholder
