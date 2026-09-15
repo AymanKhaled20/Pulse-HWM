@@ -83,8 +83,11 @@ export async function latestRelease(request, env) {
     published_at: latest.published_at || "",
     mandatory: !!Number(latest.mandatory),
     min_supported: latest.min_supported || "",
-    // front-desk delivery: same base URL, same auth, streamed from R2
-    download_url: latest.asset_name ? `/dl/${latest.asset_name}` : "",
+    // front-desk delivery when R2 is provisioned: same base URL, same
+    // auth, streamed from the private bucket. Without R2 (free-tier roll-
+    // out), this stays "" and the client uses the GitHub fallback_url;
+    // switching to R2 later is a bucket + binding change, no app release.
+    download_url: env.BUCKET && latest.asset_name ? `/dl/${latest.asset_name}` : "",
     // resilience: if R2 ever loses the object the client can still fetch
     // the identical, signed file from the GitHub release
     fallback_url: env.GITHUB_REPO

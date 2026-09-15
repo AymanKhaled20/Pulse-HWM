@@ -10,14 +10,15 @@
       "database_id": "e9372826-ada1-49ee-b730-8a7f8013d819"
     }
   ],
-  // installer binary storage for the in-app updater (front-desk streaming:
-  // the worker serves /dl/<asset> straight from this private bucket)
-  "r2_buckets": [
-    {
-      "binding": "BUCKET",
-      "bucket_name": "pulsehwm-releases"
-    }
-  ],
+  // installer binary storage for the in-app updater (front-desk streaming).
+  // TO ENABLE LATER: create the bucket + uncomment — until then update
+  // binaries are served from the GitHub release asset (fallback_url).
+  // "r2_buckets": [
+  //   {
+  //     "binding": "BUCKET",
+  //     "bucket_name": "pulsehwm-releases"
+  //   }
+  // ],
   "vars": {
     // how long an access JWT lives, seconds (refresh token lives ~30 days)
     "ACCESS_TTL_S": "3600",

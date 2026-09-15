@@ -45,7 +45,16 @@ Server validation: `workers/src/routes/updates.js`.
 Prerequisite: `npx wrangler login` works and the `workers/` folder is your
 cwd for anything wrangler-related. Every command below is PowerShell.
 
-## Step 1 — Deploy the new worker code + database schema
+> **No credit card? No problem.** R2 is optional: by default releases ship
+> on **GitHub release assets** (the client's built-in fallback) and only
+> the `UPDATE_SIGNING_KEY` + `RELEASE_KEY` secrets are mandatory. R2
+> (private member-gated streaming) can be switched on later by enabling R2
+> in the dashboard (needs a payment card on file even on the free tier),
+> creating the bucket, un-commenting the binding in `wrangler.jsonc`,
+> redeploying, and setting the repo variable `R2_ENABLED=true` — zero app
+> changes needed.
+
+## Step 1 — Deploy the new worker code + database schema ✅ DONE (2026-09-15)
 
 The old deployed worker is still the single-file monolith. Deploy the
 new modular one, then run the schema (it only ADDS two tables; it is
@@ -60,7 +69,7 @@ npx wrangler d1 execute pulsehwm-data --remote --file=schema.sql
 ✅ Check: `curl.exe https://pulsehwm-cloud.pulsehwm27.workers.dev/` prints
 `{"app":"PulseHWM cloud","ok":true}`.
 
-## Step 2 — Create the R2 bucket (private file locker)
+## Step 2 — Create the R2 bucket (private file locker) — SKIP for now (optional)
 
 This is where the 63 MB installers live. The bucket is private — nobody
 can download from it directly; your worker streams files out of it only
@@ -72,59 +81,44 @@ npx wrangler r2 bucket create pulsehwm-releases
 
 ✅ Check: it appears at dash.cloudflare.com → R2 → Object Storage.
 
-## Step 3 — Make up a RELEASE_KEY and tell BOTH cloud and CI about it
+## Step 3 — RELEASE_KEY  ✅ DONE — only the GitHub half remains
 
 One random string, used in two places. CI will send it when publishing a
 release; the worker compares it before accepting.
 
-```powershell
-# generate a long random value (copy it somewhere safe for step 5)
-.venv\Scripts\python.exe -c "import secrets; print(secrets.token_hex(32))"
+**Already done:** the key was generated and set on the worker via the
+Cloudflare API (✅). The copy you must paste into GitHub lives in
+`%TEMP%\opencode\release_keys_new.txt` — that value goes into the
+`RELEASE_KEY` secret in step 5 (they must be the SAME string).
 
-cd workers
-npx wrangler secret put RELEASE_KEY      # paste the string when asked
-cd ..                                    # back to the repo root
-```
-
-✅ Check: `npx wrangler secret list` shows `RELEASE_KEY`.
-
-## Step 4 — Create the Ed25519 signing keypair
+## Step 4 — Ed25519 signing keypair  ✅ PARTLY DONE — only the GitHub secret remains
 
 Why: the cloud must never be ABLE to forge an update. The signing half
 lives only in GitHub Actions; the matching public half is baked into the
 app so every install can verify releases independently of the server.
 
-```powershell
-.venv\Scripts\python.exe scripts\update_signing.py gen
-```
+(Already generated on 2026-09-15 — skip the command.)
 
-It prints two values:
+It printed two values:
 
 - **`private_hex`** → you will paste this into GitHub (step 5).
   Never commit, email or chat it.
-- **`public_hex`** → paste into your code: open
-  `pulse_hwm/cloud/updates/trust.py`, replace the empty
-  `TRUSTED_UPDATE_KEYS` set so it contains the public key:
-
-```python
-TRUSTED_UPDATE_KEYS: frozenset[str] = frozenset(
-    {
-        # example placeholder: "32-hex-words-here-64-chars-total-..."
-    }
-)
-```
+- **`public_hex`** → already embedded in
+  `pulse_hwm/cloud/updates/trust.py` (`TRUSTED_UPDATE_KEYS`) and committed ✅
+  (rebuild the exe so it is baked in).
 
 ## Step 5 — GitHub Actions secrets
 
 Repo page → **Settings** → **Secrets and variables** → **Actions** →
-**New repository secret**. Add all four:
+**New repository secret**. Add the first two (mandatory); the Cloudflare
+pair is only needed once R2 is enabled:
 
 | Name | Value |
 |---|---|
 | `UPDATE_SIGNING_KEY` | the `private_hex` from step 4 |
 | `RELEASE_KEY` | the same string as step 3 |
-| `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com → My Profile → API Tokens → template "Edit Cloudflare Workers" (plus R2 edit permission) |
-| `CLOUDFLARE_ACCOUNT_ID` | the 32-char ID visible in any Cloudflare dashboard URL |
+| `CLOUDFLARE_API_TOKEN` | (optional — only for R2) dash.cloudflare.com → My Profile → API Tokens → template "Edit Cloudflare Workers" (plus R2 edit permission) |
+| `CLOUDFLARE_ACCOUNT_ID` | (optional — only for R2) your 32-char account ID, visible in any Cloudflare dashboard URL |
 
 ## Step 6 — SignPath code signing (OPTIONAL, do later if you like)
 
@@ -195,3 +189,4 @@ v1.2.0 is the first build that SHIPS the updater, so nobody can be
 auto-notified about v1.2.0 itself: users on ≤1.1.6 install it manually.
 **v1.2.1 is the first version anybody can be auto-notified about** — so it is
 also the natural live test of the whole pipeline.
+

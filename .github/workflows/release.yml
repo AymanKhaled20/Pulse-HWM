@@ -6,7 +6,8 @@
 # Secrets required (see docs/UPDATES.md):
 #   UPDATE_SIGNING_KEY  — Ed25519 private key, hex (scripts/update_signing.py gen)
 #   RELEASE_KEY         — shared worker publish secret
-#   CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID — R2 upload
+# Optional (R2 delivery): CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID and the
+#   repo variable R2_ENABLED=true — until then releases ship on GitHub assets.
 #
 # All third-party actions are pinned by commit SHA.
 
@@ -150,6 +151,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer to R2 (private bucket; served via /dl/)
+        # OPTIONAL: skipped unless the repo variable R2_ENABLED=true AND the
+        # Cloudflare secrets exist — GitHub release assets are the fallback
+        # delivery path (and the default until R2 is provisioned).
+        if: ${{ vars.R2_ENABLED == 'true' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
