@@ -203,6 +203,38 @@ def run() -> int:
 
     rgb_worker.devices_changed.connect(_rgb_on_devices)
 
+    def _rgb_push_sensors(snapshot: dict) -> None:
+        # hardware thread → UI thread → queued worker push. Sensor keys are
+        # the reactive effect contract: cpu_temp / gpu_temp / mem_pct /
+        # max_temp (None when the source is unavailable).
+        cpu_temps = [
+            row["temp"]
+            for row in (snapshot.get("temps") or [])
+            if "CPU" in str(row.get("label", "")).upper()
+            and row.get("temp") is not None
+        ]
+        gpu_temps = [
+            row["temp"]
+            for row in (snapshot.get("temps") or [])
+            if "GPU" in str(row.get("label", "")).upper()
+            and row.get("temp") is not None
+        ]
+        cpu_temp = max(cpu_temps) if cpu_temps else None
+        gpu_temp = max(gpu_temps) if gpu_temps else None
+        rgb_worker.sensors_requested.emit(
+            {
+                "cpu_temp": cpu_temp,
+                "gpu_temp": gpu_temp,
+                "mem_pct": (snapshot.get("mem") or {}).get("pct"),
+                "max_temp": max(
+                    [t for t in (cpu_temp, gpu_temp) if t is not None],
+                    default=None,
+                ),
+            }
+        )
+
+    collector.updated.connect(_rgb_push_sensors)
+
     def _rgb_on_brightness(pct: int) -> None:
         # UI-thread hook from the RGB tab brightness spinner → queued worker
         rgb_worker.brightness_requested.emit(int(pct))

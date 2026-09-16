@@ -44,6 +44,7 @@ class RgbEngine:
         self._devices: dict[str, RgbDevice] = {}
         self._assignments: dict[str, DeviceAssignment] = {}
         self.brightness: int = 100
+        self._sensors: dict = {}
         self._started: float | None = None
         self._last_tick_monotonic: float | None = None
         # diagnostics surfaced through the worker's signals (no Qt here)
@@ -98,6 +99,12 @@ class RgbEngine:
     def set_brightness(self, pct: int) -> None:
         self.brightness = max(0, min(100, int(pct)))
 
+    def set_sensors(self, sensors: dict) -> None:
+        """Latest hardware snapshot (UI thread reads collector.updated,
+        pushes here via the worker). Keys mirror the snapshot: cpu_temp,
+        gpu_temp, mem_pct, max_temp."""
+        self._sensors = dict(sensors or {})
+
     def _factor(self) -> float:
         return self.brightness / 100.0
 
@@ -143,7 +150,11 @@ class RgbEngine:
     ) -> list:
         # params re-validated against spec at render time via ctx.param()
         ctx = EffectContext(
-            device=device, params=dict(assignment.params), now=now, dt=dt
+            device=device,
+            params=dict(assignment.params),
+            now=now,
+            dt=dt,
+            sensors=dict(self._sensors),
         )
         frame = effect.render(ctx)
         if self.brightness >= 100:
