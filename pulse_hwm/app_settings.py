@@ -324,7 +324,9 @@ def _read_json_object(read, key: str, default: str) -> str:
 
     try:
         parsed = json.loads(str(read(key, str, default)) or "{}")
-        return str(parsed) if isinstance(parsed, dict) else default
+        # re-serialize with json.dumps: str(dict) produces repr with single
+        # quotes, which is NOT valid JSON for later json.loads
+        return json.dumps(parsed) if isinstance(parsed, dict) else default
     except ValueError:
         return default
 
@@ -334,6 +336,6 @@ def _read_json_list(read, key: str, default: str) -> str:
 
     try:
         parsed = json.loads(str(read(key, str, default)) or "[]")
-        return str(parsed) if isinstance(parsed, list) else default
+        return json.dumps(parsed) if isinstance(parsed, list) else default
     except ValueError:
         return default

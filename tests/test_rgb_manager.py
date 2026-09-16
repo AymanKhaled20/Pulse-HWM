@@ -132,7 +132,7 @@ class TestReactiveMode:
 class TestEffectsMode:
     def test_assignments_from_loader(self):
         plan = make_planner("effects").plan(
-            assignment_loader=lambda driver_id, device_id: (
+            assignment_loader=lambda device_id: (
                 DeviceAssignment("static") if device_id == "fake:0" else None
             )
         )
