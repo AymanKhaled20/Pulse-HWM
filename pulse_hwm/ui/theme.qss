@@ -286,3 +286,25 @@ QProgressBar::chunk {
 QSplitter::handle {
     background: $LINE;
 }
+
+
+/* === settings rail (M6 rework): section buttons track the active page === */
+QPushButton#railButton {
+    background-color: $PANEL;
+    color: $MUTED;
+    text-align: left;
+    padding: 8px 10px;
+    border: 2px solid $LINE;
+}
+QPushButton#railButton:hover {
+    color: $TEXT;
+    border-color: $PRIMARY;
+}
+QPushButton#railButton:checked {
+    background-color: $PANEL_ALT;
+    color: $PRIMARY;
+    border-left: 4px solid $PRIMARY;
+}
+QPushButton#railButton:checked:hover {
+    border-color: $PRIMARY;
+}
