@@ -100,6 +100,15 @@ class RgbTab(QWidget):
         self._assignment_hint.setObjectName("muted")
         self._assignment_hint.setWordWrap(True)
         self._devices_panel.body().addWidget(self._assignment_hint)
+        self._import_file_btn = QPushButton("IMPORT EFFECT (FILE)")
+        self._import_file_btn.clicked.connect(self._import_effect_file)
+        self._import_paste_btn = QPushButton("IMPORT EFFECT (PASTE)")
+        self._import_paste_btn.clicked.connect(self._import_paste)
+        import_row = QHBoxLayout()
+        import_row.addWidget(self._import_file_btn)
+        import_row.addWidget(self._import_paste_btn)
+        import_row.addStretch(1)
+        self._devices_panel.body().addLayout(import_row)
         layout.addWidget(self._devices_panel, 1)
 
         # ── override controls (phase 10): instant-apply, same contract ──
@@ -285,3 +294,48 @@ class RgbTab(QWidget):
     def _reconsider(self) -> None:
         if self._manager is not None:
             self._manager.reconsider()
+
+    # ── effect import (phase 13) ────────────────────────────────────────
+    def _import_effect_file(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "IMPORT RGB EFFECT", "", "RGB Effect (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as handle:
+                raw = handle.read()
+        except OSError as exc:
+            self.show_error(f"import failed: {exc}")
+            return
+        self._import_raw(raw)
+
+    def _import_paste(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        raw, ok = QInputDialog.getMultiLineText(
+            self, "PASTE RGB EFFECT JSON", "Effect definition:", ""
+        )
+        if ok and raw.strip():
+            self._import_raw(raw)
+
+    def _import_raw(self, raw: str) -> None:
+        from pulse_hwm.rgb.effects.loader import UserEffectStore, validate_definition
+
+        definition, errors = validate_definition(raw)
+        if definition is None:
+            self.show_error("import rejected: " + "; ".join(errors))
+            return
+        store = UserEffectStore(self._db)
+        ok, reason = store.add(definition)
+        if not ok:
+            self.show_error(reason)
+            return
+        if self._catalog is not None:
+            store.register_with_catalog(self._catalog)
+        self.load_settings()
+        self.show_error(f"imported effect {definition['id']}")
+        # re-populate effect dropdowns with the new definitions
+        self._rebuild_rows(self._seen_devices)
