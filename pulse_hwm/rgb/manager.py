@@ -91,6 +91,7 @@ class ModePlanner:
         catalog,
         override_effect_id: str,
         override_color: str,
+        override_speed: int = 50,
         reactive_effect_id: str = REACTIVE_TEMP_EFFECT_ID,
         alert_active: bool = False,
         alert_color: str = "#FF3B30",
@@ -101,6 +102,9 @@ class ModePlanner:
         self.catalog = catalog
         self.override_effect_id = override_effect_id
         self.override_color = override_color
+        # 0-100 UI speed → 0-1 effect-relative (specs use 0..1 floats; the
+        # per-effect validation drops the key for speed-less effects)
+        self.override_speed = max(0.0, min(1.0, int(override_speed) / 100.0))
         self.reactive_effect_id = reactive_effect_id
         self.alert_active = alert_active
         self.alert_color = alert_color
@@ -116,7 +120,8 @@ class ModePlanner:
                 # control rather than guessing
                 return ModePlan({d: None for d in self.device_ids})
             params = self.catalog.validate_params(
-                self.override_effect_id, {"color": self.override_color}
+                self.override_effect_id,
+                {"color": self.override_color, "speed": self.override_speed},
             )
             assignment = DeviceAssignment(self.override_effect_id, params=params)
             return ModePlan({d: assignment for d in self.device_ids})
@@ -217,6 +222,7 @@ class RgbManager:
             catalog=self._catalog,
             override_effect_id=settings.rgb_override_effect,
             override_color=settings.rgb_override_color,
+            override_speed=settings.rgb_override_speed,
             alert_active=self._alert_clock.active(),
             alert_color=settings.rgb_alert_color,
         )

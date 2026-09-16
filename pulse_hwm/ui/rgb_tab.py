@@ -19,23 +19,26 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from pulse_hwm import app_settings
 from pulse_hwm.db import Database
+from pulse_hwm.ui.widgets.color_picker import ColorPicker
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 
 
 class RgbTab(QWidget):
     mode_changed = Signal(str)  # validated mode id, after persistence
 
-    def __init__(self, db: Database, manager=None, parent=None):
+    def __init__(self, db: Database, manager=None, brightness_bridge=None, parent=None):
         super().__init__(parent)
         self.setObjectName("root")
         self._db = db
         self._manager = manager  # Qt-free RgbManager (may be None in tests)
+        self._brightness_bridge = brightness_bridge  # fn(pct) → worker, app.py
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -85,6 +88,34 @@ class RgbTab(QWidget):
         self._devices_panel.body().addWidget(self._devices_label)
         layout.addWidget(self._devices_panel, 1)
 
+        # ── override controls (phase 10): instant-apply, same contract ──
+        self._override_panel = PixelPanel("OVERRIDE LOOK")
+        override_form = QFormLayout()
+        self._picker = ColorPicker()
+        self._picker.hex_chosen.connect(self._on_override_color)
+        color_row = QHBoxLayout()
+        color_row.addWidget(self._picker)
+        color_row.addStretch(1)
+        override_form.addRow("COLOR", color_row)
+        self._brightness = QSpinBox()
+        self._brightness.setRange(0, 100)
+        self._brightness.setSuffix(" %")
+        self._brightness.valueChanged.connect(self._on_override_value)
+        self._speed = QSpinBox()
+        self._speed.setRange(0, 100)
+        self._speed.valueChanged.connect(self._on_override_value)
+        override_form.addRow("BRIGHTNESS", self._brightness)
+        override_form.addRow("SPEED", self._speed)
+        self._override_panel.body().addLayout(override_form)
+        self._override_note = QLabel(
+            "OVERRIDE forces this look on every device and re-asserts it so "
+            "Mystic Light / iCUE / Synapse cannot take the hardware back."
+        )
+        self._override_note.setObjectName("muted")
+        self._override_note.setWordWrap(True)
+        self._override_panel.body().addWidget(self._override_note)
+        layout.addWidget(self._override_panel)
+
         layout.addStretch(1)
         self.load_settings()
 
@@ -94,6 +125,15 @@ class RgbTab(QWidget):
         index = self._mode_box.findData(values.rgb_mode)
         self._mode_box.setCurrentIndex(max(0, index))
         self._status_mode.setText(f"MODE: {values.rgb_mode.upper()}")
+        # override panel: blockSignals so the programmatic fill can't fire
+        # the user-change handlers (same pattern as SettingsTab.load_from)
+        self._brightness.blockSignals(True)
+        self._brightness.setValue(values.rgb_brightness)
+        self._brightness.blockSignals(False)
+        self._speed.blockSignals(True)
+        self._speed.setValue(values.rgb_override_speed)
+        self._speed.blockSignals(False)
+        self._picker.set_hex(values.rgb_override_color)
 
     def show_driver(self, driver_id: str, name: str, devices: list) -> None:
         if not driver_id:
@@ -119,6 +159,25 @@ class RgbTab(QWidget):
         app_settings.save_field(self._db, "rgb_mode", str(mode_id))
         self._status_mode.setText(f"MODE: {str(mode_id).upper()}")
         self._reconsider()
+
+    def _on_override_color(self, hex_value: str) -> None:
+        app_settings.save_field(self._db, "rgb_override_color", str(hex_value))
+        self._reconsider()
+
+    def _on_override_value(self) -> None:
+        # brightness is the global engine scale; speed feeds the effect
+        app_settings.save_field(
+            self._db, "rgb_brightness", int(self._brightness.value())
+        )
+        app_settings.save_field(
+            self._db, "rgb_override_speed", int(self._speed.value())
+        )
+        self._forward_brightness()
+        self._reconsider()
+
+    def _forward_brightness(self) -> None:
+        if self._brightness_bridge is not None:
+            self._brightness_bridge(int(self._brightness.value()))
 
     def _reconsider(self) -> None:
         if self._manager is not None:

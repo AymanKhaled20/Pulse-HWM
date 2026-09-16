@@ -49,6 +49,7 @@ class AppSettings:
     rgb_brightness: int = 100
     rgb_override_effect: str = "static"
     rgb_override_color: str = "#FFD400"  # "#RRGGBB"; validated on load
+    rgb_override_speed: int = 50  # 0-100 → effect-relative speed
     rgb_reactive_source: str = "cpu"  # cpu | gpu | mem | max_temp
     rgb_temp_low_c: int = 40  # gradient endpoints (cool color at low_c)
     rgb_temp_high_c: int = 85  # …hot color at high_c
@@ -73,6 +74,7 @@ _INT_KEYS = {
     "rgb_engine_fps",
     "rgb_reassert_s",
     "rgb_brightness",
+    "rgb_override_speed",
     "rgb_temp_low_c",
     "rgb_temp_high_c",
     "rgb_alert_hold_ms",
@@ -114,6 +116,7 @@ LIMITS = {
     "rgb_engine_fps": (5, 60),
     "rgb_reassert_s": (1, 30),
     "rgb_brightness": (0, 100),
+    "rgb_override_speed": (0, 100),
     "rgb_temp_low_c": (0, 100),
     "rgb_temp_high_c": (0, 150),
     "rgb_alert_hold_ms": (500, 30_000),
@@ -221,6 +224,9 @@ def load(db: Database) -> AppSettings:
     )
     values.rgb_override_color = _read_hex(
         read, "rgb_override_color", values.rgb_override_color
+    )
+    values.rgb_override_speed = _read_limited_int(
+        read, "rgb_override_speed", values.rgb_override_speed
     )
     values.rgb_reactive_source = _read_enum(
         read, "rgb_reactive_source", RGB_REACTIVE_SOURCES, values.rgb_reactive_source

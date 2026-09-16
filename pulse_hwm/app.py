@@ -199,6 +199,10 @@ def run() -> int:
 
     rgb_worker.devices_changed.connect(_rgb_on_devices)
 
+    def _rgb_on_brightness(pct: int) -> None:
+        # UI-thread hook from the RGB tab brightness spinner → queued worker
+        rgb_worker.brightness_requested.emit(int(pct))
+
     window = MainWindow(
         hardware_collector=collector,
         websites_monitor=monitor,

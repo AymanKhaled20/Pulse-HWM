@@ -125,13 +125,16 @@ class MainWindow(QMainWindow):
             self._settings_tab = None
             self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
         # ── RGB tab (phase 8): manager + worker wired by app.py —─────────
-        if db is not None and rgb_manager is not None:
+        if db is not None and rgb_manager is not None and rgb_worker is not None:
             from pulse_hwm.ui.rgb_tab import RgbTab
 
-            self._rgb_tab = RgbTab(db, manager=rgb_manager)
-            if rgb_worker is not None:
-                rgb_worker.devices_changed.connect(self._rgb_tab.show_driver)
-                rgb_worker.driver_error.connect(self._rgb_tab.show_error)
+            self._rgb_tab = RgbTab(
+                db,
+                manager=rgb_manager,
+                brightness_bridge=rgb_worker.brightness_requested.emit,
+            )
+            rgb_worker.devices_changed.connect(self._rgb_tab.show_driver)
+            rgb_worker.driver_error.connect(self._rgb_tab.show_error)
             self.tabs.addTab(self._rgb_tab, "RGB")
         else:
             self._rgb_tab = None
