@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -187,20 +186,33 @@ class SettingsTab(QWidget):
 
         # assembly: left column MONITORING→DATA, right column
         # UPDATES→ALERTS→RESOURCES — half the stacked height, so the tab
-        # fits a windowed window at any allowed font size without a
-        # scrollbar and without clipped controls
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
-        grid.addWidget(panel, 0, 0)
-        grid.addWidget(data_panel, 1, 0)
-        grid.addWidget(updates_panel, 0, 1)
-        grid.addWidget(alerts_panel, 1, 1)
-        grid.addWidget(resources_panel, 2, 1)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        outer.addLayout(grid)
+        # ── M6: left rail + stacked pages (replaces the 2-column grid) ──
+        # Same logical groups as before; every widget/handler above here
+        # is unchanged, only the assembly moved.
+        from pulse_hwm.ui.widgets.settings_widgets import SettingsRail
+
+        monitoring_host = QWidget()
+        monitoring_layout = QVBoxLayout(monitoring_host)
+        monitoring_layout.setContentsMargins(0, 0, 0, 0)
+        monitoring_layout.setSpacing(10)
+        monitoring_layout.addWidget(panel)
+        monitoring_layout.addWidget(data_panel)
+        monitoring_layout.addStretch(1)
+
+        ops_host = QWidget()
+        ops_layout = QVBoxLayout(ops_host)
+        ops_layout.setContentsMargins(0, 0, 0, 0)
+        ops_layout.setSpacing(10)
+        ops_layout.addWidget(updates_panel)
+        ops_layout.addWidget(alerts_panel)
+        ops_layout.addWidget(resources_panel)
+        ops_layout.addStretch(1)
+
+        rail = SettingsRail()
+        rail.add_section("MONITORING / DATA", monitoring_host)
+        rail.add_section("UPDATES / ALERTS / RESOURCES", ops_host)
+        rail.add_stretch()
+        outer.addWidget(rail, 1)
 
         self.test_banner = QLabel("TEST ALERT DISPATCHED")
         self.test_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
