@@ -82,3 +82,27 @@ Full checklist (re-run after each driver change):
 - Dongle PID `010D` support
 - Compact F75 output palette (mid-gradients render washed-out/whitish — see Color-mixing note)
 - URL effect import (implemented), settings rail rework (M6)
+
+
+## Vendor-free phase — P1 (raw HID layer) 2026-09-17
+
+Branch feature/rgb-vendor-free. LGS uninstalled (owner kept G HUB);
+iCUE/MSI Center were never installed — software purge complete.
+
+Ground truth from scripts/rgb_raw_scan.py on the owner machine (no vendor
+software): 19 reachable vendor interfaces. Key channels:
+- razer 1532:0537 usage page 0xFFA0 (interface 3) — the RGB control slot
+- logitech 046D:C092 usage page 0x0059 (HID++) — opens clean, G HUB coexists
+- msi 1462:7D41 — HID interface present but EC protocol not public
+- corsair: none present (hardware unplugged)
+
+Shipped P1: drivers/raw/{base_raw,razer_protocol,razer_raw,logitech_raw,
+corsair_raw,msi_raw} + registry order aula -> raw -> SDK + settings gate
+rgb_allow_raw_protocols (default OFF). Detection works everywhere; WRITE
+paths fail closed with a live reason until captures validate them.
+
+Deferred premiums: (1) razer matrix row protocol: capture vs envelope,
+report id; (2) logitech LED feature list discovery (feature 0x0000 walk);
+(3) corsair handshake/frame cheat sheet — blocked until a device is plugged
+in; (4) msi stays detect-only this release.
+
