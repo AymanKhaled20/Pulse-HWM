@@ -152,6 +152,7 @@ def run() -> int:
     from PySide6.QtCore import Signal as _Signal
 
     from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
+    from pulse_hwm.rgb.drivers.logitech_g import LogitechDriver
     from pulse_hwm.rgb.drivers.registry import DriverRegistry
     from pulse_hwm.rgb.effects.catalog import EffectCatalog
     from pulse_hwm.rgb.manager import RgbManager
@@ -178,7 +179,7 @@ def run() -> int:
 
     _rgb_user_store = UserEffectStore(db)
     _rgb_registered = _rgb_user_store.register_with_catalog(rgb_catalog)
-    rgb_registry = DriverRegistry((AulaDriver,))
+    rgb_registry = DriverRegistry((AulaDriver, LogitechDriver))
     rgb_registry.load()
     rgb_thread = QThread()
     rgb_thread.setObjectName("rgb-engine")
