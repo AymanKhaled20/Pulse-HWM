@@ -1,92 +1,156 @@
-"""AULA transport tests against a scripted fake hidapi module — no real
-device. Verifies sequence ORDER, protocol round-trips, dedupe, and
-graceful degradation."""
+"""AULA direct-mode transport tests with a scripted fake hidapi — no real
+device. Covers channel discovery (0x06 keepalive), frame encoding,
+dedupe+keepalive floor, and degradation. Time is injectable."""
 
 from __future__ import annotations
 
 import pytest
 
-from pulse_hwm.rgb.drivers import aula_protocol as ap
-from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver, _representative
+from pulse_hwm.rgb.drivers.aula_f75 import (
+    SINOWEALTH_LED_COUNT,
+    AulaDriver,
+    build_direct_frame,
+)
 from pulse_hwm.rgb.model import RgbColor
+
+FAKE_KEEPALIVE_BLOB = (b"\x06\x08" + bytes(384))[:386]
 
 
 class FakeHidDevice:
-    """Scripted endpoint mirroring the real wire stream: every write is
-    followed by an echo, and config-response fragments come after the READ
-    echo — exactly the order _read_fragment expects."""
+    """One hidapi collection handle. get_feature_report(0x06, 520) succeeds
+    only when `direct_channel` is armed (simulates Col06 finding)."""
 
     def __init__(self):
-        self.written: list[bytes] = []
-        self.fail_writes = False
-        self._echoes: list[list[int]] = []
-        self._config = [
-            ap.build_fragment(ap.CMD_READ, ap.SUBCMD_CONFIG, seq, [])
-            for seq in range(ap.CONFIG_FRAGMENTS)
-        ]
-        for fragment in self._config:
-            fragment[ap.CFG_APPLY_FLAG] = 0x01
-            fragment[19] = ap.checksum(fragment)
-        self._config_responses: list | None = None
+        self.opened_path: bytes | None = None
+        self.closed = 0
+        self.frames: list[bytes] = []
+        self.direct_channel = False
+        self.fail_sends = False
 
     def open_path(self, path) -> None:
-        # real hidapi opens in-place; record which collection got used
         self.opened_path = path
 
-    def write(self, data: bytes) -> int:
-        if self.fail_writes:
-            return 0
-        self.written.append(bytes(data))
-        # the keyboard echoes every fragment verbatim
-        self._echoes.append(list(data))
+    def get_feature_report(self, report_id: int, size: int) -> list[int]:
+        del size
+        if report_id == 0x06 and self.direct_channel:
+            return list(FAKE_KEEPALIVE_BLOB)
+        raise OSError("read error")
+
+    def send_feature_report(self, data: bytes) -> int:
+        if self.fail_sends:
+            return -1
+        self.frames.append(bytes(data))
         return len(data)
 
-    def read(self, size: int, timeout_ms: int) -> list[int]:
-        if self._echoes:
-            return self._echoes.pop(0)
-        if self._config_responses:
-            return list(self._config_responses.pop(0))
-        return []
-
     def close(self) -> None:
-        pass
+        self.closed += 1
 
 
 class FakeHidModule:
-    def __init__(self):
-        self.entries = [
-            {"path": b"kb1", "usage_page": 0x0001},  # ordinary collection
-            {"path": b"kb0", "usage_page": 0xFF02},  # vendor collection
-        ]
-        self.fake_device = FakeHidDevice()
+    """enumerate() hands out one FakeHidDevice PER PATH (as real hardware
+    does); the direct entry answers the 0x06 keepalive, others refuse."""
+
+    def __init__(self, direct_on: str | None = "Col06"):
+        self.last_vid = self.last_pid = 0
+        self._devices: dict[bytes, FakeHidDevice] = {}
+        self.entries: list[dict] = []
+        for name in ("Col01", "Col02", "Col06"):
+            handle = FakeHidDevice()
+            if name == direct_on:
+                handle.direct_channel = True
+            path = f"kb-{name}".encode()
+            self._devices[path] = handle
+            self.entries.append({"path": path, "usage_page": 0x0001})
 
     def enumerate(self, vendor_id: int, product_id: int) -> list:
         self.last_vid, self.last_pid = vendor_id, product_id
         return self.entries
 
     def device(self) -> FakeHidDevice:
-        # hidapi style: device() returns the handle; open_path opens it
-        return self.fake_device
+        # a fresh handle for every device() call, like faking hidapi's
+        # per-open state; the last open_path result is introspectable via
+        # driver._last_open_path (set by the driver on open)
+        return _FreshHandle(self)
 
-    def queue_config(self) -> None:
-        """Arm the device: reads after the READ echo return config fragments."""
-        self.fake_device._config_responses = [
-            list(fragment) for fragment in self.fake_device._config
-        ]
+
+class _FreshHandle:
+    """Returns the FakeHidDevice whose open_path was called, by wrapping
+    open_path and forwarding reads/writes to that device."""
+
+    def __init__(self, module: "FakeHidModule"):
+        self._module = module
+        self._handle: FakeHidDevice | None = None
+
+    def open_path(self, path) -> None:
+        self._handle = self._module._devices[bytes(path)]
+        self._handle.opened_path = path
+        self._module._last_opened_handle = self._handle
+
+    def get_feature_report(self, *args, **kwargs) -> list[int]:
+        return self._handle.get_feature_report(*args, **kwargs)
+
+    def send_feature_report(self, *args, **kwargs) -> int:
+        return self._handle.send_feature_report(*args, **kwargs)
+
+    def close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
 
 
 @pytest.fixture()
-def rigged():
+def armed() -> tuple[AulaDriver, FakeHidDevice]:
     module = FakeHidModule()
-    module.queue_config()  # driver.open() performs a config read
     driver = AulaDriver(hid_module=module)
     driver.open()
-    return driver, module.fake_device
+    return driver, module._last_opened_handle
+
+
+class TestDirectFrame:
+    def test_header_and_size(self):
+        frame = build_direct_frame([])
+        assert len(frame) == 520
+        assert frame[:8] == bytes((0x06, 0x08, 0x00, 0x00, 0x01, 0x00, 0x7A, 0x01))
+
+    def test_uniform_color_all_126_leds(self):
+        frame = build_direct_frame([RgbColor(255, 0, 0)] * SINOWEALTH_LED_COUNT)
+        for index in range(SINOWEALTH_LED_COUNT):
+            base = 8 + index * 3
+            assert frame[base : base + 3] == bytes((255, 0, 0))
+
+    def test_partial_colors_pad_black(self):
+        frame = build_direct_frame([RgbColor(1, 2, 3)] * 4)
+        first_rgb = frame[8 : 8 + 12]
+        assert first_rgb == bytes((1, 2, 3)) * 4
+        assert frame[8 + 4 * 3 : 8 + 126 * 3] == bytes((126 - 4) * 3)
+
+
+class TestOpen:
+    def test_finds_direct_collection(self, armed):
+        driver, fake_device = armed
+        assert driver._device is not None
+        assert fake_device.opened_path == b"kb-Col06"
+
+    def test_opens_none_when_no_collection_answers(self):
+        module = FakeHidModule()
+        for handle in module._devices.values():
+            handle.direct_channel = False
+        driver = AulaDriver(hid_module=module)
+        driver.open()
+        assert driver._device is None
+        assert "0x06" in driver.last_error
+
+    def test_open_without_probe_raises(self):
+        driver = AulaDriver(hid_module=FakeHidModule())
+        driver._hid = None
+        try:
+            driver.open()
+            assert False, "expected RuntimeError"
+        except RuntimeError:
+            pass
 
 
 class TestProbe:
-    def test_unavailable_when_hidapi_missing(self, monkeypatch):
-        # simulate the dependency genuinely absent (exe without hidapi)
+    def test_simulates_missing_hidapi(self, monkeypatch):
         import sys
 
         monkeypatch.setitem(sys.modules, "hid", None)
@@ -95,7 +159,7 @@ class TestProbe:
         assert probe.available is False
         assert "hidapi" in probe.reason
 
-    def test_no_device_means_probe_false(self):
+    def test_no_plugged_keyboard(self):
         module = FakeHidModule()
         module.entries = []
         driver = AulaDriver(hid_module=module)
@@ -104,77 +168,52 @@ class TestProbe:
         assert "no AULA" in probe.reason
 
 
-class TestOpen:
-    def test_vendor_collection_preferred(self, rigged):
-        _, fake_device = rigged
-        assert fake_device.opened_path == b"kb0"  # vendor page collection wins
-
-    def test_falls_back_to_first_entry(self):
-        module = FakeHidModule()
-        module.entries[1]["usage_page"] = 0  # no vendor collection present
-        driver = AulaDriver(hid_module=module)
-        driver.open()
-        assert module.fake_device.opened_path == b"kb1"
-
-
-class TestSequence:
-    def test_set_frame_sends_full_sequence(self, rigged):
-        driver, _ = rigged
+class TestSetFrame:
+    def test_writes_full_direct_frame(self, armed):
+        driver, fake_device = armed
         ok = driver.set_frame("aula:0", [RgbColor(255, 0, 0)] * 10)
         assert ok is True
-        commands = [data[1] for data in module_write_frames(rigged)]
-        assert ap.CMD_WRITE in commands
-        assert ap.CMD_COLOR in commands
-        assert ap.CMD_SAVE in commands
+        assert len(fake_device.frames) == 1
+        frame = fake_device.frames[0]
+        assert len(frame) == 520
+        assert frame[8:11] == bytes((255, 0, 0))
+        assert frame[8 + 125 * 3 : 8 + 125 * 3 + 3] == bytes((255, 0, 0))
 
-    def test_reads_config_before_writing(self, rigged):
-        # the write fragments must be a read-modify-write, not zeros
-        driver, _ = rigged
-        driver.set_frame("aula:0", [RgbColor(0, 128, 255)] * 10)
-        writes = module_write_frames(rigged)
-        config_write = next(f for f in writes if f[1] == ap.CMD_WRITE)
-        assert ap.is_valid_fragment(config_write)
-        assert config_write[ap.CFG_APPLY_FLAG] == 0x00
-        assert config_write[ap.CFG_EFFECT] == 1
-
-    def test_identical_frame_skips_transmission(self, rigged):
-        driver, _ = rigged
+    def test_identical_frame_skipped_before_keepalive(self):
+        module = FakeHidModule()
+        driver = AulaDriver(hid_module=module, clock=lambda: 0.0)
+        driver.open()
         red = [RgbColor(255, 0, 0)] * 10
         assert driver.set_frame("aula:0", red) is True
-        before = len(module_write_frames(rigged))
-        assert driver.set_frame("aula:0", red) is True
-        assert len(module_write_frames(rigged)) == before  # nothing sent
+        first = len(module._last_opened_handle.frames)
+        assert driver.set_frame("aula:0", red) is True  # 0.0s < 0.7s floor
+        assert len(module._last_opened_handle.frames) == first
 
-    def test_mixed_frame_averages(self):
-        frame = [RgbColor(0, 0, 0)] * 5 + [RgbColor(100, 50, 20)] * 5
-        assert _representative(frame) == (50, 25, 10)
-
-    def test_uniform_frame_exact(self):
-        frame = [RgbColor(1, 2, 3)] * 4
-        assert _representative(frame) == (1, 2, 3)
-
-    def test_empty_frame_rejected(self, rigged):
-        driver, _ = rigged
-        assert driver.set_frame("aula:0", []) is False
-
-
-class TestDegradation:
-    def test_write_failure_is_false_not_raise(self, rigged):
-        driver, fake_device = rigged
-        fake_device.fail_writes = True
+    def test_send_failure_false_with_error(self, armed):
+        driver, fake_device = armed
+        fake_device.fail_sends = True
         assert driver.set_frame("aula:0", [RgbColor()] * 5) is False
-        assert driver.last_error
+        assert "feature write" in driver.last_error
 
-    def test_closed_driver_reports_false(self):
+    def test_closed_driver_rejects(self):
         driver = AulaDriver(hid_module=FakeHidModule())
         assert driver.set_frame("aula:0", [RgbColor()] * 2) is False
 
-    def test_close_is_idempotent(self, rigged):
-        driver, _ = rigged
+    def test_close_releases(self, armed):
+        driver, fake_device = armed
         driver.close()
-        driver.close()
+        assert fake_device.closed >= 1  # probe may have already reset handle state
+        assert driver._device is None
+        driver.close()  # idempotent
 
 
-def module_write_frames(rigged) -> list[bytes]:
-    fake_device = rigged[1]
-    return list(fake_device.written)
+class TestModeledDevices:
+    def test_one_device_with_layout(self, armed):
+        driver, _ = armed
+        devices = driver.devices()
+        assert len(devices) == 1
+        device = devices[0]
+        assert device.device_id == "aula:0"
+        assert device.leds == SINOWEALTH_LED_COUNT
+        assert device.layout is not None
+        assert device.layout.led_count == len(device.layout.key_names)

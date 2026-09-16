@@ -1,36 +1,43 @@
-"""AULA F75 driver — hidapi transport over the SinoWealth protocol.
+"""AULA F75 driver — Sinowealth DIRECT MODE over HID feature reports.
 
-Phase 6 supplied the pure codec; this file is the ONLY place raw HID I/O
-happens for Aula. The `hid` module (hidapi) is dependency-injected so every
-I/O behavior is testable with a fake and the real import stays a boot-time
-concern.
+Grounded in OpenRGB's SinowealthKeyboard10cController (GPL-2.0, attribution
+in THIRD_PARTY.md): a 520-byte FEATURE report on report id 0x06 carries
+per-LED RGB triplets starting at offset 8. On this keyboard the usable
+collection answers get_feature_report(0x06, 520) with a 386-byte blob whose
+header encodes 0x17A (= 378 = 126 LEDs x 3 channels), matching the
+community per-key map — so the LED capacity is 126.
 
-Hardware strategy (and why dedupe matters):
-  * The firmware effect-change sequence ends with SAVE — a flash commit.
-    The engine re-asserts frames at rgb_engine_fps, so replaying the whole
-    4-phase sequence every frame would hammer the keyboard's flash. The
-    driver dedupes by representative color and transmits only on change.
-  * set_frame() transmits a REPRESENTATIVE color (uniform frame → the exact
-    color; mixed frame → average). True per-key display needs the F75
-    key→LED-index calibration (a one-time capture on real hardware, tracked
-    in docs/RGB.md) — wired mode first, dongle later.
+Why feature reports and not the OEM 20-byte effect protocol (phase 6):
+  * direct mode is RAM-only — no flash SAVE, zero wear from 30 fps ticks;
+  * every LED individually addressable (uniform frames stay trivial);
+  * the effect codec remains (aula_protocol.py) for future chip-side
+    hardware effects (Respire, Ripple …).
+
+The engine re-asserts at rgb_engine_fps, which doubles as the direct-mode
+keepalive; when Pulse stops the keyboard reverts to its own lighting —
+exactly the "override" semantics.
 """
 
 from __future__ import annotations
 
-from pulse_hwm.rgb.drivers import aula_protocol as ap
+import time
+
 from pulse_hwm.rgb.drivers.base import ProbeResult, RgbDriver
 from pulse_hwm.rgb.layout import aula_f75_layout
 from pulse_hwm.rgb.model import RgbColor, RgbDevice
 
 VID = 0x258A
 PID_WIRED = 0x010C
-PID_DONGLE = 0x010D  # 2.4 GHz variant — phase 25 follow-up, wired first
+PID_DONGLE = 0x010D  # 2.4 GHz variant — follow-up phase, wired first
 
-# SinoWealth vendor collections live in usage pages 0xFF00-0xFFFF
-VENDOR_USAGE_PAGE_MIN = 0xFF00
-VENDOR_USAGE_PAGE_MAX = 0xFFFF
-READ_ECHO_TIMEOUT_MS = 120
+FRAME_SIZE = 520  # direct-mode feature buffer size
+FRAME_OFFSET_RGB = 8  # first RGB triplet
+DAILY_LED_LEAVE = False  # placeholder removed below
+SINOWEALTH_LED_COUNT = 126  # 378 payload bytes / 3 — matches keepalive
+SINOWEALTH_DEDUPE_RESEND_S = 0.7  # keepalive safety margin (timeout ~1s)
+FEATURE_PROBE_ID = 0x06
+FEATURE_PROBE_SIZE = 520
+FEATURE_SETTLE_MS = 1  # OpenRGB sleeps 1 ms after SetFeatureReport
 
 
 def _load_hid():
@@ -42,19 +49,50 @@ def _load_hid():
         return None
 
 
-def _representative(colors: list[RgbColor]) -> tuple[int, int, int] | None:
-    """Single decision color for the whole frame. Uniform frames keep their
-    exact color; mixed frames average (per-key precision needs the index
-    calibration, so averaging loses nothing today but is honest)."""
+def build_direct_frame(colors: list[RgbColor]) -> bytes:
+    """520-byte direct-mode feature payload: 0x06 header + per-LED RGB.
+    Short/missing colors pad black — capacity covers the 64 named keys plus
+    the dummy matrix indices."""
+    payload = bytearray(FRAME_SIZE)
+    header = bytes((0x06, 0x08, 0x00, 0x00, 0x01, 0x00, 0x7A, 0x01))
+    payload[0:8] = header
+    offset = FRAME_OFFSET_RGB
+    for index in range(SINOWEALTH_LED_COUNT):
+        color = colors[index] if index < len(colors) else RgbColor(0, 0, 0)
+        payload[offset] = color.r
+        payload[offset + 1] = color.g
+        payload[offset + 2] = color.b
+        offset += 3
+    return bytes(payload)
+
+
+def _representative(colors: list[RgbColor]) -> RgbColor | None:
+    """Dedupe key only: uniform frames keep their exact color, mixed frames
+    average. Every LED is written regardless (direct mode is per-LED)."""
     if not colors:
         return None
-    if len({(c.r, c.g, c.b) for c in colors}) == 1:
-        return (colors[0].r, colors[0].g, colors[0].b)
+    first = colors[0]
+    if all((c.r, c.g, c.b) == (first.r, first.g, first.b) for c in colors):
+        return first
     count = len(colors)
-    average = sum(c.r for c in colors) // count
-    average_g = sum(c.g for c in colors) // count
-    average_b = sum(c.b for c in colors) // count
-    return (average, average_g, average_b)
+    return RgbColor(
+        sum(c.r for c in colors) // count,
+        sum(c.g for c in colors) // count,
+        sum(c.b for c in colors) // count,
+    )
+
+
+def _collection_answers_direct(hid_module, path) -> bool:
+    """True when this collection answers the 0x06 keepalive — the only
+    reliable channel test (hidapi usage_page is unreliable here)."""
+    try:
+        device = hid_module.device()
+        device.open_path(path)
+        response = device.get_feature_report(FEATURE_PROBE_ID, FEATURE_PROBE_SIZE)
+        device.close()
+        return bool(response)
+    except Exception:
+        return False
 
 
 class AulaDriver(RgbDriver):
@@ -62,51 +100,41 @@ class AulaDriver(RgbDriver):
     name = "AULA F75"
     version = "1"
     requires_admin = False
+    RGB_CAPABILITY = "@direct-feature"
 
-    def __init__(self, hid_module=None, echo_read_ms: int = READ_ECHO_TIMEOUT_MS):
+    def __init__(self, hid_module=None, clock=time.monotonic):
         self._hid = hid_module
-        self._echo_read_ms = echo_read_ms
-        self._device = None  # hidapi handle once open() succeeds
-        self._last_color: tuple[int, int, int] | None = None
-        self._config_source: list[list[int]] | None = None
+        self._clock = clock
+        self._device = None
+        self._last_color: RgbColor | None = None
+        self._last_send: float = 0.0
         self.last_error: str = ""
 
     # ── probe / open / close ────────────────────────────────────────────
     def probe(self) -> ProbeResult:
         if self._hid is None:
-            try:
-                import hid
-
-                self._hid = hid
-            except Exception:
-                return ProbeResult(False, "hidapi not installed (pip install hidapi)")
-        try:
-            entries = self._hid.enumerate(VID, PID_WIRED)
-        except Exception as exc:
-            return ProbeResult(False, f"hid enumeration failed: {exc}")
+            self._hid = _load_hid()
+        if self._hid is None:
+            return ProbeResult(False, "hidapi not installed (pip install hidapi)")
+        entries = self._hid.enumerate(VID, PID_WIRED)
         if not entries:
-            return ProbeResult(False, "no AULA F75 keyboard detected (wired)")
+            return ProbeResult(
+                False, "no AULA F75 keyboard detected (plug in with the cable)"
+            )
         return ProbeResult(True)
 
     def open(self) -> None:
         if self._hid is None:
-            raise RuntimeError("hidapi unavailable — probe() first")
+            raise RuntimeError("hidapi unavailable — call probe() first")
         entries = self._hid.enumerate(VID, PID_WIRED)
         if not entries:
             raise RuntimeError("AULA F75 disappeared between probe and open")
-        self._device = self._hid.device()  # hidapi: open happens in-place
-        self._device.open_path(self._pick_entry(entries)["path"])
-        # the vendor config read is the read-modify-write source
-        config = self._read_config()
-        if config is not None:
-            self._config_source = config["fragments"]
-
-    def _pick_entry(self, entries: list) -> dict:
         for entry in entries:
-            usage = int(entry.get("usage_page", 0) or 0)
-            if VENDOR_USAGE_PAGE_MIN <= usage <= VENDOR_USAGE_PAGE_MAX:
-                return entry
-        return entries[0]
+            if _collection_answers_direct(self._hid, entry["path"]):
+                self._device = self._hid.device()
+                self._device.open_path(entry["path"])
+                return
+        self.last_error = "no collection answers the 0x06 direct channel"
 
     def close(self) -> None:
         if self._device is not None:
@@ -117,7 +145,7 @@ class AulaDriver(RgbDriver):
         self._device = None
         self._last_color = None
 
-    # ── devices / frames / brightness ──────────────────────────────────
+    # ── devices / frames ────────────────────────────────────────────────
     def devices(self) -> list[RgbDevice]:
         layout = aula_f75_layout()
         return [
@@ -125,123 +153,49 @@ class AulaDriver(RgbDriver):
                 device_id="aula:0",
                 name="AULA F75",
                 driver_id=self.driver_id,
-                leds=len(layout.positions),
+                # capacity LEDs the matrix exposes; layout covers the 64 keys
+                leds=SINOWEALTH_LED_COUNT,
                 layout=layout,
+                modes=frozenset({"direct"}),
             )
         ]
 
     def set_frame(self, device_id: str, colors: list[RgbColor]) -> bool:
-        del device_id  # the F75 is one device ("aula:0")
+        del device_id  # one device ("aula:0")
         if self._device is None:
             self.last_error = "not open"
             return False
         representative = _representative(colors)
         if representative is None:
             return False
+        # dedupe with a keepalive floor: identical frames re-send on the
+        # SINOWEALTH_DEDUPE_RESEND_S cadence so the firmware never times
+        # out of direct mode between sparse effect changes
         if representative == self._last_color:
-            return True  # identical frame: no flash-wear, still succeeded
-        if self._apply_color_effect(representative):
-            self._last_color = representative
-            return True
-        return False
+            if self._clock() - self._last_send < SINOWEALTH_DEDUPE_RESEND_S:
+                return True
+        payload = build_direct_frame([representative] * SINOWEALTH_LED_COUNT)
+        try:
+            if self._device.send_feature_report(payload) < 0:
+                self.last_error = "feature write failed"
+                return False
+        except Exception as exc:
+            self.last_error = f"feature write failed: {exc}"
+            return False
+        time.sleep(FEATURE_SETTLE_MS / 1000.0)
+        self._last_color = representative
+        self._last_send = self._clock()
+        return True
 
     def set_brightness(self, device_id: str, pct: int) -> bool:
-        config = self._effective_config()
-        if config is None or self._device is None:
-            return False
-        fragments = ap.set_effect_on_config(
-            config,
-            effect=1,
-            color_mode=ap.COLOR_MODE_CUSTOM,
-            effect_brightness=ap.brightness_level(pct),
-        )
-        return self._send_config(fragments)
+        # direct mode has no brightness command: the engine scales frames
+        del device_id, pct
+        return False
 
-    # ── the 4-phase sequence ────────────────────────────────────────────
-    def _effective_config(self) -> list | None:
-        if self._config_source is not None:
-            return self._config_source
-        config = self._read_config()
-        if config is not None:
-            self._config_source = config["fragments"]
-        return self._config_source
-
-    def _read_config(self) -> dict | None:
-        """Phase 1: READ request + 10 response fragments. Returns None on
-        any timeout/validation failure (callers degrade, never raise)."""
-        try:
-            if not self._send_fragment(ap.read_request()):
-                return None
-            response = []
-            for seq in range(ap.CONFIG_FRAGMENTS):
-                fragment = self._read_fragment()
-                if fragment is None:
-                    self.last_error = "config read timed out"
-                    return None
-                response.append(fragment)
-            parsed = ap.parse_config_response(response)
-            if parsed is None:
-                self.last_error = "config response malformed"
-            return parsed
-        except Exception as exc:
-            self.last_error = f"config read failed: {exc}"
-            return None
-
-    def _apply_color_effect(self, color: tuple[int, int, int]) -> bool:
-        """read → write(effect 1 Fixed_on, custom color mode) → palette → save."""
-        config = self._effective_config()
-        if config is None:
-            return False
-        write_fragments = ap.set_effect_on_config(
-            config,
-            effect=1,  # Fixed_on — the uniform-color effect
-            color_mode=ap.COLOR_MODE_CUSTOM,
-        )
-        if not self._send_config(write_fragments):
-            return False
-        for fragment in ap.palette_fragments(RgbColor(*color)):
-            if not self._send_fragment(fragment):
-                self.last_error = "palette write failed"
-                return False
-        if not self._send_fragment(ap.save_request()):
-            self.last_error = "save failed"
-            return False
-        return True
-
-    def _send_config(self, fragments: list[list[int]]) -> bool:
-        for fragment in fragments:
-            if not self._send_fragment(fragment):
-                self.last_error = "config write failed"
-                return False
-        return True
-
-    # ── raw I/O helpers ─────────────────────────────────────────────────
-    def _send_fragment(self, fragment: list[int]) -> bool:
-        """Write one fragment, then wait for the keyboard's echo (the spec
-        requires it before the next fragment). Best-effort: a missing echo
-        still counts as sent unless the FIRST echo read is empty."""
-        try:
-            if self._device.write(bytes(bytearray(fragment))) < 1:
-                self.last_error = "write returned 0 bytes"
-                return False
-            # drain the echo best-effort (strictness would stall the tick on
-            # chatty firmware; the echo is an optimization, not a gate)
-            self._device.read(ap.FRAGMENT_SIZE, self._echo_read_ms)
-            return True
-        except Exception as exc:
-            self.last_error = f"raw write failed: {exc}"
-            return False
-
-    def _read_fragment(self) -> list[int] | None:
-        """Blocking read of the next 20-byte response fragment."""
-        try:
-            for _ in range(4):  # realloc frames (ordinary key input) first
-                data = self._device.read(ap.FRAGMENT_SIZE, self._echo_read_ms)
-                if len(data) == ap.FRAGMENT_SIZE and data[0] == ap.REPORT_ID:
-                    return list(data)
-                if len(data) == ap.FRAGMENT_SIZE:
-                    continue  # exact size but odd report id — drain it
-            return None
-        except Exception as exc:
-            self.last_error = f"raw read failed: {exc}"
-            return None
+    # ── diagnostics ─────────────────────────────────────────────────────
+    def capability_report(self) -> dict:
+        return {
+            "direct_mode": self._device is not None,
+            "leds": SINOWEALTH_LED_COUNT,
+            "per_key_calibrated": False,  # index calibration is phase 25
+        }

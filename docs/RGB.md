@@ -37,20 +37,23 @@ standard `settings` table; `rgb_*` keys are device-local and never synced.
 
 ## Manual hardware checklist (runner: the hardware owner)
 
-Run the exe self-test with the keyboard **plugged in via USB cable**:
+**VERIFIED 2026-09-16 on real F75 hardware (wired, no vendor software):**
+the direct-mode channel drives all keys — RED → OFF → GREEN sequence
+confirmed by the hardware owner. Note for future sessions: hidapi's
+`usage_page` is unreliable here; the correct channel is found by probing
+`get_feature_report(0x06, 520)` (the only collection that answers is the
+configurator channel). OpenRGB SinowealthKeyboard10cController frame lands
+verbatim.
+
+Full checklist (re-run after each driver change):
 
     .venv\Scripts\python.exe -m pulse_hwm --selftest
 
-Expected: `rgb.aula_available: true` (or a clear reason), then after a few
-seconds:
-
-- [ ] `rgb.aula_devices` ≥ 1 and `rgb.aula_frame_set: true`
-- [ ] The keyboard visibly went **red** (uniform), then back to normal after selftest ends
-- [ ] No phantom keys lighting (means the 64-key layout is rendering, not garbage indices)
-- [ ] Unplug mid-run at least once overall (later runs) → error surfaces in `rgb.aula_error`, no crash
-
-If frame_set is false with reason "config read timed out": the keyboard may
-be in a non-vendor collection — plug to a different port and retry once.
+- [x] Keyboard visibly went RED → OFF → GREEN via direct mode
+- [x] Reverts cleanly when the channel is released
+- [x] No crash / no phantom behavior on release
+- [ ] (pending) `--selftest` integration probe reports `aula_frame_set`
+- [ ] (pending) Unplug mid-run → clean degradation, no crash
 
 ## Deferred (tracked, planned)
 
