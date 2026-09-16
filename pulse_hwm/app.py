@@ -156,6 +156,10 @@ def run() -> int:
     from pulse_hwm.rgb.drivers.corsair_icue import CorsairDriver
     from pulse_hwm.rgb.drivers.logitech_g import LogitechDriver
     from pulse_hwm.rgb.drivers.msi_mystic import MysticLightDriver
+    from pulse_hwm.rgb.drivers.raw.corsair_raw import CorsairRawDriver
+    from pulse_hwm.rgb.drivers.raw.logitech_raw import LogitechRawDriver
+    from pulse_hwm.rgb.drivers.raw.msi_raw import MysticLightRawDriver
+    from pulse_hwm.rgb.drivers.raw.razer_raw import RazerRawDriver
     from pulse_hwm.rgb.drivers.razer_chroma import RazerDriver
     from pulse_hwm.rgb.drivers.registry import DriverRegistry
     from pulse_hwm.rgb.effects.catalog import EffectCatalog
@@ -184,11 +188,15 @@ def run() -> int:
     _rgb_user_store = UserEffectStore(db)
     _rgb_registered = _rgb_user_store.register_with_catalog(rgb_catalog)
     rgb_registry = DriverRegistry(
-        # Aula first: the only hardware-verified vendor so far, and the one
-        # users with our recommended setup are expected to drive. Probe
-        # availability sorts runtime picks automatically.
+        # Order: Aula (hardware-verified) → raw vendor-free drivers (no
+        # vendor software needed) → vendor-SDK drivers (ship-bloat probes).
+        # Probe availability sorts runtime picks automatically.
         (
             AulaDriver,
+            RazerRawDriver,
+            LogitechRawDriver,
+            CorsairRawDriver,
+            MysticLightRawDriver,
             LogitechDriver,
             RazerDriver,
             CorsairDriver,
@@ -197,12 +205,27 @@ def run() -> int:
         )
     )
     rgb_registry.load()
+
     rgb_thread = QThread()
     rgb_thread.setObjectName("rgb-engine")
     rgb_worker = RgbWorker(rgb_catalog)
     RgbThreadBridge.attach(rgb_worker, rgb_thread)
 
     rgb_values = app_settings.load(db)
+    # vendor-free phase: hand the experimental gate to raw drivers. Device
+    # enumeration never needs it; byte-level first-pass writes fail closed
+    # without it (settings-level switch, checked live by the drivers).
+    _RAW_DRIVER_IDS = (
+        "razer_raw",
+        "logitech_raw",
+        "corsair_raw",
+        "msi_raw",
+    )
+    for _raw_id in _RAW_DRIVER_IDS:
+        _raw_driver = rgb_registry.get(_raw_id)
+        if _raw_driver is not None:
+            _raw_driver.experimental_allowed = bool(rgb_values.rgb_allow_raw_protocols)
+
     rgb_worker.set_brightness(rgb_values.rgb_brightness)
     rgb_worker.set_fps(rgb_values.rgb_engine_fps)
 

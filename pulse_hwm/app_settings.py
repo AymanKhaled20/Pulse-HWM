@@ -61,6 +61,10 @@ class AppSettings:
     rgb_user_effects: str = "[]"  # JSON: imported declarative effect defs
     rgb_allow_external_plugins: bool = False  # user drop-in drivers (RCE risk)
     rgb_allow_effect_urls: bool = False  # URL effect import (network content)
+    # vendor-free phase: first-pass RAW protocol writes (Razer/logitech…
+    # unverified byte layouts) only run when this is on; probes/enumeration
+    # never need it
+    rgb_allow_raw_protocols: bool = False
 
 
 _INT_KEYS = {
@@ -88,6 +92,7 @@ _BOOL_KEYS = {
     "update_check_enabled",
     "rgb_allow_external_plugins",
     "rgb_allow_effect_urls",
+    "rgb_allow_raw_protocols",
 }
 _STR_KEYS = {
     "theme_color",
@@ -265,6 +270,14 @@ def load(db: Database) -> AppSettings:
     )
     values.rgb_allow_effect_urls = bool(
         read("rgb_allow_effect_urls", str_to_bool, values.rgb_allow_effect_urls)
+        in (True, "true", "True", 1)
+    )
+    values.rgb_allow_raw_protocols = bool(
+        read(
+            "rgb_allow_raw_protocols",
+            str_to_bool,
+            values.rgb_allow_raw_protocols,
+        )
         in (True, "true", "True", 1)
     )
     return values
