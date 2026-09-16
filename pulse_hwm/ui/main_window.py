@@ -133,7 +133,7 @@ class MainWindow(QMainWindow):
                 manager=rgb_manager,
                 brightness_bridge=rgb_worker.brightness_requested.emit,
             )
-            rgb_worker.devices_changed.connect(self._rgb_tab.show_driver)
+            rgb_worker.devices_reported.connect(self._rgb_tab.show_driver)
             rgb_worker.driver_error.connect(self._rgb_tab.show_error)
             self.tabs.addTab(self._rgb_tab, "RGB")
         else:

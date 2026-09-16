@@ -109,3 +109,29 @@ class TestAlertFlow:
         before = len(manager.pushed)
         manager.handle_alert()
         assert len(manager.pushed) in (before, before + 1)
+
+
+class TestForceReconsider:
+    def test_force_pushes_even_when_plan_is_noop(self, db: Database):
+        manager = make_manager_with_devices(db)
+        manager.reconsider()
+        pushes_after_normal = len(manager.pushed)
+        second = manager.reconsider()  # identical plan -> runtime refuses
+        assert second is False
+        assert len(manager.pushed) == pushes_after_normal
+        forced = manager.force_reconsider()  # APPLY NOW: always pushes
+        assert forced is True
+        assert len(manager.pushed) == pushes_after_normal + 1
+
+    def test_force_after_off_then_same_mode(self, db: Database):
+        from pulse_hwm import app_settings
+
+        manager = make_manager_with_devices(db)
+        manager.reconsider()
+        pushed = len(manager.pushed)
+        # settings unchanged, but the user pressed APPLY NOW: re-push anyway
+        app_settings.save_field(db, "rgb_mode", "off")
+        assert manager.force_reconsider() is True
+        assert len(manager.pushed) == pushed + 1
+        # cleared assignments are the payload for off mode
+        assert all(v is None for v in manager.pushed[-1].values())

@@ -60,6 +60,20 @@ class RgbTab(QWidget):
         body = self._status_panel.body()
         body.addLayout(status_form)
         body.addWidget(self._status_error)
+        # the explicit apply the user asked for: mode/assignment changes are
+        # instant-apply by contract, but this button FORCES a re-push even
+        # when the stored plan looks unchanged — one predictable way to
+        # "make the lights match what's on screen right now"
+        self._apply_btn = QPushButton("APPLY NOW")
+        self._apply_btn.setToolTip(
+            "Force the current mode/assignments onto the hardware, even if "
+            "nothing looks changed"
+        )
+        self._apply_btn.clicked.connect(self._apply_now)
+        apply_row = QHBoxLayout()
+        apply_row.addWidget(self._apply_btn)
+        apply_row.addStretch(1)
+        body.addLayout(apply_row)
         layout.addWidget(self._status_panel)
 
         self._mode_panel = PixelPanel("CONTROL MODE")
@@ -319,6 +333,12 @@ class RgbTab(QWidget):
     def _reconsider(self) -> None:
         if self._manager is not None:
             self._manager.reconsider()
+
+    def _apply_now(self) -> None:
+        # force = re-push even when the stored plan matches (user-visible
+        # promise: the button always does something)
+        if self._manager is not None:
+            self._manager.force_reconsider()
 
     # ── effect import (phase 13) ────────────────────────────────────────
     def _import_effect_file(self) -> None:

@@ -25,7 +25,8 @@ class RgbWorker(QObject):
     the UI thread; signals report outcomes back. All calls are queued by
     Qt's signal delivery, so no explicit locking is needed."""
 
-    devices_changed = Signal(list)  # list[RgbDevice]
+    devices_changed = Signal(list)  # list[RgbDevice] — manager leg
+    devices_reported = Signal(str, str, list)  # (driver_id, name, devices) — tab leg
     rendered = Signal(int)  # frames accepted this tick
     driver_error = Signal(str)  # human-readable failure for the UI strip
     attach_requested = Signal(object)  # RgbDriver handed off to this thread
@@ -58,12 +59,17 @@ class RgbWorker(QObject):
         try:
             devices = self.engine.attach_driver(driver)
             self.devices_changed.emit(list(devices))
+            # the tab's status slots want (driver_id, name, devices) — see
+            # the phase 27 note below about the old one-arg emit failing
+            self.devices_reported.emit(driver.driver_id, driver.name, list(devices))
         except Exception as exc:
             self.driver_error.emit(f"driver open failed: {exc}")
+            self.devices_reported.emit("", "", [])  # leave the "probing…" state
 
     def detach(self) -> None:
         self.engine.detach_driver()
         self.devices_changed.emit([])
+        self.devices_reported.emit("", "", [])
 
     def set_assignment(
         self, device_id: str, assignment: DeviceAssignment | None
