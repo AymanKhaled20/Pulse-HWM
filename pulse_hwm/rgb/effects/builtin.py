@@ -52,4 +52,7 @@ class BreatheEffect(Effect):
         return [color.scaled(0.15 + 0.85 * wave)] * self.frame_size(ctx)
 
 
-BUILTIN_EFFECTS: tuple[Effect, ...] = (StaticEffect(), BreatheEffect())
+BUILTIN_EFFECT_CLASSES: tuple[type[Effect], type[Effect]] = (
+    StaticEffect,
+    BreatheEffect,
+)
