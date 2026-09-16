@@ -7,8 +7,27 @@ future work (and reviewers) never have to reconstruct context from diffs.
 
 | Phase | Branch | State |
 |---|---|---|
-| M1 | `feature/rgb-model` → … → `feature/rgb-modes` (stacked) | merged-ready |
-| M2 | `feature/rgb-aula-protocol` → `feature/rgb-aula-transport` | in review |
+| M1 | `feature/rgb-model` → … → `feature/rgb-modes` | DONE |
+| M2 | `feature/rgb-aula-protocol` → `feature/rgb-aula-transport` | DONE (hw-verified) |
+| M3 | `feature/rgb-tab-shell` … `feature/rgb-effect-url` | DONE |
+| M4 | `feature/rgb-reactive-temp` → `feature/rgb-reactive-alert` | DONE (hw-verified) |
+| M5 | `feature/rgb-driver-logitech` … `feature/rgb-driver-asus` | DONE |
+
+## Vendor driver matrix (as implemented)
+
+| Driver | Backend | Brightness | Per-LED | Verify |
+|---|---|---|---|---|
+| `aula_f75` | hidapi 0x06 direct (feature reports) | via frame scale | YES (126) | ✅ owner-verified |
+| `logitech` | ctypes LogitechLED.dll (G HUB/LGS) | — | whole-device | needs G HUB |
+| `razer_chroma` | Chroma REST localhost:54235 + heartbeat | — | whole-device | needs Synapse |
+| `corsair_icue` | cuesdk ctypes binding | — | whole-setup | needs iCUE |
+| `msi_mystic` | ctypes MysticLight_SDK.dll | — | 16-slot palette | needs MSI Center |
+| `asus_aura` | probe-only stub (COM surface later) | — | — | blocked: no hw |
+
+Color-mixing note (from owner's hardware test): the F75 renders mid-gradient
+values (e.g. yellow/orange lerp between green and red) with a washed-out,
+near-white appearance — an LED mixing artifact. Compact output palette is a
+tracked follow-up (docs listed in Deferred).
 
 ## Architecture in one breath
 

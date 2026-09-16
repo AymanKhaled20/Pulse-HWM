@@ -151,8 +151,11 @@ def run() -> int:
     from PySide6.QtCore import QObject, QThread
     from PySide6.QtCore import Signal as _Signal
 
+    from pulse_hwm.rgb.drivers.asus_aura import ASUSAuraDriver
     from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
+    from pulse_hwm.rgb.drivers.corsair_icue import CorsairDriver
     from pulse_hwm.rgb.drivers.logitech_g import LogitechDriver
+    from pulse_hwm.rgb.drivers.msi_mystic import MysticLightDriver
     from pulse_hwm.rgb.drivers.razer_chroma import RazerDriver
     from pulse_hwm.rgb.drivers.registry import DriverRegistry
     from pulse_hwm.rgb.effects.catalog import EffectCatalog
@@ -180,7 +183,19 @@ def run() -> int:
 
     _rgb_user_store = UserEffectStore(db)
     _rgb_registered = _rgb_user_store.register_with_catalog(rgb_catalog)
-    rgb_registry = DriverRegistry((AulaDriver, LogitechDriver, RazerDriver))
+    rgb_registry = DriverRegistry(
+        # Aula first: the only hardware-verified vendor so far, and the one
+        # users with our recommended setup are expected to drive. Probe
+        # availability sorts runtime picks automatically.
+        (
+            AulaDriver,
+            LogitechDriver,
+            RazerDriver,
+            CorsairDriver,
+            MysticLightDriver,
+            ASUSAuraDriver,
+        )
+    )
     rgb_registry.load()
     rgb_thread = QThread()
     rgb_thread.setObjectName("rgb-engine")
