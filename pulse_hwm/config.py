@@ -115,3 +115,13 @@ def reload_env() -> EnvConfig:
 
 def ensure_dirs() -> None:
     data_dir().mkdir(parents=True, exist_ok=True)
+
+
+def plugins_dir() -> Path:
+    """User drop-in RGB drivers (opt-in, %LOCALAPPDATA%/PulseHWM/plugins/rgb)."""
+    return data_dir() / "plugins" / "rgb"
+
+
+def effects_dir() -> Path:
+    """Imported custom RGB effect definitions (declarative JSON)."""
+    return data_dir() / "effects"
