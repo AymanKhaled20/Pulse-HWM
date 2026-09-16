@@ -159,6 +159,15 @@ class AlertManager:
         self._db = db
         self._channels = channels or AlertChannels()
         self._tray = None
+        # external reactive hooks (e.g. RGB flash): callables (level, title)
+        # called synchronously on error-level alerts only, so info-level
+        # noise doesn't re-trigger lights continuously
+        self._dispatch_listeners: list = []
+
+    def add_dispatch_listener(self, callback) -> None:
+        """callback(level, title) runs for ERROR-level alerts (site down,
+        update error, …). Must be fast — it runs on the UI thread."""
+        self._dispatch_listeners.append(callback)
 
     def set_channels(self, channels: AlertChannels) -> None:
         self._channels = channels
@@ -198,6 +207,12 @@ class AlertManager:
                 ),
                 daemon=True,
             ).start()
+        if level == "error":
+            for listener in list(self._dispatch_listeners):
+                try:
+                    listener(level, title)
+                except Exception:
+                    pass  # a broken listener must never break alerting
         return sent
 
     def handle_site_transition(self, result: dict) -> None:

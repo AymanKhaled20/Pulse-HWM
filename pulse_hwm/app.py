@@ -504,6 +504,16 @@ def run() -> int:
     )
     scheduler.add_job("trim", 15 * 60 * 1000, trim_memory, immediate=False)
     scheduler.add_job("prune", 24 * 3600 * 1000, prune_now, immediate=False)
+
+    # ── reactive alerts (phase 16): error-level alerts flash the RGB
+    # devices for rgb_alert_hold_ms, then expiry sweeping reverts to the
+    # temperature map. Listener runs on the UI thread (fast planner pass).
+    alerts.add_dispatch_listener(lambda level, title: rgb_manager.handle_alert())
+
+    def rgb_maintain() -> None:
+        rgb_manager.maintain()
+
+    scheduler.add_job("rgb-alert", 500, rgb_maintain, immediate=False)
     scheduler.start()
 
     alerts.attach_tray(window.tray)

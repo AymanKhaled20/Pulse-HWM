@@ -107,8 +107,28 @@ def _lerp_color(low: RgbColor, high: RgbColor, t: float) -> RgbColor:
     )
 
 
+class ReactiveAlertEffect(Effect):
+    """Alert flash: full-brightness alert color while the AlertClock holds.
+    The MANAGER owns the hold countdown (mode replans back to reactive_temp
+    on expiry) — this effect only paints; no time-dependent logic here."""
+
+    effect_id = "reactive_alert"
+    name = "REACTIVE ALERT"
+    description = "Alert-state flash; reverts when the hold expires."
+
+    params = (ParamSpec(key="color", label="COLOR", kind="color", default="#FF3B30"),)
+
+    def render(self, ctx: EffectContext) -> list[RgbColor]:
+        color = RgbColor.from_hex(str(ctx.param(self.params[0])))
+        # a sine-gated strobe at 4 Hz reads as ALERT; the hold countdown in
+        # the manager decides when to stop rendering it at all
+        wave = 0.5 + 0.5 * math.sin(2.0 * math.pi * (ctx.now * 2.5))
+        return [color.scaled(0.5 + 0.5 * wave)] * self.frame_size(ctx)
+
+
 BUILTIN_EFFECT_CLASSES: tuple[type[Effect], ...] = (
     StaticEffect,
     BreatheEffect,
     ReactiveTempEffect,
+    ReactiveAlertEffect,
 )

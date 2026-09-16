@@ -7,6 +7,7 @@ from pulse_hwm.rgb.effects.catalog import EffectCatalog
 from pulse_hwm.rgb.engine import DeviceAssignment
 from pulse_hwm.rgb.manager import (
     ALERT_PARAM_COLOR,
+    REACTIVE_ALERT_EFFECT_ID,
     AlertClock,
     ModePlanner,
     parse_assignment_blob,
@@ -83,13 +84,15 @@ class TestReactiveMode:
         assert all(plan.assignments[d].effect_id == "static" for d in DEVICES)
 
     def test_alert_replaces_temp_effect(self):
+        # reactive_alert is a builtin since phase 16: an active alert must
+        # switch every device to the flashing alert color
         plan = make_planner(
             "reactive", reactive_effect_id="static", alert_active=True
         ).plan()
-
-        # the alert effect is not registered in this catalog → empty plan
-        # (safe degrade until phase 16 registers it)
-        assert plan.assignments == {}
+        for device_id in DEVICES:
+            assignment = plan.assignments[device_id]
+            assert assignment.effect_id == REACTIVE_ALERT_EFFECT_ID
+            assert assignment.params["color"] == "#FF3B30"
 
     def test_alert_effect_applies_when_registered(self):
         from pulse_hwm.rgb.effects.base import Effect, EffectContext, ParamSpec

@@ -221,6 +221,7 @@ class RgbManager:
         self._device_ids: list[str] = []
         self._last_plan: ModePlan | None = None
         self._alert_clock = AlertClock(alert_hold_ms)
+        self._was_alert_active = False
         self._lock = threading.Lock()  # reconsider() runs on UI AND worker
         # hook injected by app.py: fn({device_id: DeviceAssignment | None})
         self.apply_assignments = None
@@ -276,6 +277,16 @@ class RgbManager:
         """Alert flash entry point (wired to alerts in phase 16)."""
         self._alert_clock.trigger()
         self.reconsider()
+
+    def maintain(self) -> None:
+        """Alert expiry sweep: when a held alert expires, replan once so
+        reactive devices go back to the temperature map. Cheap enough to
+        run on a 250 ms scheduler tick."""
+        was_active = self._was_alert_active
+        now_active = self._alert_clock.active()
+        if was_active and not now_active:
+            self.reconsider()
+        self._was_alert_active = now_active
 
     def _assignment_loader(self, blob: str):
         from functools import partial
