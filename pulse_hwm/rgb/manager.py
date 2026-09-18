@@ -1,0 +1,164 @@
+"""Mode layer — decides WHAT renders, never renders it.
+
+RgbEngine (phase 4) is mode-agnostic: it renders assignments and pushes
+frames. This module owns the single source of truth for who drives the
+hardware:
+
+    off       — plan clears every device (engine idles; vendor software wins)
+    effects   — per-device assignments from the rgb_device_assignment blob
+    reactive  — every device follows hardware state (temp/alert)
+    override  — every device gets the forced color/effect; beats everything
+
+Design rules honored here:
+  * ModePlanner is PURE (no Qt, no I/O, no clocks inside) — all decisions
+    are unit-testable.
+  * Alerts only matter in reactive mode — override is manual and wins,
+    effects mode ignores hardware by definition.
+  * The reactive effect ids are constants the reactive effect phase (15/16)
+    must register under the EXACT same ids; until then the engine skips
+    them as unknown, which is the safe degrade.
+  * RgbManager is Qt-free too (hooks instead of signals). Phase 8 wires
+    worker signals to the hooks in app.py — manager stays testable without
+    a QApplication, matching the repo's "pure logic, no Qt" convention.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+
+from pulse_hwm.rgb.engine import DeviceAssignment
+
+# wired by phase 15/16; the planner references ids only
+REACTIVE_TEMP_EFFECT_ID = "reactive_temp"
+REACTIVE_ALERT_EFFECT_ID = "reactive_alert"
+
+ALERT_PARAM_COLOR = "color"
+
+
+class ModePlan:
+    """Outcome of one planner pass: assignments keyed by device_id.
+    None value = engine must clear the device (stop driving it)."""
+
+    __slots__ = ("assignments",)
+
+    def __init__(self, assignments: dict[str, DeviceAssignment | None]) -> None:
+        self.assignments = assignments
+
+    def is_noop(self, other: "ModePlan | None") -> bool:
+        """True when pushing `self` would change nothing (used to avoid
+        spamming recompute)."""
+        if other is None:
+            return False
+        return self.assignments == other.assignments
+
+
+def parse_assignment_blob(blob: str, catalog, driver_id: str, device_id: str):
+    """rgb_device_assignment JSON → DeviceAssignment for one device, or
+    None. Blob layout: {f"{driver_id}/{device_id}": {"effect": id, "params":
+    {}, "enabled": true}}. Corrupt values degrade to None instead of
+    crashing — the blob is user-editable storage."""
+    try:
+        data = json.loads(blob or "{}")
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    entry = data.get(f"{driver_id}/{device_id}")
+    if not isinstance(entry, dict):
+        return None
+    effect_id = str(entry.get("effect") or "")
+    if catalog.get(effect_id) is None:
+        return None  # unknown/downgraded effect id → skip this device
+    raw_params = entry.get("params") or {}
+    if not isinstance(raw_params, dict):
+        raw_params = {}
+    params = catalog.validate_params(effect_id, raw_params)
+    enabled = bool(entry.get("enabled", True))
+    return DeviceAssignment(effect_id, params=params, enabled=enabled)
+
+
+class ModePlanner:
+    """One pure decision pass. Constructed per plan; holds no state."""
+
+    def __init__(
+        self,
+        mode: str,
+        driver_id: str,
+        device_ids: list[str],
+        catalog,
+        override_effect_id: str,
+        override_color: str,
+        reactive_effect_id: str = REACTIVE_TEMP_EFFECT_ID,
+        alert_active: bool = False,
+        alert_color: str = "#FF3B30",
+    ) -> None:
+        self.mode = mode
+        self.driver_id = driver_id
+        self.device_ids = list(device_ids)
+        self.catalog = catalog
+        self.override_effect_id = override_effect_id
+        self.override_color = override_color
+        self.reactive_effect_id = reactive_effect_id
+        self.alert_active = alert_active
+        self.alert_color = alert_color
+
+    def plan(self, assignment_loader=lambda driver_id, device_id: None) -> ModePlan:
+        """assignment_loader(driver_id, device_id) → DeviceAssignment for
+        effects mode; injectable so the blob parsing stays out of tests."""
+        if self.mode == "off":
+            return ModePlan({d: None for d in self.device_ids})
+        if self.mode == "override":
+            if self.catalog.get(self.override_effect_id) is None:
+                # unknown override effect (post-downgrade): refuse to take
+                # control rather than guessing
+                return ModePlan({d: None for d in self.device_ids})
+            params = self.catalog.validate_params(
+                self.override_effect_id, {"color": self.override_color}
+            )
+            assignment = DeviceAssignment(self.override_effect_id, params=params)
+            return ModePlan({d: assignment for d in self.device_ids})
+        if self.mode == "reactive":
+            # alert flash (when an alert is recent) wins over the temp map;
+            # ALERT param color keys the flash effect (phase 16)
+            effect_id = (
+                REACTIVE_ALERT_EFFECT_ID
+                if self.alert_active
+                else self.reactive_effect_id
+            )
+            if self.catalog.get(effect_id) is None:
+                # reactive effect not implemented yet → nothing to render;
+                # NOT a control takeover, hardware keeps its current state
+                return ModePlan({})
+            params = self.catalog.validate_params(
+                effect_id, {"color": self.alert_color}
+            )
+            return ModePlan(
+                {d: DeviceAssignment(effect_id, params=params) for d in self.device_ids}
+            )
+        if self.mode == "effects":
+            planned: dict[str, DeviceAssignment | None] = {}
+            for device_id in self.device_ids:
+                planned[device_id] = assignment_loader(self.driver_id, device_id)
+            return ModePlan(planned)
+        # unknown mode string → treat as off (same degradation as settings)
+        return ModePlan({d: None for d in self.device_ids})
+
+
+class AlertClock:
+    """Alert recency tracker (monotonic, injectable clock). The manager
+    feeds handle_alert(level) here; planner reads active()."""
+
+    def __init__(self, hold_ms: int, clock=time.monotonic) -> None:
+        self.hold_ms = max(0, int(hold_ms))
+        self._clock = clock
+        self._deadline: float | None = None
+
+    def trigger(self) -> None:
+        self._deadline = self._clock() + self.hold_ms / 1000.0
+
+    def set_hold_ms(self, hold_ms: int) -> None:
+        self.hold_ms = max(0, int(hold_ms))
+
+    def active(self) -> bool:
+        return self._deadline is not None and self._clock() < self._deadline
