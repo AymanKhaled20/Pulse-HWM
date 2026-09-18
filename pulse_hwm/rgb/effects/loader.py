@@ -122,3 +122,50 @@ class UserEffectStore:
             except Exception:
                 continue
         return registered
+
+
+class URLFetcher:
+    """HTTPS effect fetcher. Gates: rgb_allow_effect_urls must be on, only
+    https://, 20 KB hard body cap (streamed so a huge body never buffers),
+    text must validate. Injection of the httpx client keeps tests offline."""
+
+    MAX_BODY_BYTES = _MAX_DEFINITION_CHARS
+
+    def __init__(self, db, transport=None, timeout: float = 8.0) -> None:
+        import httpx
+
+        from pulse_hwm import app_settings
+
+        self._allowed = app_settings.load(db).rgb_allow_effect_urls
+        self._httpx = httpx
+        client_kwargs: dict = {"timeout": timeout, "follow_redirects": False}
+        if transport is not None:  # injectable for offline tests
+            client_kwargs["transport"] = transport
+        self._client = httpx.Client(**client_kwargs)
+        self.last_url: str = ""
+        self.last_error: str = ""
+
+    def fetch(self, url: str) -> tuple[dict | None, list[str]]:
+        if not self._allowed:
+            return None, [
+                "effect URL import is disabled — enable 'ALLOW EFFECT URLS' in settings"
+            ]
+        if not str(url).lower().startswith("https://"):
+            return None, ["only https:// URLs are accepted"]
+        try:
+            with self._client.stream("GET", str(url)) as response:
+                if response.status_code != 200:
+                    return None, [f"server returned {response.status_code}"]
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > self.MAX_BODY_BYTES:
+                        return None, ["effect body exceeded 20 KB"]
+        except Exception as exc:
+            self.last_error = f"fetch failed: {exc}"
+            return None, [self.last_error]
+        self.last_url = str(url)
+        return validate_definition(bytes(body).decode("utf-8", errors="replace"))
+
+    def close(self) -> None:
+        self._client.close()

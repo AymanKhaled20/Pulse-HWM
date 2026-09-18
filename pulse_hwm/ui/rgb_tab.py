@@ -104,11 +104,28 @@ class RgbTab(QWidget):
         self._import_file_btn.clicked.connect(self._import_effect_file)
         self._import_paste_btn = QPushButton("IMPORT EFFECT (PASTE)")
         self._import_paste_btn.clicked.connect(self._import_paste)
+        self._import_url_btn = QPushButton("IMPORT EFFECT (URL)")
+        self._import_url_btn.setToolTip("HTTPS only — must be enabled in settings")
+        self._import_url_btn.clicked.connect(self._import_url)
         import_row = QHBoxLayout()
         import_row.addWidget(self._import_file_btn)
         import_row.addWidget(self._import_paste_btn)
+        import_row.addWidget(self._import_url_btn)
         import_row.addStretch(1)
         self._devices_panel.body().addLayout(import_row)
+        self._import_hint = QLabel(
+            "External imports are validated (JSON only, 20 KB, whitelisted ops). "
+            "URL fetch additionally requires the toggle below."
+        )
+        self._import_hint.setObjectName("muted")
+        self._import_hint.setWordWrap(True)
+        self._devices_panel.body().addWidget(self._import_hint)
+        self._url_gate = QCheckBox("ALLOW EFFECT URLS (fetch .json via HTTPS)")
+        self._url_gate.setToolTip(
+            "Off by default: network content only loads when you ask for it here"
+        )
+        self._url_gate.clicked.connect(self._on_url_gate_clicked)
+        self._devices_panel.body().addWidget(self._url_gate)
         layout.addWidget(self._devices_panel, 1)
 
         # ── override controls (phase 10): instant-apply, same contract ──
@@ -157,6 +174,10 @@ class RgbTab(QWidget):
         self._speed.setValue(values.rgb_override_speed)
         self._speed.blockSignals(False)
         self._picker.set_hex(values.rgb_override_color)
+        self._url_gate.blockSignals(True)
+        self._url_gate.setChecked(values.rgb_allow_effect_urls)
+        self._url_gate.blockSignals(False)
+        self._import_url_btn.setEnabled(values.rgb_allow_effect_urls)
 
     def show_driver(self, driver_id: str, name: str, devices: list) -> None:
         self._seen_devices = list(devices)
@@ -291,6 +312,10 @@ class RgbTab(QWidget):
         app_settings.save_field(self._db, "rgb_device_assignment", blob)
         self._reconsider()
 
+    def _on_url_gate_clicked(self, on: bool) -> None:
+        app_settings.save_field(self._db, "rgb_allow_effect_urls", bool(on))
+        self._import_url_btn.setEnabled(bool(on))
+
     def _reconsider(self) -> None:
         if self._manager is not None:
             self._manager.reconsider()
@@ -338,4 +363,40 @@ class RgbTab(QWidget):
         self.load_settings()
         self.show_error(f"imported effect {definition['id']}")
         # re-populate effect dropdowns with the new definitions
+        self._rebuild_rows(self._seen_devices)
+
+    def _import_url(self) -> None:
+        # the gate is real: rgb_allow_effect_urls defaults off
+        values = app_settings.load(self._db)
+        if not values.rgb_allow_effect_urls:
+            self.show_error(
+                "URL import disabled — turn it on with a settings toggle first"
+            )
+            return
+        from PySide6.QtWidgets import QInputDialog
+
+        url, ok = QInputDialog.getText(
+            self, "FETCH RGB EFFECT", "HTTPS URL of a .json effect:"
+        )
+        if not (ok and url.strip()):
+            return
+        from pulse_hwm.rgb.effects.loader import URLFetcher, UserEffectStore
+
+        fetcher = URLFetcher(self._db)
+        try:
+            definition, errors = fetcher.fetch(url.strip())
+        finally:
+            fetcher.close()
+        if definition is None:
+            self.show_error("URL import rejected: " + "; ".join(errors))
+            return
+        store = UserEffectStore(self._db)
+        ok, reason = store.add(definition)
+        if ok and self._catalog is not None:
+            store.register_with_catalog(self._catalog)
+        self.show_error(
+            f"imported effect {definition['id']} from {fetcher.last_url}"
+            if ok
+            else reason
+        )
         self._rebuild_rows(self._seen_devices)
