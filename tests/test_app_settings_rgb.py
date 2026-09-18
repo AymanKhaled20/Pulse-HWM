@@ -57,8 +57,8 @@ def test_rgb_round_trip(db: Database):
     assert reloaded.rgb_override_color == "#00AACC"
     assert reloaded.rgb_reactive_source == "gpu"
     assert reloaded.rgb_temp_high_c == 90
-    assert reloaded.rgb_device_assignment == "{'aula:0': {'effect': 'static'}}"
-    assert reloaded.rgb_user_effects == "[{'id': 'mine'}]"
+    assert reloaded.rgb_device_assignment == '{"aula:0": {"effect": "static"}}'
+    assert reloaded.rgb_user_effects == '[{"id": "mine"}]'
     assert reloaded.rgb_allow_effect_urls is True
 
 

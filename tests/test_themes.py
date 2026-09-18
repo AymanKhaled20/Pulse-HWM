@@ -96,10 +96,9 @@ def test_rendered_qss_respects_14px_minimum():
                     f"font-size {match.group(1)} without 'px' unit "
                     f"for {ct.id}/{ft.id} (Qt drops the rule!)"
                 )
-                assert int(match.group(1)) >= MIN_FONT_PX, (
-                    f"font-size {match.group(1)}px < {MIN_FONT_PX} "
-                    f"for {ct.id}/{ft.id}"
-                )
+                assert (
+                    int(match.group(1)) >= MIN_FONT_PX
+                ), f"font-size {match.group(1)}px < {MIN_FONT_PX} for {ct.id}/{ft.id}"
 
 
 def test_every_font_theme_names_a_real_family():

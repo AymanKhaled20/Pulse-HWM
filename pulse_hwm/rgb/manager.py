@@ -25,8 +25,10 @@ Design rules honored here:
 from __future__ import annotations
 
 import json
+import threading
 import time
 
+from pulse_hwm.rgb.effects.catalog import EffectCatalog
 from pulse_hwm.rgb.engine import DeviceAssignment
 
 # wired by phase 15/16; the planner references ids only
@@ -103,9 +105,9 @@ class ModePlanner:
         self.alert_active = alert_active
         self.alert_color = alert_color
 
-    def plan(self, assignment_loader=lambda driver_id, device_id: None) -> ModePlan:
-        """assignment_loader(driver_id, device_id) → DeviceAssignment for
-        effects mode; injectable so the blob parsing stays out of tests."""
+    def plan(self, assignment_loader=lambda device_id: None) -> ModePlan:
+        """assignment_loader(device_id) → DeviceAssignment for effects
+        mode; injectable so the blob parsing stays out of tests."""
         if self.mode == "off":
             return ModePlan({d: None for d in self.device_ids})
         if self.mode == "override":
@@ -139,7 +141,7 @@ class ModePlanner:
         if self.mode == "effects":
             planned: dict[str, DeviceAssignment | None] = {}
             for device_id in self.device_ids:
-                planned[device_id] = assignment_loader(self.driver_id, device_id)
+                planned[device_id] = assignment_loader(device_id)
             return ModePlan(planned)
         # unknown mode string → treat as off (same degradation as settings)
         return ModePlan({d: None for d in self.device_ids})
@@ -162,3 +164,79 @@ class AlertClock:
 
     def active(self) -> bool:
         return self._deadline is not None and self._clock() < self._deadline
+
+
+class RgbManager:
+    """Qt-free controller glue: reads app settings, runs the planner, and
+    pushes the resulting assignments through a single hook.
+
+    app.py sets `apply_assignments` to a function that forwards the dict
+    into the worker's thread via a Signal→slot connection (that connection
+    is Qt's job, not this module's — one more reason manager.py stays pure).
+    reconsider() is cheap enough to run on every relevant UI event without
+    timers; plan no-op detection prevents redundant cross-thread pushes.
+    """
+
+    def __init__(self, db, catalog=None, alert_hold_ms: int = 4000) -> None:
+        self._db = db
+        self._catalog = catalog or EffectCatalog()
+        self._driver_id = ""
+        self._device_ids: list[str] = []
+        self._last_plan: ModePlan | None = None
+        self._alert_clock = AlertClock(alert_hold_ms)
+        self._lock = threading.Lock()  # reconsider() runs on UI AND worker
+        # hook injected by app.py: fn({device_id: DeviceAssignment | None})
+        self.apply_assignments = None
+
+    def set_driver(self, driver_id: str, device_ids: list[str]) -> None:
+        self._driver_id = driver_id
+        self._device_ids = list(device_ids)
+        self._last_plan = None  # driver switch always means a fresh plan
+
+    def clear_driver(self) -> None:
+        self.set_driver("", [])
+
+    def reconsider(self) -> bool:
+        """One planner pass against the CURRENT stored settings. Returns
+        True when a new plan was pushed to the hook. Locked: reachable from
+        both the UI thread (mode changed) and the worker thread (devices
+        changed), and both read/compare/push `self._last_plan`."""
+        with self._lock:
+            return self._reconsider_locked()
+
+    def _reconsider_locked(self) -> bool:
+        from pulse_hwm import app_settings
+
+        settings = app_settings.load(self._db)
+        if not self._device_ids:
+            return False
+        planner = ModePlanner(
+            mode=settings.rgb_mode,
+            driver_id=self._driver_id,
+            device_ids=self._device_ids,
+            catalog=self._catalog,
+            override_effect_id=settings.rgb_override_effect,
+            override_color=settings.rgb_override_color,
+            alert_active=self._alert_clock.active(),
+            alert_color=settings.rgb_alert_color,
+        )
+        loader = self._assignment_loader(settings.rgb_device_assignment)
+        plan = planner.plan(assignment_loader=loader)
+        if plan.is_noop(self._last_plan):
+            return False
+        self._last_plan = plan
+        if self.apply_assignments is not None:
+            self.apply_assignments(dict(plan.assignments))
+        return True
+
+    def handle_alert(self) -> None:
+        """Alert flash entry point (wired to alerts in phase 16)."""
+        self._alert_clock.trigger()
+        self.reconsider()
+
+    def _assignment_loader(self, blob: str):
+        from functools import partial
+
+        from pulse_hwm.rgb.manager import parse_assignment_blob
+
+        return partial(parse_assignment_blob, blob, self._catalog, self._driver_id)

@@ -31,6 +31,8 @@ class MainWindow(QMainWindow):
         session_manager=None,
         oauth_coordinator=None,
         auth_configured: bool = False,
+        rgb_manager=None,
+        rgb_worker=None,
     ):
         super().__init__()
         self._theme_manager = theme_manager
@@ -122,6 +124,18 @@ class MainWindow(QMainWindow):
         else:
             self._settings_tab = None
             self.tabs.addTab(StdoutPlaceholder("SETTINGS — unavailable"), "SETTINGS")
+        # ── RGB tab (phase 8): manager + worker wired by app.py —─────────
+        if db is not None and rgb_manager is not None:
+            from pulse_hwm.ui.rgb_tab import RgbTab
+
+            self._rgb_tab = RgbTab(db, manager=rgb_manager)
+            if rgb_worker is not None:
+                rgb_worker.devices_changed.connect(self._rgb_tab.show_driver)
+                rgb_worker.driver_error.connect(self._rgb_tab.show_error)
+            self.tabs.addTab(self._rgb_tab, "RGB")
+        else:
+            self._rgb_tab = None
+            self.tabs.addTab(StdoutPlaceholder("RGB — engine unavailable"), "RGB")
         # LIMIT PULSE RESOURCES has two controls (Settings checkbox + PROCESSES
         # LOW PRIORITY button). Both persist the same key; these connections
         # keep the two controls visually in sync the moment one changes.

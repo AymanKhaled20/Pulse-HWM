@@ -145,6 +145,60 @@ def run() -> int:
     updates_dir.mkdir(parents=True, exist_ok=True)
     installer = UpdateInstaller(session, auth_cfg.base_url, updates_dir)
 
+    # ── RGB engine wiring (phases 1-8): catalog + worker thread + manager.
+    # One driver, one render loop. Mode resolution runs on the UI thread
+    # (cheap pure planner); all hardware I/O stays on the rgb thread.
+    from PySide6.QtCore import QObject, QThread
+    from PySide6.QtCore import Signal as _Signal
+
+    from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
+    from pulse_hwm.rgb.drivers.registry import DriverRegistry
+    from pulse_hwm.rgb.effects.catalog import EffectCatalog
+    from pulse_hwm.rgb.manager import RgbManager
+    from pulse_hwm.rgb.worker import RgbThreadBridge, RgbWorker
+
+    class _RgbAssignments(QObject):
+        """Carrier signal: dict pushed onto the worker thread queued."""
+
+        pushed = _Signal(dict)
+
+    def _rgb_set_driver_connected() -> bool:
+        """Hand the first available driver to the worker thread via queued
+        signal; device enumeration + open happen there, and the manager
+        learns device ids from the queued devices_changed callback."""
+        available = rgb_registry.available()
+        if not available:
+            rgb_manager.clear_driver()
+            return False
+        rgb_worker.attach_requested.emit(available[0])  # I/O on rgb thread
+        return True
+
+    rgb_catalog = EffectCatalog()
+    rgb_registry = DriverRegistry((AulaDriver,))
+    rgb_registry.load()
+    rgb_thread = QThread()
+    rgb_thread.setObjectName("rgb-engine")
+    rgb_worker = RgbWorker(rgb_catalog)
+    RgbThreadBridge.attach(rgb_worker, rgb_thread)
+
+    rgb_values = app_settings.load(db)
+    rgb_worker.set_brightness(rgb_values.rgb_brightness)
+    rgb_worker.set_fps(rgb_values.rgb_engine_fps)
+
+    rgb_manager = RgbManager(db, rgb_catalog)
+    rgb_carrier = _RgbAssignments()
+    rgb_manager.apply_assignments = rgb_carrier.pushed.emit
+    rgb_carrier.pushed.connect(rgb_worker.apply_assignments)
+
+    def _rgb_on_devices(devices: list) -> None:
+        rgb_manager.set_driver(
+            devices[0].driver_id if devices else "",
+            [d.device_id for d in devices],
+        )
+        rgb_manager.reconsider()
+
+    rgb_worker.devices_changed.connect(_rgb_on_devices)
+
     window = MainWindow(
         hardware_collector=collector,
         websites_monitor=monitor,
@@ -155,6 +209,8 @@ def run() -> int:
         session_manager=session,
         oauth_coordinator=coordinator,
         auth_configured=auth_cfg.is_configured(),
+        rgb_manager=rgb_manager,
+        rgb_worker=rgb_worker,
     )
     window.show()
 
@@ -261,10 +317,15 @@ def run() -> int:
 
     sync_engine.finished.connect(on_sync_done)
 
+    _rgb_attached = _rgb_set_driver_connected()
+    rgb_thread.start()
+
     def shutdown() -> None:
+        rgb_thread.quit()
         websites_thread.quit()
         hardware_thread.quit()
         processes_thread.quit()
+        rgb_thread.wait(2500)
         websites_thread.wait(3000)
         hardware_thread.wait(2500)
         processes_thread.wait(2500)

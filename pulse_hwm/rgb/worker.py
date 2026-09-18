@@ -28,6 +28,7 @@ class RgbWorker(QObject):
     devices_changed = Signal(list)  # list[RgbDevice]
     rendered = Signal(int)  # frames accepted this tick
     driver_error = Signal(str)  # human-readable failure for the UI strip
+    attach_requested = Signal(object)  # RgbDriver handed off to this thread
 
     def __init__(
         self, catalog: EffectCatalog | None = None, parent: QObject | None = None
@@ -37,6 +38,9 @@ class RgbWorker(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_tick)
         self._fps = 30
+        # queued onto OUR thread: driver probe/open I/O never runs on the
+        # caller's thread during a mode/device switch
+        self.attach_requested.connect(self.attach)
 
     # ── slots (invoked cross-thread via signals) ──────────────────────
     def start(self, fps: int) -> None:
@@ -61,6 +65,12 @@ class RgbWorker(QObject):
         self, device_id: str, assignment: DeviceAssignment | None
     ) -> None:
         self.engine.set_assignment(device_id, assignment)
+
+    def apply_assignments(self, assignments: dict) -> None:
+        """Slot for cross-thread plan pushes: a Signal→slot connection makes
+        this run HERE (worker thread), so the plan applies re-entrancy-free."""
+        for device_id, assignment in assignments.items():
+            self.engine.set_assignment(device_id, assignment)
 
     def set_brightness(self, pct: int) -> None:
         self.engine.set_brightness(pct)
