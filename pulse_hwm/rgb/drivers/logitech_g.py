@@ -23,6 +23,7 @@ from pulse_hwm.rgb.drivers.base import ProbeResult, RgbDriver
 from pulse_hwm.rgb.model import RgbColor, RgbDevice
 
 DLL_NAME = "LogitechLED.dll"
+_GHUB_LEGACY = Path(r"C:\Program Files\LGHUB\sdks") / "sdk_legacy_led_x64.dll"
 _DLL_HINTS = (
     Path(r"C:\Program Files\Logitech Gaming Software\SDK\LED\x64"),
     Path(r"C:\Program Files\LGHUB\sdk"),
@@ -30,6 +31,10 @@ _DLL_HINTS = (
 
 
 def _find_dll() -> Path | None:
+    # G HUB (2026) vendors the legacy LED SDK under sdks\ with a renamed
+    # DLL — no separate LGS install needed when GHUB is present
+    if _GHUB_LEGACY.exists():
+        return _GHUB_LEGACY
     for path in _DLL_HINTS:
         candidate = path / DLL_NAME
         if candidate.exists():
