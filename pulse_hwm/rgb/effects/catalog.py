@@ -8,7 +8,7 @@ the engine, the future RGB tab, and the declarative JSON importer (phase
 from __future__ import annotations
 
 from pulse_hwm.rgb.effects.base import Effect, EffectContext, ParamSpec
-from pulse_hwm.rgb.effects.builtin import BUILTIN_EFFECTS
+from pulse_hwm.rgb.effects.builtin import BUILTIN_EFFECT_CLASSES
 from pulse_hwm.rgb.model import RgbEffect
 
 # effects/builtin.py imports names from base.py for re-export convenience;
@@ -21,8 +21,11 @@ class EffectCatalog:
 
     def __init__(self) -> None:
         self._effects: dict[str, Effect] = {}
-        for effect in BUILTIN_EFFECTS:
-            self.register(effect)
+        # fresh instances per catalog, NOT shared module singletons: tests
+        # and reloads must each get an isolated effect object (mutating one
+        # catalog's effect must never leak into another)
+        for effect_class in BUILTIN_EFFECT_CLASSES:
+            self.register(effect_class())
 
     def register(self, effect: Effect) -> None:
         # last registration wins: a re-register (e.g. reload of an imported
