@@ -45,3 +45,13 @@ Thumbs.db
 workers/.wrangler/
 workers/node_modules/
 workers/.dev.vars
+
+# session tooling artifacts (opencode/skills/wrangler at repo root)
+/node_modules/
+/package-lock.json
+/package.json
+/skills-lock.json
+/.wrangler/
+/.agents/
+/.claude/
+/.opencode/
