@@ -76,7 +76,9 @@ Full checklist (re-run after each driver change):
 
 ## Deferred (tracked, planned)
 
+- **Uninstall Logitech LGS before starting the vendor-free phase** (installed 2026-09-16 via winget for live driver verification). winget `Logitech.LGS`; remove after each driver's vendor-free replacement lands.
+- **Vendor-free RGB drivers (no LGS/iCUE/Synapse/MSI Center needed)** — OpenRGB-style raw per-device HID drivers per model; needs USB captures from the owner's hardware for each device family. Parked AFTER v1.3.0 on purpose: it reverses the vendor-SDK dependency per ecosystem. Logitech currently runs via LGS (installed, thin); iCUE/MSI Center installs were declined by the owner as bloatware.
 - F75 per-key index calibration capture
 - Dongle PID `010D` support
-- Vendor SDK drivers: Logitech → Razer → Corsair → MSI → ASUS
-- URL effect import (implemented phase 14), settings rail rework (M6)
+- Compact F75 output palette (mid-gradients render washed-out/whitish — see Color-mixing note)
+- URL effect import (implemented), settings rail rework (M6)
