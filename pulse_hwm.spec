@@ -32,6 +32,7 @@ for entry in clr_binaries + py_binaries:
 hiddenimports = [
     "wmi",
     "hid",
+    "httpx",
     "win32api",
     "win32con",
     "pywintypes",
