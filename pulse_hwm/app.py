@@ -463,6 +463,30 @@ def _selftest() -> int:
 
     from pulse_hwm.collectors.lhm import LibreSensors, is_available
 
+    # —— RGB probe (phase 7): enumerate + one red flash, best-effort ————
+    try:
+        from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
+        from pulse_hwm.rgb.model import RgbColor
+
+        rgb_driver = AulaDriver()
+        rgb_probe = rgb_driver.probe()
+        rgb_report = {
+            "aula_available": rgb_probe.available,
+            "aula_reason": rgb_probe.reason,
+        }
+        if rgb_probe.available:
+            rgb_driver.open()
+            rgb_report["aula_devices"] = len(rgb_driver.devices())
+            rgb_report["aula_frame_set"] = rgb_driver.set_frame(
+                "aula:0", [RgbColor(255, 0, 0)] * 10
+            )
+            rgb_driver.close()
+            if not rgb_report["aula_frame_set"] and rgb_driver.last_error:
+                rgb_report["aula_error"] = rgb_driver.last_error
+        probes["rgb"] = rgb_report
+    except Exception:
+        probes["rgb"] = f"EXC: {traceback.format_exc(limit=2)}"
+
     report = {"admin": admin, "lhm_runtime": is_available(), "sensors": [], **probes}
     if is_available():
         sensors = LibreSensors()
