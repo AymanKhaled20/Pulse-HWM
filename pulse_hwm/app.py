@@ -174,6 +174,10 @@ def run() -> int:
         return True
 
     rgb_catalog = EffectCatalog()
+    from pulse_hwm.rgb.effects.loader import UserEffectStore
+
+    _rgb_user_store = UserEffectStore(db)
+    _rgb_registered = _rgb_user_store.register_with_catalog(rgb_catalog)
     rgb_registry = DriverRegistry((AulaDriver,))
     rgb_registry.load()
     rgb_thread = QThread()
