@@ -29,6 +29,7 @@ class RgbWorker(QObject):
     rendered = Signal(int)  # frames accepted this tick
     driver_error = Signal(str)  # human-readable failure for the UI strip
     attach_requested = Signal(object)  # RgbDriver handed off to this thread
+    brightness_requested = Signal(int)  # queued like every other control call
 
     def __init__(
         self, catalog: EffectCatalog | None = None, parent: QObject | None = None
@@ -41,6 +42,7 @@ class RgbWorker(QObject):
         # queued onto OUR thread: driver probe/open I/O never runs on the
         # caller's thread during a mode/device switch
         self.attach_requested.connect(self.attach)
+        self.brightness_requested.connect(self.set_brightness)
 
     # ── slots (invoked cross-thread via signals) ──────────────────────
     def start(self, fps: int) -> None:
