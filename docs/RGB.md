@@ -106,3 +106,27 @@ report id; (2) logitech LED feature list discovery (feature 0x0000 walk);
 (3) corsair handshake/frame cheat sheet — blocked until a device is plugged
 in; (4) msi stays detect-only this release.
 
+
+
+## G102/G203 LIGHTSYNC — verified live (mouse driver) 2026-09-17
+
+Device: Logitech G102 LIGHTSYNC 046D:C092. TWO control surfaces learned:
+1. usage page 0x59 = Microsoft **LampArray** (23-byte feature reports rid
+   1/2/3...). DEAD END for direct writes: writes accepted by the VHF shim,
+   never reach the physical LEDs; even Windows Dynamic Lighting cannot
+   change the mouse (owner tested; G HUB fully off).
+2. **usable channel: page 0xFF00 usage 0x0002** — 20-byte output reports
+   on report id 0x11 via hidapi write() (buf[0]=rid):
+   - enable once: 11 FF 0E 50 01 03 07 00*13 (SetTarget software-control)
+   - static color: 11 FF 0E 10 00 01 R G B 02 00*6 01 00*3
+   Flash-verified by owner: RED/GREEN/BLUE/YELLOW visible; G HUB not
+   running. Byte layout credited to naviji/gled (MIT) in THIRD_PARTY.md.
+
+Also: legacy LED SDK inside G HUB (sdks/sdk_legacy_led_x64.dll) reaches
+keyboards/pads but NOT this mouse (SetLighting succeeds with no effect).
+
+Driver: pulse_hwm/rgb/drivers/logitech_lightsync.py
+(LogitechLightsyncDriver, id logitech_lightsync, leds=1 whole-device).
+Registry order: aula -> lightsync -> raw -> SDK drivers.
+Deleted dead-end: drivers/raw/logitech_raw.py (0x59 shim).
+

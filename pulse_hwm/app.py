@@ -155,9 +155,9 @@ def run() -> int:
     from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
     from pulse_hwm.rgb.drivers.corsair_icue import CorsairDriver
     from pulse_hwm.rgb.drivers.logitech_g import LogitechDriver
+    from pulse_hwm.rgb.drivers.logitech_lightsync import LogitechLightsyncDriver
     from pulse_hwm.rgb.drivers.msi_mystic import MysticLightDriver
     from pulse_hwm.rgb.drivers.raw.corsair_raw import CorsairRawDriver
-    from pulse_hwm.rgb.drivers.raw.logitech_raw import LogitechRawDriver
     from pulse_hwm.rgb.drivers.raw.msi_raw import MysticLightRawDriver
     from pulse_hwm.rgb.drivers.raw.razer_raw import RazerRawDriver
     from pulse_hwm.rgb.drivers.razer_chroma import RazerDriver
@@ -188,13 +188,13 @@ def run() -> int:
     _rgb_user_store = UserEffectStore(db)
     _rgb_registered = _rgb_user_store.register_with_catalog(rgb_catalog)
     rgb_registry = DriverRegistry(
-        # Order: Aula (hardware-verified) → raw vendor-free drivers (no
-        # vendor software needed) → vendor-SDK drivers (ship-bloat probes).
-        # Probe availability sorts runtime picks automatically.
+        # Order: Aula (hardware-verified) → G102 LIGHTSYNC (verified live,
+        # native HID++ frames) → raw vendor-free drivers → vendor-SDK
+        # drivers (ship-bloat probes). Probe availability sorts picks.
         (
             AulaDriver,
+            LogitechLightsyncDriver,
             RazerRawDriver,
-            LogitechRawDriver,
             CorsairRawDriver,
             MysticLightRawDriver,
             LogitechDriver,
@@ -217,7 +217,6 @@ def run() -> int:
     # without it (settings-level switch, checked live by the drivers).
     _RAW_DRIVER_IDS = (
         "razer_raw",
-        "logitech_raw",
         "corsair_raw",
         "msi_raw",
     )

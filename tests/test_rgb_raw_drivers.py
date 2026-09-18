@@ -122,14 +122,6 @@ class TestCorsairAndLogitechFailClosed:
         driver._device = object()  # open-ish, gate on: still must not send
         assert driver.set_frame("corsair:0", [RgbColor(9, 9, 9)]) is False
 
-    def test_logitech_set_frame_never_sends(self):
-        from pulse_hwm.rgb.drivers.raw.logitech_raw import LogitechRawDriver
-
-        driver = LogitechRawDriver()
-        driver.experimental_allowed = True
-        driver._device = object()
-        assert driver.set_frame("logitech:0", [RgbColor(9, 9, 9)]) is False
-
     def test_corsair_probe_degrades_without_hid(self):
         from pulse_hwm.rgb.drivers.raw.corsair_raw import CorsairRawDriver
 
