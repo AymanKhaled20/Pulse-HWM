@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from pulse_hwm import app_settings
 from pulse_hwm.db import Database
+from pulse_hwm.rgb import assignment_store
 from pulse_hwm.ui.widgets.color_picker import ColorPicker
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 
@@ -82,10 +84,22 @@ class RgbTab(QWidget):
         self._mode_panel.body().addLayout(mode_row)
         layout.addWidget(self._mode_panel)
 
-        self._devices_panel = PixelPanel("DEVICES")
+        self._devices_panel = PixelPanel("DEVICES + ASSIGNED EFFECTS")
         self._devices_label = QLabel("")
         self._devices_label.setObjectName("muted")
         self._devices_panel.body().addWidget(self._devices_label)
+        self._device_rows: dict[str, tuple] = {}  # device_id → (checkbox, combo)
+        self._devices_grid = QFormLayout()
+        self._catalog = None  # filled when devices list (with driver) lands
+        self._current_driver_id = ""
+        self._seen_devices: list = []
+        self._devices_panel.body().addLayout(self._devices_grid)
+        self._assignment_hint = QLabel(
+            "Assignments apply when CONTROL MODE is EFFECTS."
+        )
+        self._assignment_hint.setObjectName("muted")
+        self._assignment_hint.setWordWrap(True)
+        self._devices_panel.body().addWidget(self._assignment_hint)
         layout.addWidget(self._devices_panel, 1)
 
         # ── override controls (phase 10): instant-apply, same contract ──
@@ -136,9 +150,12 @@ class RgbTab(QWidget):
         self._picker.set_hex(values.rgb_override_color)
 
     def show_driver(self, driver_id: str, name: str, devices: list) -> None:
+        self._seen_devices = list(devices)
+        self._current_driver_id = str(driver_id)
         if not driver_id:
             self._status_driver.setText("DRIVER: none attached")
-            self._devices_label.setText("")
+            self._status_devices.setText("DEVICES: 0")
+            self._rebuild_rows([])
             return
         self._status_driver.setText(f"DRIVER: {name}")
         summary = ", ".join(
@@ -146,6 +163,7 @@ class RgbTab(QWidget):
         )
         self._status_devices.setText(f"DEVICES: {len(devices)}")
         self._devices_label.setText(summary or "no devices reported")
+        self._rebuild_rows(devices)
 
     def show_error(self, message: str) -> None:
         self._status_error.setText(message)
@@ -178,6 +196,91 @@ class RgbTab(QWidget):
     def _forward_brightness(self) -> None:
         if self._brightness_bridge is not None:
             self._brightness_bridge(int(self._brightness.value()))
+
+    # ── per-device assignment rows (phase 11) ───────────────────────────
+    def _rebuild_rows(self, devices: list) -> None:
+        while self._devices_grid.rowCount():
+            self._devices_grid.removeRow(self._devices_grid.rowCount() - 1)
+        self._device_rows.clear()
+        if devices and self._catalog is None:
+            self._catalog = self._load_catalog()
+        blob = app_settings.load(self._db).rgb_device_assignment
+        for device in devices:
+            combo = QComboBox()
+            for effect in self._catalog.all():
+                combo.addItem(effect.name, effect.effect_id)
+            entry = assignment_store.entry_of(
+                blob, self._current_driver_id, device.device_id
+            )
+            checkbox = QCheckBox(f"{device.device_id} — {device.name}")
+            checkbox.setChecked(entry is not None)
+            combo.setEnabled(entry is not None)
+            if entry is not None:
+                index = combo.findData(entry["effect"])
+                combo.setCurrentIndex(max(0, index))
+            checkbox.clicked.connect(
+                lambda on, did=device.device_id: self._on_assignment_toggled(did, on)
+            )
+            combo.currentIndexChanged.connect(
+                lambda _i, did=device.device_id: self._on_effect_picked(did)
+            )
+            self._devices_grid.addRow(checkbox, combo)
+            self._device_rows[device.device_id] = (checkbox, combo)
+
+    def _load_catalog(self):
+        from pulse_hwm.rgb.effects.catalog import EffectCatalog
+
+        return self._catalog or EffectCatalog()
+
+    def _on_assignment_toggled(self, device_id: str, on: bool) -> None:
+        # instant-apply: checkbox ON → upsert with the currently picked
+        # effect; OFF → remove the row. Each change rewrites the blob and
+        # triggers one planner pass.
+        if on:
+            self._upsert_assignment(device_id, self._combo_effect(device_id))
+            combo = self._device_rows.get(device_id, (None, None))[1]
+            if combo is not None:
+                combo.setEnabled(True)
+        else:
+            self._remove_assignment(device_id)
+            combo = self._device_rows.get(device_id, (None, None))[1]
+            if combo is not None:
+                combo.setEnabled(False)
+
+    def _on_effect_picked(self, device_id: str) -> None:
+        # picking an effect implies enabling the device
+        checkbox = self._device_rows.get(device_id, (None, None))[0]
+        if checkbox is not None and not checkbox.isChecked():
+            checkbox.blockSignals(True)
+            checkbox.setChecked(True)
+            checkbox.blockSignals(False)
+        self._upsert_assignment(device_id, self._combo_effect(device_id))
+
+    def _combo_effect(self, device_id: str) -> str:
+        combo = self._device_rows.get(device_id, (None, None))[1]
+        if combo is None:
+            return "static"
+        return str(combo.currentData() or "static")
+
+    def _remove_assignment(self, device_id: str) -> None:
+        blob = assignment_store.clear(
+            app_settings.load(self._db).rgb_device_assignment,
+            self._current_driver_id,
+            device_id,
+        )
+        app_settings.save_field(self._db, "rgb_device_assignment", blob)
+        self._reconsider()
+
+    def _upsert_assignment(self, device_id: str, effect_id: str) -> None:
+        blob = assignment_store.assign(
+            app_settings.load(self._db).rgb_device_assignment,
+            self._current_driver_id,
+            device_id,
+            effect_id,
+            True,
+        )
+        app_settings.save_field(self._db, "rgb_device_assignment", blob)
+        self._reconsider()
 
     def _reconsider(self) -> None:
         if self._manager is not None:
