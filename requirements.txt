@@ -19,8 +19,8 @@ nvidia-ml-py>=12.535
 # Hardware temps (in-process LibreHardwareMonitorLib bridge; MPL-2.0, see THIRD_PARTY.md)
 pythonnet>=3.1.0
 
-# RGB control — AULA F75 native HID driver (pure bytearray protocol in
-# pulse_hwm/rgb/drivers/aula_protocol.py); graceful N/A if not installed
+# RGB control — native HID transports. hidapi drives the AULA F75 directly;
+# graceful N/A if absent. Optional vendor bindings (cuesdk) install by choice.
 hidapi>=0.14.0 ; sys_platform == "win32"
 
 # Windows-specific

@@ -242,6 +242,14 @@ class RgbManager:
         with self._lock:
             return self._reconsider_locked()
 
+    def force_reconsider(self) -> bool:
+        """APPLY NOW path: re-push the plan even when it matches the last
+        one. The engine re-renders from the new assignments, which is what
+        the RGB tab's explicit apply button promises the user."""
+        with self._lock:
+            self._last_plan = None
+            return self._reconsider_locked()
+
     def _reconsider_locked(self) -> bool:
         from pulse_hwm import app_settings
 

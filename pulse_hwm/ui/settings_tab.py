@@ -209,8 +209,8 @@ class SettingsTab(QWidget):
         ops_layout.addStretch(1)
 
         rail = SettingsRail()
-        rail.add_section("MONITORING / DATA", monitoring_host)
-        rail.add_section("UPDATES / ALERTS / RESOURCES", ops_host)
+        rail.add_section("MONITORING", monitoring_host)
+        rail.add_section("UPDATES", ops_host)
         rail.add_stretch()
         outer.addWidget(rail, 1)
 

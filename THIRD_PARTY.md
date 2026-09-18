@@ -1,5 +1,48 @@
 # Third-party software
 
+## RGB control systems
+
+### SinoWealth / AULA F75 protocol research
+
+Pulse-HWM's native keyboard driver implements the SinoWealth (BY Tech) HID
+protocol — reverse-engineered by the community — under the following
+credit:
+
+- **marcoslor / Aula-F87-Controller** (`docs/PROTOCOL.md`): fragment format,
+  checksum, 4-phase effect sequence, per-key planar layout, apply-flag
+  quirk. Protocol observed via USB captures; same firmware family on the
+  AULA F75 (VID 0x258A, PID 0x010C).
+- **OpenRGB / CalcProgrammer1 — SinowealthKeyboard10cController**
+  (GPL-2.0-or-later): the 520-byte direct-mode feature-report frame shape
+  (`0x06` header + RGB triplet stream) our driver transmits, plus the
+  keepalive/probing behavior (usage-page discovery quirk).
+  https://gitlab.com/CalcProgrammer1/OpenRGB
+- **vndarkblue / aula-keybind**, **Ghost-CR / F75_Initializer**,
+  **veysiemrah / aula-rgb-controller**: supporting community reverse
+  engineering of the same chip family.
+
+No source of these projects is embedded; Pulse implements an independent
+Python implementation of the OVER-THE-WIRE protocol. Direct-mode is a data
+serialization format (constants + LED triplets) — attribution is given in
+the spirit of the research community.
+
+### Vendor SDKs (optional, detected at runtime)
+
+The vendor drivers in `pulse_hwm/rgb/drivers/` call third-party SDKs when
+the corresponding vendor's software is installed:
+
+| SDK | Source | Note |
+|---|---|---|
+| LogitechLED.dll (Logitech Lighting SDK) | ships with Logitech G HUB / LGS from Logitech | Not redistributed; probed on disk, loaded via ctypes |
+| Razer Chroma SDK (REST) | localhost REST server from Razer Synapse | Not redistributed; plain HTTP calls |
+| iCUESDK (cuesdk, MIT) | pip package `cuesdk` (CorsairOfficial/cue-sdk-python) | Optional dep, not vendored |
+| MysticLight_SDK.dll (MSI Mystic Light SDK) | ships with MSI Center | Not redistributed; probed on disk, loaded via ctypes |
+| AURA_SDK.dll (ASUS Aura SDK) | ships with Armoury Crate | Not redistributed; detection stub only |
+
+Vendor SDKs are **detected, not bundled**: their EULAs forbid redistribution,
+and Pulse never installs vendor software. Drivers appear in the UI only when
+the vendor's own app already provides the service.
+
 ## LibreHardwareMonitorLib
 
 Pulse-HWM embeds **LibreHardwareMonitorLib** (`pulse_hwm/assets/lhm_runtime/`,
