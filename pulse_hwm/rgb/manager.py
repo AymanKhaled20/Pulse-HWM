@@ -95,6 +95,11 @@ class ModePlanner:
         reactive_effect_id: str = REACTIVE_TEMP_EFFECT_ID,
         alert_active: bool = False,
         alert_color: str = "#FF3B30",
+        reactive_sensor: str = "cpu",
+        reactive_low_c: float = 40.0,
+        reactive_high_c: float = 85.0,
+        reactive_low_color: str = "#00FF41",
+        reactive_high_color: str = "#FF3B30",
     ) -> None:
         self.mode = mode
         self.driver_id = driver_id
@@ -108,6 +113,33 @@ class ModePlanner:
         self.reactive_effect_id = reactive_effect_id
         self.alert_active = alert_active
         self.alert_color = alert_color
+        # the reactive contract: effect sensor key derives FROM setting
+        # cpu|gpu|mem|max_temp → EffectContext keys (signals the sensor the
+        # reactive_temp effect should read)
+        self._sensor_key_map = {
+            "cpu": "cpu_temp",
+            "gpu": "gpu_temp",
+            "mem": "mem_pct",
+            "max_temp": "max_temp",
+        }
+        self.reactive_sensor_key = self._sensor_key_map.get(
+            str(reactive_sensor), "cpu_temp"
+        )
+        self.reactive_low_c = float(reactive_low_c)
+        self.reactive_high_c = float(reactive_high_c)
+        self.reactive_low_color = reactive_low_color
+        self.reactive_high_color = reactive_high_color
+
+    def reactive_params(self) -> dict:
+        """reactive_temp spec keys (low_c/high_c/low_color/high_color/
+        sensor) validated per-effect at build time."""
+        return {
+            "sensor": self.reactive_sensor_key,
+            "low_c": self.reactive_low_c,
+            "high_c": self.reactive_high_c,
+            "low_color": self.reactive_low_color,
+            "high_color": self.reactive_high_color,
+        }
 
     def plan(self, assignment_loader=lambda device_id: None) -> ModePlan:
         """assignment_loader(device_id) → DeviceAssignment for effects
@@ -138,7 +170,7 @@ class ModePlanner:
                 # NOT a control takeover, hardware keeps its current state
                 return ModePlan({})
             params = self.catalog.validate_params(
-                effect_id, {"color": self.alert_color}
+                effect_id, {"color": self.alert_color, **self.reactive_params()}
             )
             return ModePlan(
                 {d: DeviceAssignment(effect_id, params=params) for d in self.device_ids}
@@ -225,6 +257,11 @@ class RgbManager:
             override_speed=settings.rgb_override_speed,
             alert_active=self._alert_clock.active(),
             alert_color=settings.rgb_alert_color,
+            reactive_sensor=settings.rgb_reactive_source,
+            reactive_low_c=settings.rgb_temp_low_c,
+            reactive_high_c=settings.rgb_temp_high_c,
+            reactive_low_color=settings.rgb_temp_low_color,
+            reactive_high_color=settings.rgb_temp_high_color,
         )
         loader = self._assignment_loader(settings.rgb_device_assignment)
         plan = planner.plan(assignment_loader=loader)

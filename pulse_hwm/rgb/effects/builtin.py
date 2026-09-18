@@ -52,7 +52,63 @@ class BreatheEffect(Effect):
         return [color.scaled(0.15 + 0.85 * wave)] * self.frame_size(ctx)
 
 
-BUILTIN_EFFECT_CLASSES: tuple[type[Effect], type[Effect]] = (
+class ReactiveTempEffect(Effect):
+    """CPU/GPU temp → color gradient. Sensors come from EffectContext (the
+    engine's snapshots — never polled here). Missing sensor = transparent
+    black frame is BAD at the reactive layer (dark keyboard mid-tick); the
+    manager keeps the previous assignment instead, so a missing sensor
+    effectively freezes the last color. Rendering: solid color across the
+    frame; temperature drives WHICH color."""
+
+    effect_id = "reactive_temp"
+    name = "REACTIVE TEMP"
+    description = "Hardware temperature mapped to a color gradient."
+
+    params = (
+        ParamSpec("low_c", "TEMP LOW", "float", 40.0, 0.0, 100.0),
+        ParamSpec("high_c", "TEMP HIGH", "float", 85.0, 0.0, 150.0),
+        ParamSpec("low_color", "COOL COLOR", "color", "#00FF41"),
+        ParamSpec("high_color", "HOT COLOR", "color", "#FF3B30"),
+        ParamSpec(
+            "sensor",
+            "SENSOR",
+            "choice",
+            "cpu_temp",
+            choices=("cpu_temp", "gpu_temp", "mem_pct", "max_temp"),
+        ),
+    )
+
+    def render(self, ctx: EffectContext) -> list[RgbColor]:
+        spec_by_key = {spec.key: spec for spec in self.params}
+        low = float(ctx.param(spec_by_key["low_c"]))
+        high = float(ctx.param(spec_by_key["high_c"]))
+        sensor = str(ctx.param(spec_by_key["sensor"]))
+        value = ctx.sensor(sensor)
+        if value is None:
+            return [SensorMissingColor()] * self.frame_size(ctx)
+        position = max(0.0, min(1.0, (value - low) / max(1e-9, high - low)))
+        low_color = RgbColor.from_hex(str(ctx.param(spec_by_key["low_color"])))
+        high_color = RgbColor.from_hex(str(ctx.param(spec_by_key["high_color"])))
+        color = _lerp_color(low_color, high_color, position)
+        return [color] * self.frame_size(ctx)
+
+
+def SensorMissingColor() -> RgbColor:
+    # dim gray-yellow: visibly 'no data' but not dead-black
+    return RgbColor(40, 40, 12)
+
+
+def _lerp_color(low: RgbColor, high: RgbColor, t: float) -> RgbColor:
+    t = max(0.0, min(1.0, t))
+    return RgbColor(
+        round(low.r + (high.r - low.r) * t),
+        round(low.g + (high.g - low.g) * t),
+        round(low.b + (high.b - low.b) * t),
+    )
+
+
+BUILTIN_EFFECT_CLASSES: tuple[type[Effect], ...] = (
     StaticEffect,
     BreatheEffect,
+    ReactiveTempEffect,
 )
