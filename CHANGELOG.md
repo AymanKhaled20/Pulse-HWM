@@ -9,6 +9,27 @@ contracts.
 The `## [x.y.z]` section of a release is machine-extracted and published as
 both the GitHub release body and the in-app update banner — write for users.
 
+## [1.4.0] - 2026-09-22
+
+### Added
+
+- **OpenRGB backend**: everything except the AULA keyboard is now driven
+  through a bundled headless OpenRGB fork — no MSI Center, no Synapse, no
+  iCUE required. The backend runs hidden, is loopback-restricted, and is
+  started automatically when a device needs a frame (first hardware
+  detection can take about a minute).
+- Broad, vendor-free device coverage via OpenRGB: MSI Mystic Light
+  motherboards (JRGB + onboard zones), Razer hardware (including the
+  Kraken V3 X), Logitech G203/G102 LIGHTSYNC mice, and all other
+  OpenRGB-supported devices on the machine.
+
+### Removed
+
+- The vendor-SDK drivers (Logitech Lighting SDK, Razer Chroma, Corsair
+  iCUE, MSI Mystic Light SDK, ASUS Aura) and the experimental raw-HID
+  first-pass drivers. The AULA F75 keyboard keeps its native
+  hardware-verified driver.
+
 ## [1.3.0] - 2026-09-16
 ### Added
 - **RGB controller with a native hardware driver** — Pulse now drives the
