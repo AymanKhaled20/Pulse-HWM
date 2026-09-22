@@ -13,16 +13,22 @@ future work (and reviewers) never have to reconstruct context from diffs.
 | M4 | `feature/rgb-reactive-temp` → `feature/rgb-reactive-alert` | DONE (hw-verified) |
 | M5 | `feature/rgb-driver-logitech` … `feature/rgb-driver-asus` | DONE |
 
-## Vendor driver matrix (as implemented)
+## Driver matrix (current)
 
-| Driver | Backend | Brightness | Per-LED | Verify |
-|---|---|---|---|---|
-| `aula_f75` | hidapi 0x06 direct (feature reports) | via frame scale | YES (126) | ✅ owner-verified |
-| `logitech` | ctypes LogitechLED.dll (G HUB/LGS) | — | whole-device | needs G HUB |
-| `razer_chroma` | Chroma REST localhost:54235 + heartbeat | — | whole-device | needs Synapse |
-| `corsair_icue` | cuesdk ctypes binding | — | whole-setup | needs iCUE |
-| `msi_mystic` | ctypes MysticLight_SDK.dll | — | 16-slot palette | needs MSI Center |
-| `asus_aura` | probe-only stub (COM surface later) | — | — | blocked: no hw |
+| Driver | Backend | Per-LED | Verify |
+|---|---|---|---|
+| `aula_f75` | hidapi 0x06 direct (feature reports) | YES (126) | ✅ owner-verified |
+
+**2026-09-22 pivot — vendor-SDK + raw-HID drivers removed.** The
+`logitech`/`razer_chroma`/`corsair_icue`/`msi_mystic`/`asus_aura` SDK drivers
+(bloatware requirement) and the vendor-free raw-HID first-pass experiment are
+gone. Non-AULA RGB is now delegated to a **headless OpenRGB fork** run as a
+separate process and driven over its documented SDK protocol on loopback —
+see "OpenRGB backend" below. Reason: OpenRGB already reverse-engineered the
+per-device protocols (MSI Mystic Light HID 0x7D41, Razer, Corsair, Logitech
+G203L) we would otherwise have to capture and validate by hand, and stock
+OpenRGB even disables the MSI detector until its detection macro is
+re-enabled at build time — hence our fork.
 
 Color-mixing note (from owner's hardware test): the F75 renders mid-gradient
 values (e.g. yellow/orange lerp between green and red) with a washed-out,
@@ -76,9 +82,11 @@ Full checklist (re-run after each driver change):
 
 ## Deferred (tracked, planned)
 
-- **Uninstall Logitech LGS before starting the vendor-free phase** (installed 2026-09-16 via winget for live driver verification). winget `Logitech.LGS`; remove after each driver's vendor-free replacement lands.
-- **Vendor-free RGB drivers (no LGS/iCUE/Synapse/MSI Center needed)** — OpenRGB-style raw per-device HID drivers per model; needs USB captures from the owner's hardware for each device family. Parked AFTER v1.3.0 on purpose: it reverses the vendor-SDK dependency per ecosystem. Logitech currently runs via LGS (installed, thin); iCUE/MSI Center installs were declined by the owner as bloatware.
+- **OpenRGB backend fork** (branch `pulse-headless` on the fork): uncomment
+  MSI Mystic Light `MS-7D41` detector, loopback-only SDK server, no plugin
+  autoload; Sinowealth stays DISABLED (bricking history) — the F75 remains on
+  the native driver above. CI-built on GitHub Actions; Gate A =
+  `openrgb.exe --list-devices` shows MSI 7D41 + G102 + Razer + Corsair.
 - F75 per-key index calibration capture
 - Dongle PID `010D` support
 - Compact F75 output palette (mid-gradients render washed-out/whitish — see Color-mixing note)
-- URL effect import (implemented), settings rail rework (M6)

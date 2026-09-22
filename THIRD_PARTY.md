@@ -26,22 +26,13 @@ Python implementation of the OVER-THE-WIRE protocol. Direct-mode is a data
 serialization format (constants + LED triplets) — attribution is given in
 the spirit of the research community.
 
-### Vendor SDKs (optional, detected at runtime)
+### Manufacturer-independent RGB backend (planned: OpenRGB fork)
 
-The vendor drivers in `pulse_hwm/rgb/drivers/` call third-party SDKs when
-the corresponding vendor's software is installed:
-
-| SDK | Source | Note |
-|---|---|---|
-| LogitechLED.dll (Logitech Lighting SDK) | ships with Logitech G HUB / LGS from Logitech | Not redistributed; probed on disk, loaded via ctypes |
-| Razer Chroma SDK (REST) | localhost REST server from Razer Synapse | Not redistributed; plain HTTP calls |
-| iCUESDK (cuesdk, MIT) | pip package `cuesdk` (CorsairOfficial/cue-sdk-python) | Optional dep, not vendored |
-| MysticLight_SDK.dll (MSI Mystic Light SDK) | ships with MSI Center | Not redistributed; probed on disk, loaded via ctypes |
-| AURA_SDK.dll (ASUS Aura SDK) | ships with Armoury Crate | Not redistributed; detection stub only |
-
-Vendor SDKs are **detected, not bundled**: their EULAs forbid redistribution,
-and Pulse never installs vendor software. Drivers appear in the UI only when
-the vendor's own app already provides the service.
+The vendor-SDK and raw-HID drivers were removed; RGB devices beyond the AULA
+F75 are handled by a headless OpenRGB fork spawned as a separate process and
+driven over its documented SDK protocol (loopback). See `docs/RGB.md`.
+OpenRGB attribution (GPL-2.0-or-later, source at the fork) will be detailed
+here when the backend feature lands.
 
 ## LibreHardwareMonitorLib
 

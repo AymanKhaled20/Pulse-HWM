@@ -1,7 +1,85 @@
-# HANDOFF — Pulse-HWM RGB engine (read me after compaction)
+# HANDOFF — Pulse-HWM (read me after compaction)
 
-> Written 2026-09-16 for the next agent context. If facts and code disagree,
+> Written 2026-09-22 for the next agent context. If facts and code disagree,
 > TRUST THE CODE and update this file.
+
+## ACTIVE SESSION (2026-09-22) — OpenRGB backend pivot — CURRENT STATE
+
+The Strix security scan is ON HOLD indefinitely: machine prep is complete
+(strix 1.6.2, Docker Desktop 29.8.0 + WSL2 running, LLM env vars survive
+reboot), but every model call hits `402 Insufficient account funds` on Zen
+and the owner declined to fund it (they pay for opencode Go, which rejects
+third-party clients). Options for later: Strix Router free credit, OpenRouter
+free tier, or Ollama local. `.strixignore` is ready at repo root.
+
+**Direction decided instead: OpenRGB as the RGB backend.** Owner: "use the
+backend of openrgb and build our own ui and ux." Research + decisions locked
+(see docs/RGB.md "2026-09-22 pivot"):
+
+- Fork `CalcProgrammer1/OpenRGB` (GitHub mirror) → `AymanKhaled20/OpenRGB`,
+  branch `pulse-headless`, minimal patches: re-enable the MSI Mystic Light
+  `MS-7D41` HID detector (commented out upstream), loopback-only SDK server
+  bind, disable plugin autoload. Sinowealth stays DISABLED upstream (bricking
+  history) so the AULA F75 keeps our hardware-verified native driver.
+- Build headless in GitHub Actions (windows-latest + OpenRGB-Qt-Packages Qt
+  6.8.3 + `scripts\build-windows.bat 6.8.3 2022 64`), consume the artifact —
+  owner installs NOTHING. MSI board RGB is HID, not SMBus → NO PawnIO/admin.
+  PawnIO+admin only needed for RGB RAM/other SMBus gear (prompted, opt-in).
+- Gate A (go/no-go): artifact `openrgb.exe --list-devices` must show MSI
+  7D41, Logitech G102 (0xC092 — natively supported), Razer 1532:0537,
+  Corsair. Then our own SDK client (protocol ids on loopback 6742; UPDATELEDS
+  1050 = our per-LED frame contract) as `OpenRgbDriver` +
+  `CompositeDriver([OpenRgbDriver(), AulaDriver()])` so app.py's single-driver
+  attach is untouched. Bundled in the installer with GPL-2.0 notice + source
+  link (process separation = aggregation; fork keeps compliance simple).
+
+### Done this session
+- **Closed the 8 superseded PRs**: #36, #34, #30, #28, #27, #26, #25, #29
+  (comments point at the pivot). All other PRs stay open for owner review.
+- **Deleted abandoned branches** (local + remote):
+  `feature/rgb-driver-kraken`, `feature/rgb-vendor-free`,
+  `feature/rgb-driver-lightsync`, and untracked `scripts/kraken_discovery.py`
+  (they held raw-HID/lightsync code; owner: "no dead code").
+- **Branch `chore/rgb-remove-vendor-sdk-drivers` (from main)**: removed the
+  5 vendor-SDK drivers (`asus_aura`, `corsair_icue`, `logitech_g`,
+  `msi_mystic`, `razer_chroma`) + their 5 test files; app.py registry now
+  holds AulaDriver only; THIRD_PARTY.md vendor-SDK table replaced with the
+  OpenRGB-backend note; requirements comment trimmed; docs/RGB.md updated.
+  Full pytest green, pre-commit hooks pass. NOT YET COMMITTED/PUSHED — owner
+  gave the build-it go, commits were gated on request per AGENTS.md.
+
+### Next steps (in order)
+1. Commit `chore/rgb-remove-vendor-sdk-drivers` (asked owner).
+2. Fork OpenRGB + patches + GH Actions build workflow → Gate A.
+3. On Gate A pass: branch `feature/rgb-openrgb-backend` → protocol/client/
+   server/driver/composite, settings (`rgb_openrgb_enabled/_path/_port/_
+   autostart`, device-local), spec+installer bundling, RGB-tab status row,
+   THIRD_PARTY attribution, version bump 1.3.0 → 1.4.0.
+4. Gates B (owner HW verification per device) and C (pytest + pre-commit +
+   exe rebuild — close running PulseHWM first).
+
+
+
+### v1.3.0 shipped TODAY (context, not pending work)
+- `main` fast-forwarded to 1c4f66c and **tag v1.3.0 pushed**; CI built and
+  published the PUBLIC GitHub release: PulseHWM-Setup-1.3.0.exe + SHA256SUMS
+  + manifest-1.3.0.json(.sig). (Earlier: release page was empty, owner said
+  "no way to download" — solved above.)
+- Worker publish step "failed" misleadingly: crash was a cp1252
+  UnicodeEncodeError on a success `print` containing a `→` char AFTER the
+  POST had already succeeded (verified: the print sat inside the 2xx
+  branch). Fixed in commit 20ce8d4 on main (publish_release.py now
+  reconfigures stdout/stderr to utf-8/replace AND uses ASCII arrows).
+- R2 upload step SKIPPED (var R2_ENABLED not set) — assets ship on GitHub
+  for now, per docs/UPDATES.md runbook.
+- `main` @ 20ce8d4 contains ONLY the release-train work + the cp1252 fix:
+  the vendor-free P1 commits (raw HID / G102 lightsync, 95d77f3) were
+  deliberately EXCLUDED from the release — they live on
+  `feature/rgb-driver-kraken` (checked out here), 5 commits ahead of the tag.
+
+---
+
+# ARCHIVED — RGB engine handoff (2026-09-16, kept for context)
 
 ## Where we are (v1.3.0 release train, code-complete, not yet shipped)
 

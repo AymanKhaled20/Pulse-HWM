@@ -1,9 +1,8 @@
 """Driver registry.
 
-Phase 3 ships the mechanism + a FakeDriver for tests/engine work. Real
-drivers (Aula, Razer, Corsair, MSI, ASUS, Logitech) individually append to
-BUILTIN_DRIVERS in their own phases — one registry entry each, so no driver
-phase touches another's code.
+Each driver family lands with exactly one registry entry in app.py, so no
+driver phase touches another's code. The vendor-SDK and raw-HID drivers were
+removed in favor of the OpenRGB backend; Aula remains a native driver.
 
 User drop-ins (%LOCALAPPDATA%/PulseHWM/plugins/rgb/*.py) are loaded in a
 later phase behind the rgb_allow_external_plugins toggle; the discovery
