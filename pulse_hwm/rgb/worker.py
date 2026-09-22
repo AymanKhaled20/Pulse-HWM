@@ -32,6 +32,7 @@ class RgbWorker(QObject):
     attach_requested = Signal(object)  # RgbDriver handed off to this thread
     brightness_requested = Signal(int)  # queued like every other control call
     sensors_requested = Signal(dict)  # hardware snapshot push, queued
+    detach_requested = Signal()  # queued close: releases driver (OpenRGB proc)
 
     def __init__(
         self, catalog: EffectCatalog | None = None, parent: QObject | None = None
@@ -46,6 +47,7 @@ class RgbWorker(QObject):
         self.attach_requested.connect(self.attach)
         self.brightness_requested.connect(self.set_brightness)
         self.sensors_requested.connect(self.engine.set_sensors)
+        self.detach_requested.connect(self.detach)
 
     # ── slots (invoked cross-thread via signals) ──────────────────────
     def start(self, fps: int) -> None:

@@ -62,6 +62,13 @@ class AppSettings:
     rgb_allow_external_plugins: bool = False  # user drop-in drivers (RCE risk)
     rgb_allow_effect_urls: bool = False  # URL effect import (network content)
 
+    # ── OpenRGB backend (v1.4.0) ─────────────────────────────────────────
+    # Non-AULA devices are served by a bundled headless OpenRGB fork; see
+    # docs/RGB.md. enabled=False leaves hardware untouched entirely.
+    rgb_openrgb_enabled: bool = True
+    rgb_openrgb_port: int = 6742  # SDK server port (loopback only)
+    rgb_openrgb_path: str = ""  # optional OpenRGB.exe override ("" = bundled)
+
 
 _INT_KEYS = {
     "hardware_interval_ms",
@@ -78,6 +85,7 @@ _INT_KEYS = {
     "rgb_temp_low_c",
     "rgb_temp_high_c",
     "rgb_alert_hold_ms",
+    "rgb_openrgb_port",
 }
 _FLOAT_KEYS = {"website_timeout_s"}
 _BOOL_KEYS = {
@@ -88,6 +96,7 @@ _BOOL_KEYS = {
     "update_check_enabled",
     "rgb_allow_external_plugins",
     "rgb_allow_effect_urls",
+    "rgb_openrgb_enabled",
 }
 _STR_KEYS = {
     "theme_color",
@@ -101,6 +110,7 @@ _STR_KEYS = {
     "rgb_alert_color",
     "rgb_device_assignment",
     "rgb_user_effects",
+    "rgb_openrgb_path",
 }
 _ALL_KEYS = _INT_KEYS | _FLOAT_KEYS | _BOOL_KEYS | _STR_KEYS
 
@@ -120,6 +130,7 @@ LIMITS = {
     "rgb_temp_low_c": (0, 100),
     "rgb_temp_high_c": (0, 150),
     "rgb_alert_hold_ms": (500, 30_000),
+    "rgb_openrgb_port": (1024, 65535),
 }
 
 # rgb_mode values, in escalating order of control. The engine resolves the
@@ -266,6 +277,16 @@ def load(db: Database) -> AppSettings:
     values.rgb_allow_effect_urls = bool(
         read("rgb_allow_effect_urls", str_to_bool, values.rgb_allow_effect_urls)
         in (True, "true", "True", 1)
+    )
+    values.rgb_openrgb_enabled = bool(
+        read("rgb_openrgb_enabled", str_to_bool, values.rgb_openrgb_enabled)
+        in (True, "true", "True", 1)
+    )
+    values.rgb_openrgb_port = _read_limited_int(
+        read, "rgb_openrgb_port", values.rgb_openrgb_port
+    )
+    values.rgb_openrgb_path = str(
+        read("rgb_openrgb_path", str, values.rgb_openrgb_path)
     )
     return values
 

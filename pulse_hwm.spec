@@ -14,6 +14,7 @@ certifi_datas = collect_data_files("certifi")
 datas = [
     ("pulse_hwm\\assets\\fonts", "pulse_hwm\\assets\\fonts"),
     ("pulse_hwm\\assets\\icons", "pulse_hwm\\assets\\icons"),
+    ("pulse_hwm\\assets\\openrgb", "pulse_hwm\\assets\\openrgb"),
     ("pulse_hwm\\ui\\theme.qss", "pulse_hwm\\ui"),
 ] + certifi_datas
 if os.path.isdir("pulse_hwm\\assets\\lhm_runtime"):

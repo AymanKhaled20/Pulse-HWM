@@ -26,15 +26,30 @@ Python implementation of the OVER-THE-WIRE protocol. Direct-mode is a data
 serialization format (constants + LED triplets) — attribution is given in
 the spirit of the research community.
 
-### Manufacturer-independent RGB backend (planned: OpenRGB fork)
+### OpenRGB fork (RGB backend)
 
-The vendor-SDK and raw-HID drivers were removed; RGB devices beyond the AULA
-F75 are handled by a headless OpenRGB fork spawned as a separate process and
-driven over its documented SDK protocol (loopback). See `docs/RGB.md`.
-OpenRGB attribution (GPL-2.0-or-later, source at the fork) will be detailed
-here when the backend feature lands.
+Non-AULA RGB devices are served by a **headless fork of
+[OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB)** (GPL-2.0-or-later,
+by Adam Honse and the OpenRGB contributors), spawned as a separate process
+and driven over its documented SDK protocol on loopback.
 
-## LibreHardwareMonitorLib
+- Fork with our process hardening (loopback-only server bind):
+  https://github.com/AymanKhaled20/OpenRGB — branch `pulse-headless`;
+  the single patch over upstream is the loopback bind (`net_port.cpp`).
+- Build provenance: built automatically in CI by this fork's
+  `windows-headless-build` action; the binaries under
+  `pulse_hwm/assets/openrgb/` are produced from that source (link above is
+  the GPL "corresponding source").
+- License: **GPL-2.0-or-later**. Full text:
+  `pulse_hwm/assets/openrgb/OpenRGB-LICENSE.txt`.
+- Process separation: Pulse-HWM communicates with the unmodified fork
+  binary over TCP; no OpenRGB source is linked into Pulse itself.
+- Device protocol research (MSI Mystic Light HID, Razer, Logitech,
+  Sinowealth/AULA) belongs to the OpenRGB community; credit to
+  CalcProgrammer1 and contributors for all reverse-engineered transports
+  the fork's controllers implement.
+
+---## LibreHardwareMonitorLib
 
 Pulse-HWM embeds **LibreHardwareMonitorLib** (`pulse_hwm/assets/lhm_runtime/`,
 fetched on first run) to read CPU, GPU, motherboard, and drive temperature

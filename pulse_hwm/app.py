@@ -152,6 +152,8 @@ def run() -> int:
     from PySide6.QtCore import Signal as _Signal
 
     from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
+    from pulse_hwm.rgb.drivers.composite import CompositeDriver
+    from pulse_hwm.rgb.drivers.openrgb.driver import OpenRgbDriver
     from pulse_hwm.rgb.drivers.registry import DriverRegistry
     from pulse_hwm.rgb.effects.catalog import EffectCatalog
     from pulse_hwm.rgb.manager import RgbManager
@@ -178,11 +180,28 @@ def run() -> int:
 
     _rgb_user_store = UserEffectStore(db)
     _rgb_registered = _rgb_user_store.register_with_catalog(rgb_catalog)
+
+    rgb_values = app_settings.load(db)
+
+    # Per-transport routing while OpenRGB owns everything else: when the
+    # native AULA driver is functional, the OpenRGB backend must NOT
+    # enumerate the same keyboard (Sinowealth VID 258A) — otherwise both
+    # transports fight over every frame. rgb_openrgb_enabled=False keeps
+    # OpenRGB completely out (Aula-only fallback for owners who want it).
+    _aula_probe = AulaDriver().probe()
+    _openrgb_spec = OpenRgbDriver(port=rgb_values.rgb_openrgb_port)
+    if not rgb_values.rgb_openrgb_enabled:
+        _openrgb_children = [AulaDriver()]
+    else:
+        if _aula_probe.available:
+            _openrgb_spec.exclude_vids = frozenset({0x258A})
+        _openrgb_children = [_openrgb_spec, AulaDriver()]
+
     rgb_registry = DriverRegistry(
-        # Aula (hardware-verified native driver). Ex-vendor-SDK and raw-HID
-        # drivers were removed in favor of the OpenRGB backend, which is
-        # layered on top of this registry in its own feature branch.
-        (AulaDriver,)
+        # OpenRGB backend + native AULA behind ONE composite: the engine/
+        # worker keep their single-driver contract, frames are routed by the
+        # device_id prefix each child caught ("openrgb:N" vs "aula_f75:0").
+        (CompositeDriver(_openrgb_children),)
     )
     rgb_registry.load()
     rgb_thread = QThread()
@@ -190,7 +209,6 @@ def run() -> int:
     rgb_worker = RgbWorker(rgb_catalog)
     RgbThreadBridge.attach(rgb_worker, rgb_thread)
 
-    rgb_values = app_settings.load(db)
     rgb_worker.set_brightness(rgb_values.rgb_brightness)
     rgb_worker.set_fps(rgb_values.rgb_engine_fps)
 
@@ -366,6 +384,10 @@ def run() -> int:
     rgb_thread.start()
 
     def shutdown() -> None:
+        # queued detach: engine closes the driver on the rgb thread — for the
+        # composite this also stops the OpenRGB server WE spawned. Fires
+        # before thread teardown so the worker's event loop can process it.
+        rgb_worker.detach_requested.emit()
         rgb_thread.quit()
         websites_thread.quit()
         hardware_thread.quit()

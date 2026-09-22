@@ -1,0 +1,15 @@
+# Strix scan scope — keep secrets and build artifacts out of the sandbox mount
+.env
+.env.*
+!*.example
+dist/
+build/
+.venv/
+venv/
+*.spec
+CREDENTIALS
+*.key
+*.pem
+*.pfx
+crash-report-*
+strix_runs/

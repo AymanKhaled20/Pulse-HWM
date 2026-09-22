@@ -1,0 +1,1 @@
+SOURCE: fork https://github.com/AymanKhaled20/OpenRGB branch pulse-headless (GPL-2.0-or-later). Built by AymanKhaled20/OpenRGB action 'windows-headless-build'.

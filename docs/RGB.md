@@ -82,11 +82,31 @@ Full checklist (re-run after each driver change):
 
 ## Deferred (tracked, planned)
 
-- **OpenRGB backend fork** (branch `pulse-headless` on the fork): uncomment
-  MSI Mystic Light `MS-7D41` detector, loopback-only SDK server, no plugin
-  autoload; Sinowealth stays DISABLED (bricking history) — the F75 remains on
-  the native driver above. CI-built on GitHub Actions; Gate A =
-  `openrgb.exe --list-devices` shows MSI 7D41 + G102 + Razer + Corsair.
 - F75 per-key index calibration capture
 - Dongle PID `010D` support
 - Compact F75 output palette (mid-gradients render washed-out/whitish — see Color-mixing note)
+- OpenRGB matrix-map layouts (currently devices render linearly; keyboard
+  matrix positions would need the upstream matrix-map parser)
+- Native OpenRGB brightness (mode UPDATEMODE) — engine color-scaling for now
+
+## OpenRGB backend — Gate A PASSED (2026-09-22)
+
+The fork CI ([AymanKhaled20/OpenRGB](https://github.com/AymanKhaled20/OpenRGB),
+branch `pulse-headless`, loopback-bound server) built clean and the artifact
+enumerated the owner's machine via OUR protocol-5 client:
+
+| Device | OpenRGB read |
+|---|---|
+| MSI MAG B660 TOMAHAWK WIFI DDR4 (MS-7D41) | 122 LEDs, zones JRGB1/JRGB2/JRAINBOW1(60)/JRAINBOW2(60), **HID transport — no PawnIO/admin** |
+| Razer Kraken V3 X (1532:0537 = headset!) | 1 whole-device zone |
+| Logitech G203 Lightsync | 3-LED mouse zone |
+| AULA F75 (Sinowealth) | 90-LED keyboard matrix — visible, but stays EXCLUDED while the native F75 driver is healthy (`exclude_vids = {0x258A}`) |
+
+Implementation shipped on `feature/rgb-openrgb-backend`:
+`rgb/drivers/openrgb/{protocol,client,server,driver}.py` + `CompositeDriver`
+routing `openrgb:<n>` frames to OpenRGB and `aula_f75:0` frames to the native
+driver behind the single-driver engine contract. Settings:
+`rgb_openrgb_enabled` (default on), `rgb_openrgb_port` (6742),
+`rgb_openrgb_path` (override). Backend binaries bundled in
+`pulse_hwm/assets/openrgb/` (+ OpenRGB-LICENSE.txt, SOURCE.txt); CI smoke
+test = headless server listens on 127.0.0.1:6742 before artifact upload.
