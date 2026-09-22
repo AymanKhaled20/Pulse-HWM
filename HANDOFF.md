@@ -40,23 +40,41 @@ backend of openrgb and build our own ui and ux." Research + decisions locked
   `feature/rgb-driver-kraken`, `feature/rgb-vendor-free`,
   `feature/rgb-driver-lightsync`, and untracked `scripts/kraken_discovery.py`
   (they held raw-HID/lightsync code; owner: "no dead code").
-- **Branch `chore/rgb-remove-vendor-sdk-drivers` (from main)**: removed the
-  5 vendor-SDK drivers (`asus_aura`, `corsair_icue`, `logitech_g`,
-  `msi_mystic`, `razer_chroma`) + their 5 test files; app.py registry now
-  holds AulaDriver only; THIRD_PARTY.md vendor-SDK table replaced with the
-  OpenRGB-backend note; requirements comment trimmed; docs/RGB.md updated.
-  Full pytest green, pre-commit hooks pass. NOT YET COMMITTED/PUSHED — owner
-  gave the build-it go, commits were gated on request per AGENTS.md.
+- **`chore/rgb-remove-vendor-sdk-drivers` @ 996a715**: removed the 5
+  vendor-SDK drivers + their tests; app.py = AulaDriver only.
+- **Fork live at [AymanKhaled20/OpenRGB](https://github.com/AymanKhaled20/OpenRGB)**
+  branch `pulse-headless`: loopback-only SDK server bind (`net_port.cpp`),
+  GH Actions `windows-headless-build` workflow green on the FIRST run
+  (windows-latest + OpenRGB-Qt-Packages Qt6.8.3 + qmake/jom + windeployqt +
+  a smoke step that requires the server listens on 127.0.0.1:6742).
+  **MSI detectors are already re-enabled upstream — no macro patch needed**;
+  and MSI board RGB is HID (no PawnIO/admin).
+- **GATE A PASSED on owner hardware** (our own client, loopback 6742):
+  MSI MAG B660 TOMAHAWK WIFI DDR4 MS-7D41 (122 LEDs, HID), Razer Kraken V3 X
+  (1532:0537 = HEADSET — "kraken" mystery solved), Logitech G203 Lightsync,
+  and the AULA F75 (Sinowealth, 90 LEDs — but excluded while native driver
+  is alive). Protocol negotiation: server speaks 6, client clamps to 5.
+- **`feature/rgb-openrgb-backend` @ 50499f2 + c498398**: full backend —
+  `rgb/drivers/openrgb/{protocol,client,server,driver}.py`, CompositeDriver
+  (prefix routing openrgb:N / aula_f75:0; exclude_vids 0x258A wired in
+  app.py when AULA probe is healthy), settings rgb_openrgb_enabled/_port/
+  _path, worker detach_requested queued shutdown, backend bundled under
+  pulse_hwm/assets/openrgb (47.6MB incl. GPL LICENSE + SOURCE.txt), spec
+  datas wired, THIRD_PARTY.md attributed, version bumped to 1.4.0 with
+  CHANGELOG. Full pytest green, hooks pass, exe rebuilt (262.9MB onedir,
+  backend lands at _internal\pulse_hwm\assets\openrgb\OpenRGB.exe).
 
 ### Next steps (in order)
-1. Commit `chore/rgb-remove-vendor-sdk-drivers` (asked owner).
-2. Fork OpenRGB + patches + GH Actions build workflow → Gate A.
-3. On Gate A pass: branch `feature/rgb-openrgb-backend` → protocol/client/
-   server/driver/composite, settings (`rgb_openrgb_enabled/_path/_port/_
-   autostart`, device-local), spec+installer bundling, RGB-tab status row,
-   THIRD_PARTY attribution, version bump 1.3.0 → 1.4.0.
-4. Gates B (owner HW verification per device) and C (pytest + pre-commit +
-   exe rebuild — close running PulseHWM first).
+1. **Gate B — owner hardware test of `dist\PulseHWM\PulseHWM.exe`** (v1.4.0):
+   RGB tab → enable driver/mode → colors appear on MSI board zones + Kraken
+   headset + G102 mouse; AULA keyboard still drives natively; closing the
+   app stops the backed OpenRGB server we spawned.
+2. On Gate B pass: owner decides merge to main + tag v1.4.0 push (CI builds
+   the installer; GH release body = CHANGELOG [1.4.0]).
+3. Untracked leftovers in the working tree are agent tooling (.agents/,
+  .claude/, .opencode/, .wrangler/, node_modules, .strixignore) — not staged
+  on any branch; .strixignore stays for the parked strix session.
+4. Parked: Strix scan (once an LLM credit exists — see strix section below).
 
 
 
