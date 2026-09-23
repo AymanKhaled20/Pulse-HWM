@@ -13,11 +13,32 @@ reporting, so a dead device degrades instead of crashing the thread.
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from pulse_hwm.rgb.drivers.base import RgbDriver
 from pulse_hwm.rgb.effects.catalog import EffectCatalog
 from pulse_hwm.rgb.engine import DeviceAssignment, RgbEngine
+
+_RGB_LOG_MAX_CHARS = 200_000
+
+
+def _rgb_dbg(line: str) -> None:
+    """Append one debug line to the app data dir; never raises, trimmed to
+    stay small. Used during bring-up to see what the engine actually did —
+    Qt slot exceptions otherwise vanish silently."""
+    try:
+        from pulse_hwm import config
+
+        path = config.data_dir() / "rgb_debug.log"
+        if path.stat().st_size > _RGB_LOG_MAX_CHARS if path.exists() else False:
+            path.unlink()
+        stamp = time.strftime("%H:%M:%S")
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"[{stamp}] {line}\n")
+    except Exception:
+        pass
 
 
 class RgbWorker(QObject):
@@ -60,6 +81,10 @@ class RgbWorker(QObject):
     def attach(self, driver: RgbDriver) -> None:
         try:
             devices = self.engine.attach_driver(driver)
+            _rgb_dbg(
+                f"attach driver={driver.driver_id} devices="
+                f"{[(d.device_id, d.leds) for d in devices]}"
+            )
             self.devices_changed.emit(list(devices))
             # the tab's status slots want (driver_id, name, devices) — see
             # the phase 27 note below about the old one-arg emit failing
@@ -81,6 +106,16 @@ class RgbWorker(QObject):
     def apply_assignments(self, assignments: dict) -> None:
         """Slot for cross-thread plan pushes: a Signal→slot connection makes
         this run HERE (worker thread), so the plan applies re-entrancy-free."""
+        try:
+            _rgb_dbg(
+                "apply plan: "
+                + ", ".join(
+                    f"{did}={getattr(a, 'effect_id', None)}/{getattr(a, 'params', {})}"
+                    for did, a in assignments.items()
+                )
+            )
+        except Exception:
+            pass
         for device_id, assignment in assignments.items():
             self.engine.set_assignment(device_id, assignment)
 
@@ -97,10 +132,12 @@ class RgbWorker(QObject):
         try:
             applied = self.engine.tick()
         except Exception as exc:  # ticking must survive catastrophic state
+            _rgb_dbg(f"tick EXC: {exc}")
             self.driver_error.emit(f"render failed: {exc}")
             return
         self.rendered.emit(applied)
         if self.engine.last_error:
+            _rgb_dbg(f"tick error: {self.engine.last_error}")
             self.driver_error.emit(self.engine.last_error)
 
 
