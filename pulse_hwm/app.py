@@ -194,7 +194,7 @@ def run() -> int:
         _openrgb_children = [AulaDriver()]
     else:
         if _aula_probe.available:
-            _openrgb_spec.exclude_vids = frozenset({0x258A})
+            _openrgb_spec.exclude_vids = frozenset({0x258A, 0x1532})
         _openrgb_children = [_openrgb_spec, AulaDriver()]
 
     rgb_registry = DriverRegistry(
