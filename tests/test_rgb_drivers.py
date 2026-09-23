@@ -67,6 +67,28 @@ class TestRegistry:
         assert registry.get("fake").name == "Fake (test)"
         assert registry.get("nope") is None
 
+    def test_accepts_prebuilt_instances(self):
+        # app.py hands the CompositeDriver in as an INSTANCE (it needs ctor
+        # args); the registry registers it without RE-constructing, so the
+        # exact object handed in is the one served from get().
+        instance = FakeDriver()
+        registry = DriverRegistry((instance, FakeDriver))
+        drivers = registry.load()
+        assert [d.driver_id for d in drivers] == ["fake"]  # same id → one slot
+        assert registry.get("fake") is instance
+        assert any("duplicate driver_id" in e for e in registry.last_errors)
+
+    def test_broken_instance_isolated(self):
+        class BrokenInstance(FakeDriver):
+            driver_id = "brokeni"
+
+            def probe(self) -> "ProbeResult":  # probe raise = filtered out
+                raise RuntimeError("boom")
+
+        registry = DriverRegistry((BrokenInstance(),))
+        registry.load()
+        assert registry.available() == []
+
 
 class TestFakeDriver:
     def test_frames_recorded(self):

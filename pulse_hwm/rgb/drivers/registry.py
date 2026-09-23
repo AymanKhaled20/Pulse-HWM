@@ -73,18 +73,31 @@ class DriverRegistry:
         self._drivers: dict[str, RgbDriver] = {}
 
     def load(self) -> list[RgbDriver]:
-        """Instantiate all classes; skip + record failures. Idempotent."""
+        """Instantiate all entries; skip + record failures. Idempotent.
+
+        Entries may be driver CLASSES (the usual path — the registry
+        constructs them) or pre-built INSTANCES, which is how app.py hands
+        in the CompositeDriver because it needs constructor arguments
+        (the OpenRGB port + the native AULA child wired to each other).
+        """
         self._drivers.clear()
         errors: list[str] = []
-        for cls in self._classes:
+        for entry in self._classes:
+            is_class = isinstance(entry, type)
+            label = entry.__name__ if is_class else type(entry).__name__
             try:
-                driver = cls()
+                driver = entry() if is_class else entry
                 if not driver.driver_id:
-                    errors.append(f"{cls.__name__}: empty driver_id")
+                    errors.append(f"{label}: empty driver_id")
+                    continue
+                if driver.driver_id in self._drivers:
+                    # first registration wins: a later entry shadowing an
+                    # already-built instance would silently swap transports
+                    errors.append(f"{label}: duplicate driver_id")
                     continue
                 self._drivers[driver.driver_id] = driver
             except Exception as exc:  # one bad import/ctor must not stop all
-                errors.append(f"{cls.__name__}: {exc}")
+                errors.append(f"{label}: {exc}")
         self.last_errors = errors
         return self.available()
 
