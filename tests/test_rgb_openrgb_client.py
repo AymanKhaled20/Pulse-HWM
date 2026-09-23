@@ -119,8 +119,52 @@ class FakeSdkServer(threading.Thread):
         return bytes(chunks)
 
 
+class DetectionRacingServer(FakeSdkServer):
+    """First controller-count request returns 0 (detection running), the
+    second returns 1 — the client must poll instead of giving up."""
+
+    count_requests = 0
+
+    def _serve_one(self, conn: socket.socket, head: bytes) -> None:
+        _, dev, pkt_id, size = struct.unpack("<4sIII", head)
+        self._recv_exact(conn, size) if size else None  # drain the payload
+        if pkt_id == P.PKT_REQUEST_PROTOCOL_VERSION:
+            conn.sendall(_frame(dev, 40, struct.pack("<I", 6)))
+        elif pkt_id == P.PKT_REQUEST_CONTROLLER_COUNT:
+            DetectionRacingServer.count_requests += 1
+            count = 0 if DetectionRacingServer.count_requests == 1 else 1
+            conn.sendall(_frame(dev, 0, struct.pack("<I", count)))
+        elif pkt_id == P.PKT_REQUEST_CONTROLLER_DATA:
+            conn.sendall(_frame(dev, 1, _fake_controller_payload()))
+
+    def run(self) -> None:
+        try:
+            conn, _ = self._srv.accept()
+        except OSError:
+            return
+        while self._running:
+            head = self._recv_exact(conn, 16)
+            if head is None:
+                break
+            self._serve_one(conn, head)
+        conn.close()
+
+
 def _make_client(port: int) -> OrgbClient:
     return OrgbClient(port=port, timeout=2.0)
+
+
+def test_client_polls_until_devices_appear() -> None:
+    server = DetectionRacingServer()
+    server.start()
+    try:
+        client = _make_client(server.port)
+        client.connect()
+        assert len(client.controllers) == 1
+        assert server.count_requests >= 2
+    finally:
+        client.close()
+        server.stop()
 
 
 def test_client_handshake_and_readout() -> None:

@@ -122,6 +122,31 @@ def test_composite_open_probe_fallback_when_not_probed() -> None:
     assert child.opened == 1
 
 
+def test_composite_routes_by_device_id_not_driver_prefix() -> None:
+    # the AULA driver is driver_id "aula_f75" but names its device "aula:0"
+    # (and OpenRGB uses "openrgb:N") — routing must work for both shapes.
+    class AliasChild(_ChildDriver):
+        driver_id = "alias_f75"
+        name = "Alias"
+
+        def devices(self):  # device id does NOT start with the driver id
+            return [
+                RgbDevice(
+                    device_id="alias:0", name="v", driver_id=self.driver_id, leds=1
+                )
+            ]
+
+    child = AliasChild()
+    composite = CompositeDriver([child])
+    composite.probe()
+    composite.open()
+    devices = composite.devices()
+    assert [d.device_id for d in devices] == ["alias:0"]
+    assert composite.set_frame("alias:0", [RgbColor(4, 5, 6)]) is True
+    assert child.frames[-1][0] == "alias:0"
+    composite.close()
+
+
 def test_composite_skips_foreign_device_ids() -> None:
     child = _ChildDriver()
     composite = CompositeDriver([child])

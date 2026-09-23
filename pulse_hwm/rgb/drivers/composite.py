@@ -31,6 +31,12 @@ class CompositeDriver(RgbDriver):
     def __init__(self, children: list[RgbDriver]) -> None:
         self._children: list[RgbDriver] = list(children)
         self._active: list[RgbDriver] = []
+        # device_id → child. Populated at every devices() call; set_frame
+        # consults it FIRST and only then falls back to the driver_id
+        # prefix. Children may name devices differently from their
+        # driver_id (the AULA driver is "aula_f75" but its device id is
+        # "aula:0"), so prefix matching alone is NOT sufficient.
+        self._route: dict[str, RgbDriver] = {}
 
     def probe(self) -> ProbeResult:
         self._active = []
@@ -62,12 +68,23 @@ class CompositeDriver(RgbDriver):
 
     def devices(self) -> list[RgbDevice]:
         result: list[RgbDevice] = []
+        self._route = {}
         for child in self._active:
-            result.extend(child.devices())
+            child_devices = child.devices()
+            for device in child_devices:
+                self._route[device.device_id] = child
+            result.extend(child_devices)
         return result
 
     def set_frame(self, device_id: str, colors: list[RgbColor]) -> bool:
-        for child in self._active:
-            if device_id.startswith(child.driver_id + ":"):
-                return child.set_frame(device_id, colors)
-        return False
+        child = self._route.get(device_id)
+        if child is None and device_id != "":
+            # unknown id: maybe the child enumerated after we last build the
+            # route — retry against the driver_id prefix (openrgb:N etc.)
+            for candidate in self._active:
+                if device_id.startswith(candidate.driver_id + ":"):
+                    child = candidate
+                    break
+        if child is None:
+            return False
+        return child.set_frame(device_id, colors)

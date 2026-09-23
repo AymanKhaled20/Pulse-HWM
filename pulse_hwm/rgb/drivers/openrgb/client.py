@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import socket
 import struct
+import time
 
 from pulse_hwm.rgb.drivers.openrgb import protocol as P
 
@@ -97,7 +98,19 @@ class OrgbClient:
         return list(range(count))
 
     def _refresh_controllers(self) -> None:
-        ids = self._request_count()
+        # The server answers immediately after its port opens, but HARDWARE
+        # DETECTION runs after that (many seconds on a first run). A count
+        # request fired too early legitimately returns 0 — poll until the
+        # server reports at least one controller or the deadline expires
+        # (a machine with genuinely no RGB hardware exits the loop into a
+        # clean empty list rather than hanging the rgb thread forever).
+        deadline = time.monotonic() + 90.0
+        ids: list[int] = []
+        while True:
+            ids = self._request_count()
+            if ids or time.monotonic() > deadline:
+                break
+            time.sleep(1.0)
         found: list[P.OrgbController] = []
         for idx in ids:
             payload = struct.pack("<I", self._proto)
