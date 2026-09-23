@@ -98,17 +98,28 @@ class OrgbClient:
         return list(range(count))
 
     def _refresh_controllers(self) -> None:
-        # The server answers immediately after its port opens, but HARDWARE
-        # DETECTION runs after that (many seconds on a first run). A count
-        # request fired too early legitimately returns 0 — poll until the
-        # server reports at least one controller or the deadline expires
-        # (a machine with genuinely no RGB hardware exits the loop into a
-        # clean empty list rather than hanging the rgb thread forever).
+        # The server starts answering before hardware detection finishes.
+        # A count that merely changes over time means detection is still
+        # running — devices added mid-enumeration get lost (seen in the
+        # wild: only 2 of 6 controllers). Wait for a count that is both
+        # nonzero and unchanged across three consecutive polls (with a
+        # minimum lock-in window), capped by a global deadline.
         deadline = time.monotonic() + 90.0
         ids: list[int] = []
+        prev: list[int] | None = None
+        stable_polls = 0
         while True:
             ids = self._request_count()
-            if ids or time.monotonic() > deadline:
+            chosen = ids if ids else None
+            if chosen == prev:
+                stable_polls += 1
+            else:
+                stable_polls = 0
+            prev = chosen
+            elapsed = 90.0 - (deadline - time.monotonic())
+            if elapsed >= 15.0 and chosen is not None and stable_polls >= 3:
+                break
+            if time.monotonic() > deadline:
                 break
             time.sleep(1.0)
         found: list[P.OrgbController] = []

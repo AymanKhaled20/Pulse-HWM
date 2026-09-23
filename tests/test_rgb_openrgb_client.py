@@ -10,6 +10,7 @@ from __future__ import annotations
 import socket
 import struct
 import threading
+import time
 
 import pytest
 
@@ -154,6 +155,24 @@ def _make_client(port: int) -> OrgbClient:
     return OrgbClient(port=port, timeout=2.0)
 
 
+class StableCountServer(DetectionRacingServer):
+    """Grows the controller count 1 → 2 → 3 → 3 so the client must observe
+    a stable value (not merely 'nonzero') before enumerating."""
+
+    def _serve_one(self, conn: socket.socket, head: bytes) -> None:
+        _, dev, pkt_id, _size = struct.unpack("<4sIII", head)
+        self._recv_exact(conn, _size) if _size else None
+        if pkt_id == P.PKT_REQUEST_PROTOCOL_VERSION:
+            conn.sendall(_frame(dev, 40, struct.pack("<I", 6)))
+        elif pkt_id == P.PKT_REQUEST_CONTROLLER_COUNT:
+            DetectionRacingServer.count_requests += 1
+            n = min(3, DetectionRacingServer.count_requests)
+            conn.sendall(_frame(dev, 0, struct.pack("<I", n)))
+            time.sleep(0.05)  # keep totals inside the 30s test budget
+        elif pkt_id == P.PKT_REQUEST_CONTROLLER_DATA:
+            conn.sendall(_frame(dev, 1, _fake_controller_payload()))
+
+
 def test_client_polls_until_devices_appear() -> None:
     server = DetectionRacingServer()
     server.start()
@@ -162,6 +181,20 @@ def test_client_polls_until_devices_appear() -> None:
         client.connect()
         assert len(client.controllers) == 1
         assert server.count_requests >= 2
+    finally:
+        client.close()
+        server.stop()
+
+
+def test_client_waits_for_stable_count() -> None:
+    server = StableCountServer()
+    server.start()
+    try:
+        client = _make_client(server.port)
+        client.connect()
+        # the count settled at 3 (not 1 or 2, the too-early values)
+        assert len(client.controllers) == 3
+        assert DetectionRacingServer.count_requests >= 18  # 3 polls stable + window
     finally:
         client.close()
         server.stop()
