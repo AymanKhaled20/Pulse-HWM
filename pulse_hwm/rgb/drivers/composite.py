@@ -37,6 +37,7 @@ class CompositeDriver(RgbDriver):
         # driver_id (the AULA driver is "aula_f75" but its device id is
         # "aula:0"), so prefix matching alone is NOT sufficient.
         self._route: dict[str, RgbDriver] = {}
+        self.last_error: str = ""
 
     def probe(self) -> ProbeResult:
         self._active = []
@@ -77,6 +78,7 @@ class CompositeDriver(RgbDriver):
         return result
 
     def set_frame(self, device_id: str, colors: list[RgbColor]) -> bool:
+        self.last_error = ""
         child = self._route.get(device_id)
         if child is None and device_id != "":
             # unknown id: maybe the child enumerated after we last build the
@@ -86,5 +88,10 @@ class CompositeDriver(RgbDriver):
                     child = candidate
                     break
         if child is None:
+            self.last_error = "no child owns device"
             return False
-        return child.set_frame(device_id, colors)
+        accepted = child.set_frame(device_id, colors)
+        if not accepted:
+            detail = str(getattr(child, "last_error", "") or "frame rejected")
+            self.last_error = f"{child.name}: {detail}"
+        return accepted

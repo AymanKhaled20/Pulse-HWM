@@ -17,12 +17,12 @@ future work (and reviewers) never have to reconstruct context from diffs.
 
 | Driver | Backend | Per-LED | Verify |
 |---|---|---|---|
-| `aula_f75` | hidapi 0x06 direct (feature reports) | YES (126) | ✅ owner-verified |
+| `openrgb` | OpenRGB SDK (including AULA F75) | YES (device-reported) | runtime-verified |
 
 **2026-09-22 pivot — vendor-SDK + raw-HID drivers removed.** The
 `logitech`/`razer_chroma`/`corsair_icue`/`msi_mystic`/`asus_aura` SDK drivers
 (bloatware requirement) and the vendor-free raw-HID first-pass experiment are
-gone. Non-AULA RGB is now delegated to a **headless OpenRGB fork** run as a
+gone. All RGB, including the AULA keyboard, is now delegated to a **headless OpenRGB fork** run as a
 separate process and driven over its documented SDK protocol on loopback —
 see "OpenRGB backend" below. Reason: OpenRGB already reverse-engineered the
 per-device protocols (MSI Mystic Light HID 0x7D41, Razer, Corsair, Logitech
@@ -100,12 +100,13 @@ enumerated the owner's machine via OUR protocol-5 client:
 | MSI MAG B660 TOMAHAWK WIFI DDR4 (MS-7D41) | 122 LEDs, zones JRGB1/JRGB2/JRAINBOW1(60)/JRAINBOW2(60), **HID transport — no PawnIO/admin** |
 | Razer Kraken V3 X (1532:0537 = headset!) | 1 whole-device zone |
 | Logitech G203 Lightsync | 3-LED mouse zone |
-| AULA F75 (Sinowealth) | 90-LED keyboard matrix — visible, but stays EXCLUDED while the native F75 driver is healthy (`exclude_vids = {0x258A}`) |
+| AULA F75 (Sinowealth) | 90-LED keyboard matrix — controlled through the OpenRGB SDK after a startup rescan |
 
 Implementation shipped on `feature/rgb-openrgb-backend`:
 `rgb/drivers/openrgb/{protocol,client,server,driver}.py` + `CompositeDriver`
-routing `openrgb:<n>` frames to OpenRGB and `aula_f75:0` frames to the native
-driver behind the single-driver engine contract. Settings:
+routing `openrgb:<n>` frames to OpenRGB behind the single-driver engine contract.
+The client rescans once at startup so late keyboard detection is included.
+Settings:
 `rgb_openrgb_enabled` (default on), `rgb_openrgb_port` (6742),
 `rgb_openrgb_path` (override). Backend binaries bundled in
 `pulse_hwm/assets/openrgb/` (+ OpenRGB-LICENSE.txt, SOURCE.txt); CI smoke

@@ -82,7 +82,9 @@ def test_decode_header_rejects_bad_magic() -> None:
 def test_update_leds_encoding() -> None:
     payload = P.encode_update_leds([(255, 0, 0), (0, 255, 0)])
     data_size = struct.unpack_from("<I", payload, 0)[0]
-    assert data_size == len(payload) - 4
+    # OpenRGB validates this against the SDK packet payload size, so it
+    # includes the four-byte size field itself.
+    assert data_size == len(payload)
     count = struct.unpack_from("<H", payload, 4)[0]
     assert count == 2
     assert struct.unpack_from("<I", payload, 6)[0] == 0xFF  # red

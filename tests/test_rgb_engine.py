@@ -8,6 +8,7 @@ import pytest
 from pulse_hwm.rgb.drivers.registry import FakeDriver
 from pulse_hwm.rgb.engine import DeviceAssignment, RgbEngine
 from pulse_hwm.rgb.model import RgbColor
+from pulse_hwm.rgb.worker import RgbWorker
 
 
 @pytest.fixture()
@@ -119,3 +120,20 @@ class TestTimeStepping:
         assert len(frames) == 2
         # not asserting exact values — monotonic stepping can land on
         # similar phases; the point is both frames rendered without error
+
+
+def test_worker_start_signal_starts_render_timer():
+    """The app starts the worker through this queued signal after QThread.start.
+
+    Without this wiring, APPLY NOW updates assignments but no tick ever sends
+    a frame to a real device.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    _app = QApplication.instance() or QApplication([])
+    worker = RgbWorker()
+    try:
+        worker.start_requested.emit(30)
+        assert worker._timer.isActive()
+    finally:
+        worker.stop()

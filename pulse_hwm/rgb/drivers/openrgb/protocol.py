@@ -36,6 +36,7 @@ PKT_REQUEST_PROTOCOL_VERSION = 40
 PKT_SET_CLIENT_NAME = 50
 PKT_DEVICE_LIST_UPDATED = 100
 PKT_REQUEST_RESCAN_DEVICES = 140
+PKT_RGB_RESIZEZONE = 1000
 PKT_RGB_UPDATELEDS = 1050
 PKT_RGB_SETCUSTOMMODE = 1100
 
@@ -234,14 +235,18 @@ def parse_controller_data(payload: bytes) -> OrgbController:
 
 
 def encode_update_leds(colors: list[tuple[int, int, int]]) -> bytes:
-    """RGBCONTROLLER_UPDATELEDS payload: data_size, count, word per LED.
+    """Encode an ``RGBCONTROLLER_UPDATELEDS`` payload.
 
     Each color is one 32-bit LE word: R | G<<8 | B<<16 (alpha is unused).
     The count must cover the WHOLE device — OpenRGB's custom mode applies
     the array positionally from LED 0.
+
+    OpenRGB's first field is the size of the complete color-description
+    payload, including that four-byte size field itself.  Omitting those four
+    bytes makes the server reject every update as an invalid-size packet.
     """
     body = struct.pack("<H", len(colors))
     for r, g, b in colors:
         word = (r & 0xFF) | ((g & 0xFF) << 8) | ((b & 0xFF) << 16)
         body += struct.pack("<I", word)
-    return struct.pack("<I", len(body)) + body
+    return struct.pack("<I", len(body) + 4) + body

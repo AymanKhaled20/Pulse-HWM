@@ -11,6 +11,7 @@ from pulse_hwm.rgb.drivers.base import ProbeResult, RgbDriver
 from pulse_hwm.rgb.drivers.composite import CompositeDriver
 from pulse_hwm.rgb.drivers.openrgb.driver import (
     OpenRgbDriver,
+    _is_resizable_argb_zone,
     frame_from_colors,
     vid_from_location,
 )
@@ -26,6 +27,12 @@ def test_vid_from_location_parses_hex() -> None:
 def test_vid_from_location_handles_non_hide() -> None:
     assert vid_from_location("SMBus: 0x0B20") is None
     assert vid_from_location("") is None
+
+
+def test_dynamic_argb_zone_names_are_resizable() -> None:
+    assert _is_resizable_argb_zone("JRAINBOW1") is True
+    assert _is_resizable_argb_zone("JARGB2") is True
+    assert _is_resizable_argb_zone("Mouse Zone") is False
 
 
 def test_frame_from_colors_pads_and_truncates() -> None:

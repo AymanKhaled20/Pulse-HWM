@@ -151,7 +151,6 @@ def run() -> int:
     from PySide6.QtCore import QObject, QThread
     from PySide6.QtCore import Signal as _Signal
 
-    from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
     from pulse_hwm.rgb.drivers.composite import CompositeDriver
     from pulse_hwm.rgb.drivers.openrgb.driver import OpenRgbDriver
     from pulse_hwm.rgb.drivers.registry import DriverRegistry
@@ -183,24 +182,17 @@ def run() -> int:
 
     rgb_values = app_settings.load(db)
 
-    # Per-transport routing while OpenRGB owns everything else: when the
-    # native AULA driver is functional, the OpenRGB backend must NOT
-    # enumerate the same keyboard (Sinowealth VID 258A) — otherwise both
-    # transports fight over every frame. rgb_openrgb_enabled=False keeps
-    # OpenRGB completely out (Aula-only fallback for owners who want it).
-    _aula_probe = AulaDriver().probe()
+    # OpenRGB owns every supported RGB device, including the AULA keyboard.
+    # Keeping one transport in charge avoids the native HID driver and
+    # OpenRGB's Sinowealth keepalive competing for the same keyboard.
     _openrgb_spec = OpenRgbDriver(port=rgb_values.rgb_openrgb_port)
     if not rgb_values.rgb_openrgb_enabled:
-        _openrgb_children = [AulaDriver()]
+        _openrgb_children = []
     else:
-        if _aula_probe.available:
-            _openrgb_spec.exclude_vids = frozenset({0x258A, 0x1532})
-        _openrgb_children = [_openrgb_spec, AulaDriver()]
+        _openrgb_children = [_openrgb_spec]
 
     rgb_registry = DriverRegistry(
-        # OpenRGB backend + native AULA behind ONE composite: the engine/
-        # worker keep their single-driver contract, frames are routed by the
-        # device_id prefix each child caught ("openrgb:N" vs "aula_f75:0").
+        # OpenRGB remains the single transport behind the engine/worker.
         (CompositeDriver(_openrgb_children),)
     )
     rgb_registry.load()
@@ -382,6 +374,11 @@ def run() -> int:
 
     _rgb_attached = _rgb_set_driver_connected()
     rgb_thread.start()
+    # Start the timer through a signal after the thread has started. Calling
+    # QTimer.start() directly from the UI thread would leave the render loop
+    # stopped (or produce a cross-thread Qt warning), which makes APPLY NOW
+    # update assignments without ever sending a hardware frame.
+    rgb_worker.start_requested.emit(rgb_values.rgb_engine_fps)
 
     def shutdown() -> None:
         # queued detach: engine closes the driver on the rgb thread — for the

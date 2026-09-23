@@ -68,6 +68,7 @@ class FakeSdkServer(threading.Thread):
     def __init__(self) -> None:
         super().__init__(daemon=True)
         self.updates: list[tuple[int, bytes]] = []  # (dev_id, UPDATELEDS payload)
+        self.resize_calls: list[tuple[int, int, int]] = []
         self.custom_mode_calls: list[int] = []
         self._srv = socket.socket()
         self._srv.bind(("127.0.0.1", 0))
@@ -96,6 +97,8 @@ class FakeSdkServer(threading.Thread):
                 conn.sendall(_frame(dev, 1, _fake_controller_payload()))
             elif pkt_id == P.PKT_RGB_UPDATELEDS:
                 self.updates.append((dev, payload))
+            elif pkt_id == P.PKT_RGB_RESIZEZONE:
+                self.resize_calls.append((dev, *struct.unpack("<II", payload)))
             elif pkt_id == P.PKT_RGB_SETCUSTOMMODE:
                 self.custom_mode_calls.append(dev)
         conn.close()
@@ -239,6 +242,23 @@ def test_client_update_frame_round_trip() -> None:
         count = struct.unpack_from("<H", payload, 4)[0]
         assert count == 3
         assert struct.unpack_from("<I", payload, 6)[0] == (10 | 20 << 8 | 30 << 16)
+    finally:
+        client.close()
+        server.stop()
+
+
+def test_client_resize_zone_round_trip() -> None:
+    server = FakeSdkServer()
+    server.start()
+    client = _make_client(server.port)
+    try:
+        client.connect()
+        client.resize_zone(0, 2, 60)
+        for _ in range(50):
+            if server.resize_calls:
+                break
+            threading.Event().wait(0.02)
+        assert server.resize_calls == [(0, 2, 60)]
     finally:
         client.close()
         server.stop()

@@ -50,6 +50,7 @@ class RgbWorker(QObject):
     devices_reported = Signal(str, str, list)  # (driver_id, name, devices) — tab leg
     rendered = Signal(int)  # frames accepted this tick
     driver_error = Signal(str)  # human-readable failure for the UI strip
+    start_requested = Signal(int)  # queued render-loop startup
     attach_requested = Signal(object)  # RgbDriver handed off to this thread
     brightness_requested = Signal(int)  # queued like every other control call
     sensors_requested = Signal(dict)  # hardware snapshot push, queued
@@ -63,9 +64,11 @@ class RgbWorker(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_tick)
         self._fps = 30
+        self._last_success_log = 0.0
         # queued onto OUR thread: driver probe/open I/O never runs on the
         # caller's thread during a mode/device switch
         self.attach_requested.connect(self.attach)
+        self.start_requested.connect(self.start)
         self.brightness_requested.connect(self.set_brightness)
         self.sensors_requested.connect(self.engine.set_sensors)
         self.detach_requested.connect(self.detach)
@@ -136,6 +139,11 @@ class RgbWorker(QObject):
             self.driver_error.emit(f"render failed: {exc}")
             return
         self.rendered.emit(applied)
+        if applied:
+            now = time.monotonic()
+            if now - self._last_success_log >= 1.0:
+                _rgb_dbg(f"tick applied={applied}")
+                self._last_success_log = now
         if self.engine.last_error:
             _rgb_dbg(f"tick error: {self.engine.last_error}")
             self.driver_error.emit(self.engine.last_error)

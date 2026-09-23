@@ -133,8 +133,14 @@ class RgbEngine:
                 continue  # unknown effect id (post-downgrade) → skip device
             try:
                 frame = self._render_frame(effect, device, assignment, now, dt)
-                if self._driver.set_frame(device_id, frame):
+                accepted = self._driver.set_frame(device_id, frame)
+                if accepted:
                     applied += 1
+                else:
+                    detail = str(
+                        getattr(self._driver, "last_error", "") or "frame rejected"
+                    )
+                    self.last_error = f"{device_id}: {detail}"
             except Exception as exc:
                 # a misbehaving device/effect must never stop the whole tick
                 self.last_error = f"{device_id}: {exc}"

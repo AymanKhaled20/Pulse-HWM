@@ -55,6 +55,7 @@ class OpenRgbDriver(RgbDriver):
     name = "OpenRGB backend"
     version = "1"
     requires_app = ""  # bundled in our installer; nothing for the user to install
+    DEFAULT_RESIZABLE_ZONE_LEDS = 60
 
     def __init__(self, port: int = P.DEFAULT_PORT) -> None:
         self._port = port
@@ -89,8 +90,30 @@ class OpenRgbDriver(RgbDriver):
         self._server = server
         client = OrgbClient(port=self._port)
         client.connect()
+        # The headless server can publish its controller list before the
+        # Sinowealth/AULA detector finishes. A rescan makes the SDK list match
+        # the standalone OpenRGB device list before we build Pulse devices.
+        client.rescan()
+        client.refresh()
+        resized = False
         for controller in client.controllers:
-            client.set_custom_mode(controller.index)
+            for zone_index, zone in enumerate(controller.zones):
+                if zone.leds_count == 0 and _is_resizable_argb_zone(zone.name):
+                    client.resize_zone(
+                        controller.index,
+                        zone_index,
+                        self.DEFAULT_RESIZABLE_ZONE_LEDS,
+                    )
+                    resized = True
+        if resized:
+            # The resize changes the server-side LED list; refresh the same
+            # indexes so the engine sends the full addressable chain.
+            client.refresh_current_controller_data()
+        for controller in client.controllers:
+            # The native AULA driver owns its keyboard. OpenRGB can enumerate
+            # it, but must not switch it into a competing mode.
+            if vid_from_location(controller.location) not in self.exclude_vids:
+                client.set_custom_mode(controller.index)
         self._client = client
 
     def close(self) -> None:
@@ -173,3 +196,9 @@ def _find_bundled() -> str:
     from pulse_hwm.rgb.drivers.openrgb.server import _find_bundled
 
     return _find_bundled()
+
+
+def _is_resizable_argb_zone(name: str) -> bool:
+    """Identify addressable-header zones reported at size zero."""
+    normalized = str(name).strip().upper()
+    return normalized.startswith(("JRAINBOW", "JARGB", "ARGB"))

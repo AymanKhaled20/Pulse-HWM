@@ -79,6 +79,16 @@ class OrgbClient:
         self._ensure_open()
         self._refresh_controllers()
 
+    def refresh_current_controller_data(self) -> None:
+        """Re-read known controller records without another detection wait.
+
+        OpenRGB reports dynamic ARGB zones at zero LEDs until an SDK client
+        chooses their size. After ResizeZone the existing indexes remain
+        valid, so a second stability window is unnecessary.
+        """
+        self._ensure_open()
+        self._read_controllers([c.index for c in self._controllers])
+
     def rescan(self) -> None:
         """Ask the server to rescan hardware (id 140 → controller ids 0..n-1
         may become invalid; callers must call refresh() next)."""
@@ -122,6 +132,10 @@ class OrgbClient:
             if time.monotonic() > deadline:
                 break
             time.sleep(1.0)
+        self._read_controllers(ids)
+
+    def _read_controllers(self, ids: list[int]) -> None:
+        """Read controller data for the supplied stable SDK indexes."""
         found: list[P.OrgbController] = []
         for idx in ids:
             payload = struct.pack("<I", self._proto)
@@ -150,6 +164,12 @@ class OrgbClient:
         Fire-and-forget (no reply in this protocol version)."""
         self._ensure_open()
         self._send_dev(index, P.PKT_RGB_SETCUSTOMMODE, b"")
+
+    def resize_zone(self, index: int, zone_index: int, led_count: int) -> None:
+        """Set the size of a dynamic zone such as an MSI JRAINBOW strip."""
+        self._ensure_open()
+        payload = struct.pack("<II", int(zone_index), max(0, int(led_count)))
+        self._send_dev(index, P.PKT_RGB_RESIZEZONE, payload)
 
     def update_leds(self, index: int, colors: list[tuple[int, int, int]]) -> None:
         """Push one full frame. colors length MUST equal device led_count.
