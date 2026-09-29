@@ -72,7 +72,7 @@ backend of openrgb and build our own ui and ux." Research + decisions locked
 2. On Gate B pass: owner decides merge to main + tag v1.4.0 push (CI builds
    the installer; GH release body = CHANGELOG [1.4.0]).
 3. Untracked leftovers in the working tree are agent tooling (.agents/,
-  .claude/, .opencode/, .wrangler/, node_modules, .strixignore) — not staged
+  .claude/ except settings.json, .wrangler/, .strixignore) — not staged
   on any branch; .strixignore stays for the parked strix session.
 4. Parked: Strix scan (once an LLM credit exists — see strix section below).
 
@@ -203,7 +203,7 @@ backend of openrgb and build our own ui and ux." Research + decisions locked
 1. Owner smokes `dist\PulseHWM\PulseHWM.exe` (boots to v1.3.0, Settings
    rail, RGB tab override colors the F75).
 2. On approval: merge `release/v1.3.0` → `main` (fast-forward preferred,
-   PR optional per AGENTS.md), tag `v1.3.0`, push; CI builds
+   PR optional per CLAUDE.md), tag `v1.3.0`, push; CI builds
    `PulseHWM-Setup-1.3.0.exe`; create GitHub release whose body = the
    CHANGELOG `[1.3.0]` section; worker notifies registered installs.
 3. THEN the parked vendor-free RGB driver phase (owner-approved direction),
@@ -230,7 +230,7 @@ backend of openrgb and build our own ui and ux." Research + decisions locked
 - pre-commit stash/restore conflicts leave unstaged churn — if a hook "fails
   with conflict", stages are clean; re-run `git add` + `pre-commit run`.
 - PowerShell: no heredocs (`<<`) and no bash pipelines; use
-  temp .py files under `%TEMP%\opencode\` or `Select-String`.
+  temp .py files in a scratch dir outside the repo or `Select-String`.
 - exe lock: `Get-Process PulseHWM` before `pyinstaller pulse_hwm.spec
   --noconfirm`; the launcher is at `dist\PulseHWM\PulseHWM.exe` (onedir).
 - `.env` is gitignored and must never be staged; secret scanners fail the

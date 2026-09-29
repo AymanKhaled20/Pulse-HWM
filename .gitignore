@@ -38,11 +38,13 @@ data/
 Thumbs.db
 .DS_Store
 
-# ── Agent tooling / IDE state (reproducible via skills-lock.json,
-#    package.json; skill content is cloned into .claude/.agents) ──
-.claude/
+# ── Claude Code / agent tooling ─────────────────────────
+# .claude/settings.json (shared project permissions) is tracked; everything
+# else in .claude/ is machine-local. Skills are cloned into .agents/skills
+# (linked from .claude/skills) and are reproducible from skills-lock.json.
+.claude/*
+!.claude/settings.json
 .agents/
-.opencode/
 node_modules/
 .wrangler/
 

@@ -1,4 +1,4 @@
-# AGENTS.md — Pulse-HWM
+# CLAUDE.md — Pulse-HWM
 
 ## What this is
 A native Windows desktop app (Python 3.13 + PySide6/Qt6) that monitors the
@@ -22,13 +22,21 @@ users who want a retro, pixel-art "hardware monitor" dashboard. Not a website.
 pulse_hwm/                  # application package
   __init__.py               # APP_NAME, __version__
   __main__.py               # entry point -> app.run()
-  app.py                    # QApplication bootstrap, thread wiring, --selftest
+  app.py                    # composition root: builds services + controllers, --selftest
   config.py                 # .env loader, paths, EnvConfig/Settings dataclasses
-  app_settings.py           # user settings persisted in DB (load/save/clamp)
-  db.py                     # thread-safe SQLite wrapper, schema, retention
+  app_settings.py           # user settings persisted in DB (cached load/save/clamp)
+  db.py                     # thread-safe SQLite wrapper (ALL reads+writes locked)
+  logging_setup.py          # pulse.log / error.log handlers + crash hooks
+  lifecycle.py              # ThreadGroup: start/stop the background QThreads
+  single_instance.py        # one running instance; pulsehwm:// login-link handoff
   util.py                   # formatting helpers (bytes/rate/uptime/cpu name)
   processes.py              # process listing/classification/termination (no Qt)
   scheduler.py              # ONE jittered/back-off ticker for background jobs
+  controllers/              # UI-thread QObjects gluing services to the UI
+    rgb_controller.py       # builds the RGB stack, routes sensors/alerts/devices
+    sync_controller.py      # login callbacks, session resume, applying sync pulls
+    update_controller.py    # update check results -> banner/toast; install flow
+    alert_relay.py          # moves site up/down transitions onto the UI thread
   collectors/               # telemetry, each runs on its own QThread
     hardware.py             # psutil + GPU/temps polling, HardwareThreadBridge
     websites.py             # HTTP checks + SSL expiry, WebsiteThreadBridge
@@ -36,6 +44,7 @@ pulse_hwm/                  # application package
     lhm.py                  # in-process LibreHardwareMonitorLib temp bridge
   cloud/                    # cloud backend (formerly auth/ — Worker, not Supabase)
     rest.py                 # CloudClient over the Worker (auth + sync + updates)
+    oauth.py / pkce.py      # browser sign-in flow (PKCE verifier parked in Credential Manager)
     session.py / token_store.py  # sessions; refresh tokens in Credential Manager
     sync.py / sync_engine.py    # LWW merge plan + executor
     config.py               # publishable worker URL/key (non-secrets)
@@ -45,6 +54,15 @@ pulse_hwm/                  # application package
       checker.py / installer.py # Qt bridges: check + download/verify/spawn
   alerts/
     notifier.py             # tray/toast, synthesised sound, Discord/Slack webhooks
+  rgb/                      # RGB lighting (see docs/RGB.md)
+    model.py / layout.py    # Qt-free devices, colors, LED layouts
+    effects/                # built-in + declarative (user JSON) effects, catalog
+    manager.py              # PURE mode planner: off / effects / reactive / override
+    engine.py               # renders frames per device (no Qt)
+    worker.py               # engine on the "rgb-engine" QThread (all device I/O)
+    sensors.py              # hardware snapshot -> reactive-effect sensor values
+    assignment_store.py     # per-device effect assignments (JSON blob CRUD)
+    drivers/                # RgbDriver contract, registry, openrgb/ (the ONLY transport)
   ui/
     main_window.py          # window, tabs, tray, close-to-tray behavior
     dashboard_tab.py        # live gauges/charts + top-processes panel
@@ -52,6 +70,10 @@ pulse_hwm/                  # application package
     sites_tab.py            # website list + status
     history_tab.py          # historical charts + event log
     settings_tab.py         # settings form (persists into DB)
+    account_tab.py          # sign-in, sync status, update banner
+    rgb_tab.py              # RGB mode, override, per-device assignments
+    themes_tab.py           # color/font theme picker
+    theme_manager.py / palettes.py  # live theme switching + palette definitions
     theme.py / theme.qss    # colors, fonts, pixel icon drawing, app stylesheet
     widgets/                # reusable pixel widgets (charts, gauges, panels, scanline)
   assets/                   # fonts, icons, vendored lhm_runtime
@@ -77,13 +99,20 @@ docs/                       # ACCOUNTS.md (cloud), UPDATES.md (update runbook)
   `*ThreadBridge.attach(...)` classes.
 - Heavy/blocking work runs on worker `QThread`s and reports back with Qt
   `Signal`s. Never do hardware/network I/O on the UI thread.
+- Connect cross-thread signals to a **QObject's `@Slot` method**, never to a
+  plain function/lambda or a non-QObject's method: Qt runs those on the
+  EMITTING thread, which is how worker threads ended up touching widgets.
+  Put UI-side glue in a controller (`controllers/`).
+- Logging: `log = logging.getLogger("pulse.<area>")`; never `print()` or
+  hand-written log files. Level via `PULSE_LOG_LEVEL` in `.env`.
 - Optional hardware probes must never raise: catch broadly and return
   `None`/`N/A` so the UI degrades gracefully instead of crashing.
 - All database access goes through the locked `Database` wrapper (collectors
   run off-thread; SQLite is opened with `check_same_thread=False` + WAL).
-- Errors: UI shows placeholder/muted text when a source is unavailable. A
-  global `sys.excepthook` logs tracebacks to
-  `%LOCALAPPDATA%\PulseHWM\error.log`. Never log or print secret values.
+- Errors: UI shows placeholder/muted text when a source is unavailable.
+  `logging_setup.py` installs crash hooks that log tracebacks (main thread,
+  Qt slots, Python threads) to `%LOCALAPPDATA%\PulseHWM\error.log`; all
+  log lines go to `pulse.log` there. Never log or print secret values.
 - Tests: pytest. Prefer pure functions and dependency injection
   (`httpx.MockTransport` for websites, fake process factories for tasks).
   Tests must never hit the network or terminate real processes, and must stay
@@ -114,7 +143,7 @@ docs/                       # ACCOUNTS.md (cloud), UPDATES.md (update runbook)
 - Only commit when the user explicitly asks. Never stage `.env`.
 - End-of-feature workflow: ALWAYS rebuild the exe with
   `.venv\Scripts\pyinstaller.exe pulse_hwm.spec --noconfirm` after finishing a
-  feature/update (the user tests the `dist\PulseHWM.exe` build as their prod
+  feature/update (the user tests the `dist\PulseHWM\PulseHWM.exe` build as their prod
   version), but ASK before committing/pushing/merging to main. Note: a running
   (often admin-elevated) PulseHWM instance locks the exe and can make the
   rebuild fail with access-denied — close/kill it first.
