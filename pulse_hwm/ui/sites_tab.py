@@ -297,21 +297,17 @@ class SitesTab(QWidget):
         values = dlg.values()
         if not values["name"] or not values["url"]:
             return
-        with self._db._lock:
-            self._db._conn.execute(
-                "UPDATE sites SET name=?, url=?, method=?, timeout_s=?,"
-                " expected_status=?, keyword=? WHERE id=?",
-                (
-                    values["name"],
-                    values["url"],
-                    values["method"],
-                    values["timeout_s"],
-                    values["expected_status"],
-                    values["keyword"],
-                    site_id,
-                ),
-            )
-            self._db._conn.commit()
+        # goes through Database so the edit is locked AND bumps updated_at
+        # (without the bump, cloud sync never pushed edited sites)
+        self._db.update_site(
+            site_id,
+            name=values["name"],
+            url=values["url"],
+            method=values["method"],
+            timeout_s=values["timeout_s"],
+            expected_status=values["expected_status"],
+            keyword=values["keyword"],
+        )
         self.reload_sites()
         self._check_now()
 

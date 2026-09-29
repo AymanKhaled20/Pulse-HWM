@@ -99,6 +99,9 @@ class Database:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        # bumped on every settings write; app_settings.load() caches its
+        # parsed result against this so repeat loads skip ~35 SELECTs
+        self._settings_version = 0
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -158,6 +161,19 @@ class Database:
     def current(cls) -> "Database | None":
         return cls._instance
 
+    # -- locked read helpers ----------------------------------------------
+    # ONE sqlite3 connection is shared by the UI, collector, rgb and sync
+    # threads. Python's sqlite3 connection is not safe for concurrent use,
+    # so reads must take the same lock as writes — otherwise a read that
+    # lands mid-commit on another thread can raise or see partial state.
+    def _fetch_all(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def _fetch_one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
+
     # -- sites ----------------------------------------------------------
     def add_site(
         self,
@@ -206,6 +222,35 @@ class Database:
             )
             self._conn.commit()
 
+    def update_site(
+        self,
+        site_id: int,
+        name: str,
+        url: str,
+        method: str = "GET",
+        timeout_s: float = 10.0,
+        expected_status: int = 200,
+        keyword: str = "",
+    ) -> None:
+        """Edit a site in place. Bumps updated_at so the sync engine treats
+        the edit as the newest version (LWW) and pushes it to the cloud."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sites SET name=?, url=?, method=?, timeout_s=?,"
+                " expected_status=?, keyword=?, updated_at=? WHERE id=?",
+                (
+                    name,
+                    url,
+                    method,
+                    float(timeout_s),
+                    int(expected_status),
+                    keyword,
+                    time.time(),
+                    site_id,
+                ),
+            )
+            self._conn.commit()
+
     def set_site_enabled(self, site_id: int, enabled: bool) -> None:
         self._set_site_bool(site_id, "enabled", enabled)
 
@@ -214,7 +259,7 @@ class Database:
         if not include_disabled:
             q += " AND enabled = 1"
         q += " ORDER BY id"
-        return self._conn.execute(q).fetchall()
+        return self._fetch_all(q)
 
     def seed_default_sites(self) -> None:
         with self._lock:
@@ -252,16 +297,16 @@ class Database:
             self._conn.commit()
 
     def checks_since(self, site_id: int, since_ts: float) -> list[sqlite3.Row]:
-        return self._conn.execute(
+        return self._fetch_all(
             "SELECT * FROM checks WHERE site_id = ? AND ts >= ? ORDER BY ts",
             (site_id, since_ts),
-        ).fetchall()
+        )
 
     def latest_check(self, site_id: int) -> sqlite3.Row | None:
-        return self._conn.execute(
+        return self._fetch_one(
             "SELECT * FROM checks WHERE site_id = ? ORDER BY ts DESC LIMIT 1",
             (site_id,),
-        ).fetchone()
+        )
 
     # -- hardware samples -------------------------------------------------
     def insert_hardware_samples(self, samples: list[tuple[float, str, float]]) -> None:
@@ -275,10 +320,10 @@ class Database:
             self._conn.commit()
 
     def hardware_series(self, metric: str, since_ts: float) -> list[sqlite3.Row]:
-        return self._conn.execute(
+        return self._fetch_all(
             "SELECT ts, value FROM hardware_samples WHERE metric = ? AND ts >= ? ORDER BY ts",
             (metric, since_ts),
-        ).fetchall()
+        )
 
     # -- events -----------------------------------------------------------
     def insert_event(self, ts: float, level: str, etype: str, message: str) -> None:
@@ -290,10 +335,10 @@ class Database:
             self._conn.commit()
 
     def events_since(self, since_ts: float, limit: int = 500) -> list[sqlite3.Row]:
-        return self._conn.execute(
+        return self._fetch_all(
             "SELECT * FROM events WHERE ts >= ? ORDER BY ts DESC LIMIT ?",
             (since_ts, limit),
-        ).fetchall()
+        )
 
     # -- settings ----------------------------------------------------------
     def set_setting(self, key: str, value: str) -> None:
@@ -311,32 +356,43 @@ class Database:
                 (key, now),
             )
             self._conn.commit()
+            self._settings_version += 1
 
     def get_setting(self, key: str, default: str = "") -> str:
-        row = self._conn.execute(
-            "SELECT value FROM settings WHERE key = ?", (key,)
-        ).fetchone()
+        row = self._fetch_one("SELECT value FROM settings WHERE key = ?", (key,))
         return row["value"] if row else default
+
+    def get_all_settings(self) -> dict[str, str]:
+        """Every stored setting in ONE query (app_settings.load uses this)."""
+        rows = self._fetch_all("SELECT key, value FROM settings")
+        return {r["key"]: r["value"] for r in rows}
+
+    @property
+    def settings_version(self) -> int:
+        """Changes whenever any setting is written (local or cloud)."""
+        return self._settings_version
 
     # -- sync helpers (settings + sites, per-key/per-row LWW) ───────────
 
     def get_settings_with_ts(self) -> dict[str, tuple[str, float]]:
         """Every settings key → (value, sync timestamp from settings_sync)."""
-        rows = self._conn.execute(
+        rows = self._fetch_all(
             "SELECT s.key, s.value, COALESCE(sc.updated_at, 0) AS updated_at"
             " FROM settings s LEFT JOIN settings_sync sc ON s.key = sc.key"
-        ).fetchall()
+        )
         return {r["key"]: (r["value"], float(r["updated_at"])) for r in rows}
 
     def adopt_cloud_setting(self, key: str, value: str, ts: float) -> bool:
         """Take a cloud write when it is NEWER than the local write.
         Unlike set_setting, the cloud timestamp is preserved as-is."""
-        row = self._conn.execute(
-            "SELECT updated_at FROM settings_sync WHERE key = ?", (key,)
-        ).fetchone()
-        if row is not None and float(row["updated_at"]) >= ts:
-            return False  # local write wins (LWW)
+        # the "is the cloud newer?" check and the write share ONE lock hold,
+        # so a local set_setting can't slip in between and be overwritten
         with self._lock:
+            row = self._conn.execute(
+                "SELECT updated_at FROM settings_sync WHERE key = ?", (key,)
+            ).fetchone()
+            if row is not None and float(row["updated_at"]) >= ts:
+                return False  # local write wins (LWW)
             self._conn.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?)"
                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -348,11 +404,12 @@ class Database:
                 (key, ts),
             )
             self._conn.commit()
+            self._settings_version += 1
         return True
 
     def get_sites_for_sync(self) -> list[sqlite3.Row]:
         """ALL site rows incl. tombstones — the sync engine needs history."""
-        return self._conn.execute("SELECT * FROM sites ORDER BY id").fetchall()
+        return self._fetch_all("SELECT * FROM sites ORDER BY id")
 
     def upsert_synced_site(
         self,
@@ -370,12 +427,12 @@ class Database:
         """Upsert a cloud row by uuid; only applied when NEWER locally.
         Returns True when the local state changed."""
         now = time.time()
-        existing = self._conn.execute(
-            "SELECT id, updated_at FROM sites WHERE uuid = ?", (site_uuid,)
-        ).fetchone()
-        if existing is not None and float(existing["updated_at"]) >= updated_at:
-            return False
-        with self._lock:
+        with self._lock:  # check + write under one hold (see adopt_cloud_setting)
+            existing = self._conn.execute(
+                "SELECT id, updated_at FROM sites WHERE uuid = ?", (site_uuid,)
+            ).fetchone()
+            if existing is not None and float(existing["updated_at"]) >= updated_at:
+                return False
             if existing is None:
                 # deleted column left at its 0 default; tombstoned rows are
                 # patched right below so the stored row reflects cloud truth
@@ -421,12 +478,12 @@ class Database:
         return True
 
     def tombstone_site_by_uuid(self, site_uuid: str, ts: float) -> bool:
-        existing = self._conn.execute(
-            "SELECT updated_at FROM sites WHERE uuid = ?", (site_uuid,)
-        ).fetchone()
-        if existing is None or float(existing["updated_at"]) >= ts:
-            return False
-        with self._lock:
+        with self._lock:  # check + write under one hold (see adopt_cloud_setting)
+            existing = self._conn.execute(
+                "SELECT updated_at FROM sites WHERE uuid = ?", (site_uuid,)
+            ).fetchone()
+            if existing is None or float(existing["updated_at"]) >= ts:
+                return False
             self._conn.execute(
                 "UPDATE sites SET deleted = 1, enabled = 0, updated_at = ?"
                 " WHERE uuid = ?",
