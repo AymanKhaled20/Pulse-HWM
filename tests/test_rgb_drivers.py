@@ -68,8 +68,8 @@ class TestRegistry:
         assert registry.get("nope") is None
 
     def test_accepts_prebuilt_instances(self):
-        # app.py hands the CompositeDriver in as an INSTANCE (it needs ctor
-        # args); the registry registers it without RE-constructing, so the
+        # the RGB controller hands OpenRgbDriver in as an INSTANCE (it needs
+        # ctor args); the registry registers it without RE-constructing, so the
         # exact object handed in is the one served from get().
         instance = FakeDriver()
         registry = DriverRegistry((instance, FakeDriver))

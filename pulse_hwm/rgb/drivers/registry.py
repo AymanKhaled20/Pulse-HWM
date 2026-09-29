@@ -1,8 +1,9 @@
 """Driver registry.
 
-Each driver family lands with exactly one registry entry in app.py, so no
-driver phase touches another's code. The vendor-SDK and raw-HID drivers were
-removed in favor of the OpenRGB backend; Aula remains a native driver.
+Each driver family lands with exactly one registry entry (built in
+controllers/rgb_controller.py), so no driver touches another's code. The
+vendor-SDK, raw-HID and native AULA drivers were all removed in favor of the
+OpenRGB backend, which today is the only real entry.
 
 User drop-ins (%LOCALAPPDATA%/PulseHWM/plugins/rgb/*.py) are loaded in a
 later phase behind the rgb_allow_external_plugins toggle; the discovery
@@ -71,14 +72,15 @@ class DriverRegistry:
     ) -> None:
         self._classes = driver_classes
         self._drivers: dict[str, RgbDriver] = {}
+        # last load() problems, for the UI status strip ([] = none)
+        self.last_errors: list[str] = []
 
     def load(self) -> list[RgbDriver]:
         """Instantiate all entries; skip + record failures. Idempotent.
 
-        Entries may be driver CLASSES (the usual path — the registry
-        constructs them) or pre-built INSTANCES, which is how app.py hands
-        in the CompositeDriver because it needs constructor arguments
-        (the OpenRGB port + the native AULA child wired to each other).
+        Entries may be driver CLASSES (the registry constructs them) or
+        pre-built INSTANCES — the RGB controller hands in OpenRgbDriver as
+        an instance because it needs a constructor argument (the port).
         """
         self._drivers.clear()
         errors: list[str] = []
@@ -117,7 +119,3 @@ class DriverRegistry:
             except Exception:
                 continue
         return result
-
-
-# last discover() errors, for the UI status strip ("" = no problems)
-DriverRegistry.last_errors = []

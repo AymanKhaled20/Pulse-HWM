@@ -6,9 +6,8 @@ Mapping decisions:
   * open() starts/attaches the headless server, reads the controller list,
     and switches EVERY device to custom (direct) mode — OpenRGB hardware
     modes would fight our own frame producer otherwise.
-  * Controllers whose device VID is in exclude_vids are not enumerated;
-    app.py puts 0x258A (AULA/Sinowealth) there while the native driver
-    owns the keyboard, so the two never fight for it.
+  * OpenRGB is the ONLY transport: every device, including the AULA F75
+    keyboard, is enumerated and driven through it.
 """
 
 from __future__ import annotations
@@ -23,20 +22,6 @@ from pulse_hwm.rgb.drivers.openrgb.server import (
     OrgbServerNotFound,
 )
 from pulse_hwm.rgb.model import LedLayout, RgbColor, RgbDevice
-
-
-def vid_from_location(location: str) -> int | None:
-    """Parse the VID from an OpenRGB HID-style location string such as
-    'HID: /?HID#VID_258A&PID_010C&...'. Non-HID locations (e.g. SMBus)
-    have no VID and return None."""
-    marker = location.find("VID_")
-    if marker < 0:
-        return None
-    hexpart = location[marker + 4 : marker + 8]
-    try:
-        return int(hexpart, 16)
-    except ValueError:  # 4 chars after VID_ are not a hex VID
-        return None
 
 
 def frame_from_colors(
@@ -63,7 +48,6 @@ class OpenRgbDriver(RgbDriver):
         self._client: OrgbClient | None = None
         self._devices: list[RgbDevice] = []
         self._spawned = False  # True iff WE started the server process
-        self.exclude_vids: frozenset[int] = frozenset()
 
     # ── RgbDriver contract ────────────────────────────────────────────────
 
@@ -110,10 +94,7 @@ class OpenRgbDriver(RgbDriver):
             # indexes so the engine sends the full addressable chain.
             client.refresh_current_controller_data()
         for controller in client.controllers:
-            # The native AULA driver owns its keyboard. OpenRGB can enumerate
-            # it, but must not switch it into a competing mode.
-            if vid_from_location(controller.location) not in self.exclude_vids:
-                client.set_custom_mode(controller.index)
+            client.set_custom_mode(controller.index)
         self._client = client
 
     def close(self) -> None:
@@ -134,8 +115,6 @@ class OpenRgbDriver(RgbDriver):
             return []
         result: list[RgbDevice] = []
         for controller in client.controllers:
-            if vid_from_location(controller.location) in self.exclude_vids:
-                continue
             result.append(
                 RgbDevice(
                     device_id=f"openrgb:{controller.index}",

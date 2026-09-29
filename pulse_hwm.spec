@@ -32,7 +32,6 @@ for entry in clr_binaries + py_binaries:
         extra_binaries.append(tuple(entry))
 hiddenimports = [
     "wmi",
-    "hid",
     "httpx",
     "win32api",
     "win32con",

@@ -44,7 +44,13 @@ LED) → pure mode planner (`rgb/manager.py`) decides who drives the hardware
 OpenRGB-like per-LED contracts or vendor SDKs. Settings persist in the
 standard `settings` table; `rgb_*` keys are device-local and never synced.
 
-## AULA F75 (native HID driver)
+## AULA F75 (native HID driver) — RETIRED 2026-09-29
+
+The native `aula_f75.py` / `aula_protocol.py` driver, `CompositeDriver`, and
+the `hidapi` dependency were removed: OpenRGB drives the F75 now (see the
+OpenRGB section below), and keeping two transports for one keyboard only
+risked them fighting. The protocol notes below are kept for reference; the
+code is in git history (last present on `feature/rgb-openrgb-backend`).
 
 - VID:PID `258A:010C` (wired), `258A:010D` (dongle; phase 25 follow-up).
 - 20-byte output reports, report id 0x13, checksum `sum(0..18) & 0xFF`.
@@ -77,13 +83,14 @@ Full checklist (re-run after each driver change):
 - [x] Keyboard visibly went RED → OFF → GREEN via direct mode
 - [x] Reverts cleanly when the channel is released
 - [x] No crash / no phantom behavior on release
-- [ ] (pending) `--selftest` integration probe reports `aula_frame_set`
+- [ ] (pending) `--selftest` RGB probe reports `openrgb_devices` with
+      `frame_set: true` for every device (it runs the same OpenRGB path as the app)
 - [ ] (pending) Unplug mid-run → clean degradation, no crash
 
 ## Deferred (tracked, planned)
 
-- F75 per-key index calibration capture
-- Dongle PID `010D` support
+- ~~F75 per-key index calibration capture~~ / ~~Dongle PID `010D`~~ — moot
+  with the native driver retired; now up to OpenRGB's Sinowealth support
 - Compact F75 output palette (mid-gradients render washed-out/whitish — see Color-mixing note)
 - OpenRGB matrix-map layouts (currently devices render linearly; keyboard
   matrix positions would need the upstream matrix-map parser)
@@ -103,8 +110,9 @@ enumerated the owner's machine via OUR protocol-5 client:
 | AULA F75 (Sinowealth) | 90-LED keyboard matrix — controlled through the OpenRGB SDK after a startup rescan |
 
 Implementation shipped on `feature/rgb-openrgb-backend`:
-`rgb/drivers/openrgb/{protocol,client,server,driver}.py` + `CompositeDriver`
-routing `openrgb:<n>` frames to OpenRGB behind the single-driver engine contract.
+`rgb/drivers/openrgb/{protocol,client,server,driver}.py`; `OpenRgbDriver` is
+the single driver behind the engine contract (the `CompositeDriver` wrapper
+was removed 2026-09-29 once OpenRGB became the only transport).
 The client rescans once at startup so late keyboard detection is included.
 Settings:
 `rgb_openrgb_enabled` (default on), `rgb_openrgb_port` (6742),
