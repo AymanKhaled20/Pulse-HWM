@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pulse_hwm import config
 from pulse_hwm.db import Database
@@ -63,8 +63,9 @@ class AppSettings:
     rgb_allow_effect_urls: bool = False  # URL effect import (network content)
 
     # ── OpenRGB backend (v1.4.0) ─────────────────────────────────────────
-    # Non-AULA devices are served by a bundled headless OpenRGB fork; see
-    # docs/RGB.md. enabled=False leaves hardware untouched entirely.
+    # ALL RGB devices (AULA keyboard included) are served by a bundled
+    # headless OpenRGB fork; see docs/RGB.md. enabled=False leaves hardware
+    # untouched entirely.
     rgb_openrgb_enabled: bool = True
     rgb_openrgb_port: int = 6742  # SDK server port (loopback only)
     rgb_openrgb_path: str = ""  # optional OpenRGB.exe override ("" = bundled)
@@ -156,139 +157,91 @@ SYNCABLE_KEYS = frozenset(
 )
 
 
+# String keys whose value must be one of a fixed set; an unknown stored value
+# (e.g. written by a newer version, then downgraded) falls back to the default
+# instead of propagating garbage into the engine's mode resolution.
+_ENUM_KEYS: dict[str, tuple[str, ...]] = {
+    "rgb_mode": RGB_MODES,
+    "rgb_reactive_source": RGB_REACTIVE_SOURCES,
+}
+# "#RRGGBB" color keys; anything that isn't 6 hex digits falls back.
+_HEX_KEYS = {
+    "rgb_override_color",
+    "rgb_temp_low_color",
+    "rgb_temp_high_color",
+    "rgb_alert_color",
+}
+# JSON blobs: here we only guarantee a string that parses as the right JSON
+# type (full validation happens where they're parsed), so a corrupted row
+# degrades to the empty structure instead of crashing every later load.
+_JSON_OBJECT_KEYS = {"rgb_device_assignment"}
+_JSON_LIST_KEYS = {"rgb_user_effects"}
+
+
 def load(db: Database) -> AppSettings:
-    env = config.env()
-    values = AppSettings(hardware_interval_ms=1000)
+    """Read every setting from the DB into an AppSettings.
 
-    defaults = {
-        "sound_enabled": str(env.alert_sound_enabled).lower(),
-    }
+    Cached: the parsed result is kept on the Database object together with
+    db.settings_version, which every settings write bumps. So repeat calls
+    (the RGB planner, scheduler jobs, tabs) cost nothing until something
+    actually changes. Callers get their own copy, so mutating the returned
+    object (e.g. the Settings form building a save) can't corrupt the cache.
+    """
+    version = db.settings_version  # read BEFORE loading (see note below)
+    cached = getattr(db, "_app_settings_cache", None)
+    if cached is not None and cached[0] == version:
+        return replace(cached[1])
 
-    def read(key: str, cast: type, default) -> object:
-        raw = db.get_setting(key, defaults.get(key, ""))
+    values = _load_uncached(db)
+    # if a write lands while we were loading, it bumped the version past
+    # the one we stored, so the next load() simply re-reads — never stale
+    db._app_settings_cache = (version, values)
+    return replace(values)
+
+
+def _load_uncached(db: Database) -> AppSettings:
+    stored = db.get_all_settings()  # ONE query instead of one per key
+    values = AppSettings()
+    # the only default that comes from .env rather than the dataclass
+    env_defaults = {"sound_enabled": str(config.env().alert_sound_enabled).lower()}
+
+    for key in _ALL_KEYS:
+        default = getattr(values, key)
+        raw = stored.get(key, env_defaults.get(key, ""))
         if raw == "":
-            return default
+            continue  # never set → keep the dataclass default
+        setattr(values, key, _parse_value(key, raw, default))
+    return values
+
+
+def _parse_value(key: str, raw: str, default):
+    """Turn one stored string into a typed, validated value. Anything that
+    doesn't parse or validate falls back to `default` — settings rows are
+    user-reachable storage and must never crash the app."""
+    if key in _BOOL_KEYS:
+        return str_to_bool(raw, default)
+    if key in _INT_KEYS:
         try:
-            return cast(raw)
+            number = int(raw)
         except (TypeError, ValueError):
             return default
-
-    values.hardware_interval_ms = int(
-        read("hardware_interval_ms", int, values.hardware_interval_ms)
-    )
-    values.website_interval_s = int(
-        read("website_interval_s", int, values.website_interval_s)
-    )
-    values.website_timeout_s = float(
-        read("website_timeout_s", float, values.website_timeout_s)
-    )
-    values.ssl_warn_days = int(read("ssl_warn_days", int, values.ssl_warn_days))
-    values.retention_days = int(read("retention_days", int, values.retention_days))
-    values.process_interval_s = int(
-        read("process_interval_s", int, values.process_interval_s)
-    )
-    values.process_max_rows = int(
-        read("process_max_rows", int, values.process_max_rows)
-    )
-    values.sound_enabled = bool(
-        read("sound_enabled", str_to_bool, values.sound_enabled)
-        in (True, "true", "True", 1)
-    )
-    values.desktop_enabled = bool(
-        read("desktop_enabled", str_to_bool, values.desktop_enabled)
-        in (True, "true", "True", 1)
-    )
-    values.webhooks_enabled = bool(
-        read("webhooks_enabled", str_to_bool, values.webhooks_enabled)
-        in (True, "true", "True", 1)
-    )
-    values.limit_resources = bool(
-        read("limit_resources", str_to_bool, values.limit_resources)
-        in (True, "true", "True", 1)
-    )
-    values.update_check_enabled = bool(
-        read("update_check_enabled", str_to_bool, values.update_check_enabled)
-        in (True, "true", "True", 1)
-    )
-    values.theme_color = str(read("theme_color", str, values.theme_color)) or "amber"
-    values.theme_font = str(read("theme_font", str, values.theme_font)) or "classic"
-    values.font_size = int(read("font_size", int, values.font_size))
-    lo, hi = LIMITS["font_size"]
-    values.font_size = max(lo, min(hi, values.font_size))
-
-    # ── RGB keys ─────────────────────────────────────────────────────
-    # Enum-valued strings fall back to the default when the stored value is
-    # unknown (e.g. after a downgrade), instead of propagating garbage into
-    # the engine's mode resolution.
-    values.rgb_mode = _read_enum(read, "rgb_mode", RGB_MODES, values.rgb_mode)
-    values.rgb_engine_fps = _read_limited_int(
-        read, "rgb_engine_fps", values.rgb_engine_fps
-    )
-    values.rgb_reassert_s = _read_limited_int(
-        read, "rgb_reassert_s", values.rgb_reassert_s
-    )
-    values.rgb_brightness = _read_limited_int(
-        read, "rgb_brightness", values.rgb_brightness
-    )
-    values.rgb_override_effect = str(
-        read("rgb_override_effect", str, values.rgb_override_effect)
-    )
-    values.rgb_override_color = _read_hex(
-        read, "rgb_override_color", values.rgb_override_color
-    )
-    values.rgb_override_speed = _read_limited_int(
-        read, "rgb_override_speed", values.rgb_override_speed
-    )
-    values.rgb_reactive_source = _read_enum(
-        read, "rgb_reactive_source", RGB_REACTIVE_SOURCES, values.rgb_reactive_source
-    )
-    values.rgb_temp_low_c = _read_limited_int(
-        read, "rgb_temp_low_c", values.rgb_temp_low_c
-    )
-    values.rgb_temp_high_c = _read_limited_int(
-        read, "rgb_temp_high_c", values.rgb_temp_high_c
-    )
-    values.rgb_temp_low_color = _read_hex(
-        read, "rgb_temp_low_color", values.rgb_temp_low_color
-    )
-    values.rgb_temp_high_color = _read_hex(
-        read, "rgb_temp_high_color", values.rgb_temp_high_color
-    )
-    values.rgb_alert_color = _read_hex(read, "rgb_alert_color", values.rgb_alert_color)
-    values.rgb_alert_hold_ms = _read_limited_int(
-        read, "rgb_alert_hold_ms", values.rgb_alert_hold_ms
-    )
-    # JSON blobs are validated where they're parsed (engine/effects loader);
-    # here we only guarantee a string that parses as the right JSON type, so
-    # a corrupted row degrades to the empty structure instead of crashing
-    # every later load.
-    values.rgb_device_assignment = _read_json_object(
-        read, "rgb_device_assignment", values.rgb_device_assignment
-    )
-    values.rgb_user_effects = _read_json_list(
-        read, "rgb_user_effects", values.rgb_user_effects
-    )
-    values.rgb_allow_external_plugins = bool(
-        read(
-            "rgb_allow_external_plugins", str_to_bool, values.rgb_allow_external_plugins
-        )
-        in (True, "true", "True", 1)
-    )
-    values.rgb_allow_effect_urls = bool(
-        read("rgb_allow_effect_urls", str_to_bool, values.rgb_allow_effect_urls)
-        in (True, "true", "True", 1)
-    )
-    values.rgb_openrgb_enabled = bool(
-        read("rgb_openrgb_enabled", str_to_bool, values.rgb_openrgb_enabled)
-        in (True, "true", "True", 1)
-    )
-    values.rgb_openrgb_port = _read_limited_int(
-        read, "rgb_openrgb_port", values.rgb_openrgb_port
-    )
-    values.rgb_openrgb_path = str(
-        read("rgb_openrgb_path", str, values.rgb_openrgb_path)
-    )
-    return values
+        return int(clamp(key, number)) if key in LIMITS else number
+    if key in _FLOAT_KEYS:
+        try:
+            number = float(raw)
+        except (TypeError, ValueError):
+            return default
+        return float(clamp(key, number)) if key in LIMITS else number
+    # everything below is a string key
+    if key in _ENUM_KEYS:
+        return raw if raw in _ENUM_KEYS[key] else default
+    if key in _HEX_KEYS:
+        return raw if _valid_hex(raw) else default
+    if key in _JSON_OBJECT_KEYS:
+        return _normalize_json(raw, dict, default)
+    if key in _JSON_LIST_KEYS:
+        return _normalize_json(raw, list, default)
+    return raw
 
 
 def save(db: Database, values: AppSettings) -> None:
@@ -315,19 +268,8 @@ def clamp(key: str, value: float) -> float:
     return max(low, min(high, value))
 
 
-# ── RGB load-time validation helpers ─────────────────────────────────────
+# ── load-time validation helpers ─────────────────────────────────────────
 # Kept module-level and pure so tests can exercise them without a Database.
-
-
-def _read_enum(read, key: str, allowed: tuple[str, ...], default: str) -> str:
-    value = str(read(key, str, default))
-    return value if value in allowed else default
-
-
-def _read_limited_int(read, key: str, default: int) -> int:
-    value = int(read(key, int, default))
-    low, high = LIMITS.get(key, (0, 1_000_000))
-    return max(low, min(high, value))
 
 
 def _valid_hex(value: str) -> bool:
@@ -341,28 +283,13 @@ def _valid_hex(value: str) -> bool:
         return False
 
 
-def _read_hex(read, key: str, default: str) -> str:
-    value = str(read(key, str, default))
-    return value if _valid_hex(value) else default
-
-
-def _read_json_object(read, key: str, default: str) -> str:
+def _normalize_json(raw: str, expected_type: type, default: str) -> str:
     import json
 
     try:
-        parsed = json.loads(str(read(key, str, default)) or "{}")
-        # re-serialize with json.dumps: str(dict) produces repr with single
-        # quotes, which is NOT valid JSON for later json.loads
-        return json.dumps(parsed) if isinstance(parsed, dict) else default
+        parsed = json.loads(raw)
     except ValueError:
         return default
-
-
-def _read_json_list(read, key: str, default: str) -> str:
-    import json
-
-    try:
-        parsed = json.loads(str(read(key, str, default)) or "[]")
-        return json.dumps(parsed) if isinstance(parsed, list) else default
-    except ValueError:
-        return default
+    # re-serialize with json.dumps: str(dict) produces repr with single
+    # quotes, which is NOT valid JSON for a later json.loads
+    return json.dumps(parsed) if isinstance(parsed, expected_type) else default
