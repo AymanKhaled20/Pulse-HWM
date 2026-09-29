@@ -131,6 +131,8 @@ class MainWindow(QMainWindow):
             self._rgb_tab = RgbTab(
                 db,
                 manager=rgb_manager,
+                # a signal emit, so the brightness change is queued onto
+                # the rgb thread instead of running on the UI thread
                 brightness_bridge=rgb_worker.brightness_requested.emit,
             )
             rgb_worker.devices_reported.connect(self._rgb_tab.show_driver)
@@ -159,6 +161,21 @@ class MainWindow(QMainWindow):
         self._build_tray()
         self._first_close = True
         self._down_sites: set[int] = set()
+
+    # —— public tab access (None when that tab is a placeholder) ————————
+    # Controllers use these instead of reaching into private attributes, so
+    # "is this tab available?" has exactly one answer: the value is None.
+    @property
+    def account_tab(self):
+        return self._account_tab
+
+    @property
+    def settings_tab(self):
+        return self._settings_tab
+
+    @property
+    def sites_tab(self):
+        return self._sites_tab
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

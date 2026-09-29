@@ -8,7 +8,29 @@ from pulse_hwm.rgb.assignment_store import (
     clear,
     entry_of,
     parse_blob,
+    rename_driver,
 )
+
+
+def test_rename_driver_moves_legacy_composite_keys():
+    blob = assign("{}", "composite", "openrgb:0", "rainbow", True)
+    blob = assign(blob, "openrgb", "openrgb:1", "static", True)
+
+    repaired = rename_driver(blob, "composite", "openrgb")
+
+    assert entry_of(repaired, "openrgb", "openrgb:0")["effect"] == "rainbow"
+    assert entry_of(repaired, "openrgb", "openrgb:1")["effect"] == "static"
+    assert entry_of(repaired, "composite", "openrgb:0") is None
+
+
+def test_rename_driver_keeps_newer_entry_and_is_noop_when_clean():
+    blob = assign("{}", "composite", "openrgb:0", "rainbow", True)
+    blob = assign(blob, "openrgb", "openrgb:0", "static", True)
+    repaired = rename_driver(blob, "composite", "openrgb")
+    assert entry_of(repaired, "openrgb", "openrgb:0")["effect"] == "static"
+
+    clean = assign("{}", "openrgb", "openrgb:0", "static", True)
+    assert rename_driver(clean, "composite", "openrgb") == clean
 
 
 def test_empty_and_corrupt_blobs_are_empty():

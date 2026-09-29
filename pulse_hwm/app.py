@@ -1,26 +1,38 @@
 from __future__ import annotations
 
+import logging
 import sys
 import traceback
 
+log = logging.getLogger("pulse.app")
+
 
 def run() -> int:
-    """Start the desktop application and wire its background services."""
+    """Start the desktop application and wire its background services.
+
+    This is the composition root: it BUILDS the services and controllers
+    and CONNECTS them — the behavior itself lives in the controllers
+    (pulse_hwm/controllers/) and services, where it can be tested.
+    """
     if "--selftest" in sys.argv:
         return _selftest()
     from pulse_hwm import config
+    from pulse_hwm.logging_setup import configure_logging
 
     config.ensure_dirs()
+    config.env()  # loads .env first, so PULSE_LOG_LEVEL is visible below
+    configure_logging(config.data_dir())
 
-    from PySide6.QtCore import Qt, QThread, QTimer
+    from PySide6.QtCore import Qt, QThread, QThreadPool, QTimer
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
-    from pulse_hwm import APP_NAME, __version__
-    from pulse_hwm.collectors.hardware import HardwareThreadBridge
-    from pulse_hwm.db import open_default
-    from pulse_hwm.ui.main_window import MainWindow
-    from pulse_hwm.ui.theme import load_fonts
+    from pulse_hwm import APP_NAME, __version__, app_settings
+    from pulse_hwm.single_instance import (
+        SingleInstance,
+        auth_urls_from_args,
+        try_handoff,
+    )
 
     QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
@@ -28,8 +40,6 @@ def run() -> int:
     # may already be running. If an instance exists, hand the URL over
     # and exit BEFORE creating QApplication (QLocalSocket works pre-loop;
     # waitFor* calls are synchronous).
-    from pulse_hwm.single_instance import try_handoff
-
     if not try_handoff(sys.argv[1:]):
         return 0
 
@@ -37,23 +47,20 @@ def run() -> int:
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
     app.setQuitOnLastWindowClosed(False)  # close = minimize to tray
+    log.info("starting %s v%s", APP_NAME, __version__)
 
     # named mutex matches installer/pulse-hwm.iss AppMutex=PulseHWMAppMutex
-    # so Inno detects (and silently closes) a live instance during updates
-    _app_mutex = None
-    try:  # optional probe: the app runs fine without it
-        import win32event
+    # so Inno detects (and silently closes) a live instance during updates.
+    # Kept in a local for the whole run: releasing it would drop the mutex.
+    _app_mutex = _create_app_mutex()  # noqa: F841
 
-        _app_mutex = win32event.CreateMutexW(None, False, "PulseHWMAppMutex")
-    except Exception:
-        _app_mutex = None
+    # —— storage + settings + theme ————————————————————————————————————
+    from pulse_hwm.db import open_default
+    from pulse_hwm.ui.theme import load_fonts
+    from pulse_hwm.ui.theme_manager import ThemeManager
 
     db = open_default()
     db.seed_default_sites()
-
-    from pulse_hwm import app_settings
-    from pulse_hwm.ui.theme_manager import ThemeManager
-
     settings = app_settings.load(db)
 
     # Fonts first (QFontDatabase has no styling), then the SAVED theme —
@@ -64,18 +71,20 @@ def run() -> int:
         settings.theme_color, settings.theme_font, settings.font_size
     )
 
-    hardware_thread = QThread()
-    hardware_thread.setObjectName("hardware-collector")
+    # —— collectors (each on its own thread) ———————————————————————————
+    from pulse_hwm.collectors.hardware import HardwareThreadBridge
+    from pulse_hwm.collectors.processes import ProcessesThreadBridge
+    from pulse_hwm.collectors.websites import WebsiteThreadBridge
+    from pulse_hwm.lifecycle import ThreadGroup
+
+    threads = ThreadGroup()
+    hardware_thread = threads.add(_named_thread(QThread, "hardware-collector"))
     collector = HardwareThreadBridge().attach(
         hardware_thread, settings.hardware_interval_ms
     )
-
-    from pulse_hwm.collectors.processes import ProcessesThreadBridge
-    from pulse_hwm.collectors.websites import WebsiteThreadBridge
-    from pulse_hwm.processes import set_low_priority_mode, trim_working_set
-
-    websites_thread = QThread()
-    websites_thread.setObjectName("websites-monitor")
+    websites_thread = threads.add(
+        _named_thread(QThread, "websites-monitor"), wait_ms=3000
+    )
     monitor = WebsiteThreadBridge().attach(
         websites_thread,
         db,
@@ -83,32 +92,18 @@ def run() -> int:
         timeout_s=settings.website_timeout_s,
         ssl_warn_days=settings.ssl_warn_days,
     )
-
-    # own worker thread for the (heavier) full process scan; the collector
-    # pauses itself whenever the Processes tab is hidden
-    processes_thread = QThread()
-    processes_thread.setObjectName("processes-scan")
+    # the (heavier) full process scan pauses itself whenever the
+    # Processes tab is hidden
+    processes_thread = threads.add(_named_thread(QThread, "processes-scan"))
     processes_collector = ProcessesThreadBridge.attach(
         processes_thread,
         interval_s=settings.process_interval_s,
         max_rows=settings.process_max_rows,
     )
 
-    def excepthook(etype, value, tb) -> None:
-        traceback.print_exception(etype, value, tb)
-        try:
-            log = config.data_dir() / "error.log"
-            with log.open("a", encoding="utf-8") as fh:
-                import time
-
-                fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
-                traceback.print_exception(etype, value, tb, file=fh)
-        except Exception:
-            pass
-
-    sys.excepthook = excepthook
-
+    # —— alerts ————————————————————————————————————————————————————————
     from pulse_hwm.alerts.notifier import AlertChannels, AlertManager
+    from pulse_hwm.controllers.alert_relay import SiteAlertRelay
 
     # channels come from the SAVED settings — hardcoding defaults here made
     # the SETTINGS toggles revert at every restart until APPLY was pressed
@@ -120,139 +115,41 @@ def run() -> int:
             webhooks=settings.webhooks_enabled,
         ),
     )
+    site_alert_relay = SiteAlertRelay(alerts)
 
-    # —— accounts / cloud sync wiring ——————————————————————————————————
+    # —— cloud: accounts, sync, updates ————————————————————————————————
     from pulse_hwm.cloud.config import auth_config
-    from pulse_hwm.cloud.oauth import OauthCoordinator, parse_callback_url
+    from pulse_hwm.cloud.oauth import OauthCoordinator
     from pulse_hwm.cloud.rest import CloudClient
     from pulse_hwm.cloud.session import SessionManager
-
-    auth_cfg = auth_config()
-    supa = CloudClient(auth_cfg.base_url, auth_cfg.publishable_key)
-    session = SessionManager(supa)
-    coordinator = OauthCoordinator(supa)
-
-    # ── updates (v1.2.0): registered+active users get in-app updates ────
-    # metadata: /updates/latest (Bearer); binary: /dl streamed from the
-    # private R2 bucket. Everything passes Ed25519 + sha256 before spawn.
-    from pulse_hwm import __version__ as CURRENT_VERSION
+    from pulse_hwm.cloud.sync_engine import SyncEngine
     from pulse_hwm.cloud.updates.checker import UpdateChecker
     from pulse_hwm.cloud.updates.installer import UpdateInstaller
-    from pulse_hwm.cloud.updates.policy import is_newer
 
-    checker = UpdateChecker(session, supa, db, CURRENT_VERSION, auth_cfg.base_url)
+    auth_cfg = auth_config()
+    cloud = CloudClient(auth_cfg.base_url, auth_cfg.publishable_key)
+    session = SessionManager(cloud)
+    coordinator = OauthCoordinator(cloud)
+    sync_engine = SyncEngine(session, cloud, db, parent=None)
+    sync_engine.attach_pool(QThreadPool.globalInstance())
+
+    # updates: registered+active users get in-app updates. Metadata comes
+    # from /updates/latest (Bearer); the binary from /dl streamed out of the
+    # private R2 bucket. Everything passes Ed25519 + sha256 before spawn.
+    checker = UpdateChecker(session, cloud, db, __version__, auth_cfg.base_url)
     updates_dir = config.data_dir() / "updates"
     updates_dir.mkdir(parents=True, exist_ok=True)
     installer = UpdateInstaller(session, auth_cfg.base_url, updates_dir)
 
-    # ── RGB engine wiring (phases 1-8): catalog + worker thread + manager.
-    # One driver, one render loop. Mode resolution runs on the UI thread
-    # (cheap pure planner); all hardware I/O stays on the rgb thread.
-    from PySide6.QtCore import QObject, QThread
-    from PySide6.QtCore import Signal as _Signal
+    # —— RGB engine (own thread; see controllers/rgb_controller.py) ————————
+    from pulse_hwm.controllers.rgb_controller import RgbController
 
-    from pulse_hwm.rgb.drivers.composite import CompositeDriver
-    from pulse_hwm.rgb.drivers.openrgb.driver import OpenRgbDriver
-    from pulse_hwm.rgb.drivers.registry import DriverRegistry
-    from pulse_hwm.rgb.effects.catalog import EffectCatalog
-    from pulse_hwm.rgb.manager import RgbManager
-    from pulse_hwm.rgb.worker import RgbThreadBridge, RgbWorker
+    rgb = RgbController(db)
+    threads.add(rgb.thread, before_quit=rgb.request_shutdown)
+    collector.updated.connect(rgb.on_hardware_snapshot)
 
-    class _RgbAssignments(QObject):
-        """Carrier signal: dict pushed onto the worker thread queued."""
-
-        pushed = _Signal(dict)
-
-    def _rgb_set_driver_connected() -> bool:
-        """Hand the first available driver to the worker thread via queued
-        signal; device enumeration + open happen there, and the manager
-        learns device ids from the queued devices_changed callback."""
-        available = rgb_registry.available()
-        if not available:
-            rgb_manager.clear_driver()
-            return False
-        rgb_worker.attach_requested.emit(available[0])  # I/O on rgb thread
-        return True
-
-    rgb_catalog = EffectCatalog()
-    from pulse_hwm.rgb.effects.loader import UserEffectStore
-
-    _rgb_user_store = UserEffectStore(db)
-    _rgb_registered = _rgb_user_store.register_with_catalog(rgb_catalog)
-
-    rgb_values = app_settings.load(db)
-
-    # OpenRGB owns every supported RGB device, including the AULA keyboard.
-    # Keeping one transport in charge avoids the native HID driver and
-    # OpenRGB's Sinowealth keepalive competing for the same keyboard.
-    _openrgb_spec = OpenRgbDriver(port=rgb_values.rgb_openrgb_port)
-    if not rgb_values.rgb_openrgb_enabled:
-        _openrgb_children = []
-    else:
-        _openrgb_children = [_openrgb_spec]
-
-    rgb_registry = DriverRegistry(
-        # OpenRGB remains the single transport behind the engine/worker.
-        (CompositeDriver(_openrgb_children),)
-    )
-    rgb_registry.load()
-    rgb_thread = QThread()
-    rgb_thread.setObjectName("rgb-engine")
-    rgb_worker = RgbWorker(rgb_catalog)
-    RgbThreadBridge.attach(rgb_worker, rgb_thread)
-
-    rgb_worker.set_brightness(rgb_values.rgb_brightness)
-    rgb_worker.set_fps(rgb_values.rgb_engine_fps)
-
-    rgb_manager = RgbManager(db, rgb_catalog)
-    rgb_carrier = _RgbAssignments()
-    rgb_manager.apply_assignments = rgb_carrier.pushed.emit
-    rgb_carrier.pushed.connect(rgb_worker.apply_assignments)
-
-    def _rgb_on_devices(devices: list) -> None:
-        rgb_manager.set_driver(
-            devices[0].driver_id if devices else "",
-            [d.device_id for d in devices],
-        )
-        rgb_manager.reconsider()
-
-    rgb_worker.devices_changed.connect(_rgb_on_devices)
-
-    def _rgb_push_sensors(snapshot: dict) -> None:
-        # hardware thread → UI thread → queued worker push. Sensor keys are
-        # the reactive effect contract: cpu_temp / gpu_temp / mem_pct /
-        # max_temp (None when the source is unavailable).
-        cpu_temps = [
-            row["temp"]
-            for row in (snapshot.get("temps") or [])
-            if "CPU" in str(row.get("label", "")).upper()
-            and row.get("temp") is not None
-        ]
-        gpu_temps = [
-            row["temp"]
-            for row in (snapshot.get("temps") or [])
-            if "GPU" in str(row.get("label", "")).upper()
-            and row.get("temp") is not None
-        ]
-        cpu_temp = max(cpu_temps) if cpu_temps else None
-        gpu_temp = max(gpu_temps) if gpu_temps else None
-        rgb_worker.sensors_requested.emit(
-            {
-                "cpu_temp": cpu_temp,
-                "gpu_temp": gpu_temp,
-                "mem_pct": (snapshot.get("mem") or {}).get("pct"),
-                "max_temp": max(
-                    [t for t in (cpu_temp, gpu_temp) if t is not None],
-                    default=None,
-                ),
-            }
-        )
-
-    collector.updated.connect(_rgb_push_sensors)
-
-    def _rgb_on_brightness(pct: int) -> None:
-        # UI-thread hook from the RGB tab brightness spinner → queued worker
-        rgb_worker.brightness_requested.emit(int(pct))
+    # —— window ————————————————————————————————————————————————————————
+    from pulse_hwm.ui.main_window import MainWindow
 
     window = MainWindow(
         hardware_collector=collector,
@@ -264,295 +161,127 @@ def run() -> int:
         session_manager=session,
         oauth_coordinator=coordinator,
         auth_configured=auth_cfg.is_configured(),
-        rgb_manager=rgb_manager,
-        rgb_worker=rgb_worker,
+        rgb_manager=rgb.manager,
+        rgb_worker=rgb.worker,
     )
     window.show()
 
-    # —— incoming auth callbacks (pulsehwm:// handoff from a relaunched process)
-    from pulse_hwm.single_instance import SingleInstance
+    # —— controllers ———————————————————————————————————————————————————
+    from pulse_hwm.controllers.sync_controller import SyncController
+    from pulse_hwm.controllers.update_controller import UpdateController
+    from pulse_hwm.scheduler import Scheduler
 
+    # created early so the sign-in hook below can trigger jobs; jobs are
+    # added further down and the ticker only starts at scheduler.start()
+    scheduler = Scheduler()
+
+    sync_controller = SyncController(
+        db,
+        session,
+        coordinator,
+        sync_engine,
+        window,
+        theme_manager,
+        monitor,
+        on_signed_in=lambda: scheduler.trigger("update-check"),
+    )
+    update_controller = UpdateController(
+        db,
+        alerts,
+        checker,
+        installer,
+        current_version=__version__,
+        account_tab=window.account_tab,
+        show_feedback=window.show_account_feedback,
+        quit_for_update=window.quit_for_update,
+    )
+    window.update_check_requested.connect(update_controller.check_now_manual)
+
+    # —— incoming auth callbacks ————————————————————————————————————————
     single = SingleInstance()
-
-    def handle_incoming_url(url: str) -> None:
-        """Adopt an authentication callback forwarded by another instance."""
-        # the user is still sitting in the browser — surface the window
-        window.bring_to_front()
-        callback = parse_callback_url(url)
-        if not callback.ok:
-            # dead flow: drop the parked verifier so no later callback can
-            # restore it, and release the buttons for a clean retry
-            coordinator.reject_pending()
-            window.show_account_feedback(f"login link problem: {callback.error}")
-            return
-        # cold launch: this process never issued the sign-in, but the
-        # verifier is parked in Credential Manager — rebuild the flow
-        coordinator.restore_pending()
-        pending = coordinator.pending
-        if pending is None:
-            window.show_account_feedback("no sign-in in progress — link expired")
-            return
-        result = session.adopt_pkce_result(
-            callback.code, pending.flow_id, pending.provider
-        )
-        coordinator.clear_pending()  # verifier consumed (single-use)
-        window.on_oauth_result(result.ok, result.error)
-        if result.ok:
-            session_started()
-
-    single.url_received.connect(handle_incoming_url)
-
+    single.url_received.connect(sync_controller.handle_incoming_url)
     # cold launch can itself carry the callback (the link was clicked
     # while the app was closed, so the exe relaunched with the URL in
     # argv) — the pipe only covers warm handoffs between live instances
-    from pulse_hwm.single_instance import auth_urls_from_args
-
     for url in auth_urls_from_args(sys.argv[1:]):
-        QTimer.singleShot(100, lambda u=url: handle_incoming_url(u))
+        QTimer.singleShot(100, lambda u=url: sync_controller.handle_incoming_url(u))
+    QTimer.singleShot(20, sync_controller.resume_session)
 
-    # silent session restore from Credential Manager on boot
-    def resume_session() -> None:
-        resumed = session.try_resume()
-        if resumed:
-            window.on_oauth_result(True, "")
-
-    QTimer.singleShot(20, resume_session)
-
-    def session_started() -> None:
-        # sign-in (and OAuth adoption) both kick a sync immediately, plus
-        # an immediate update check — the daily-use contract for members
-        sync_engine.sync_now()
-        scheduler.trigger("update-check")
-
-    # —— sync engine (automatic ~60 s compare-and-merge; payloads tiny) —
-    from PySide6.QtCore import QThreadPool
-
-    from pulse_hwm.cloud.sync_engine import SyncEngine
-
-    sync_engine = SyncEngine(session, supa, db, parent=None)
-    sync_engine.attach_pool(QThreadPool.globalInstance())
-    _was_signed_in = {"v": session.is_signed_in()}
-
-    def _sync_feedback(summary: str, ok: bool, error: str) -> None:
-        window.show_account_feedback(summary or error)
-        # only an actual SIGN-OUT (signed in → signed out because the
-        # parked token was rejected) should repaint; showing "session
-        # expired" on a never-signed-in install every 60 s would be noise
-        signed_in = session.is_signed_in()
-        if _was_signed_in["v"] and not signed_in:
-            window.on_oauth_result(False, "session expired — sign in again")
-        _was_signed_in["v"] = signed_in
-
-    sync_engine.finished.connect(_sync_feedback)
-    if window._account_tab is not None:
-        window._account_tab.sync_requested.connect(sync_engine.sync_now)
-
-    def on_sync_done(summary: str, ok: bool, _error: str) -> None:
-        # "in sync" = nothing moved; reloading the form on that would
-        # clobber a half-edited Settings form every 60 s
-        if not ok or not summary or summary in ("not signed in", "in sync"):
-            return
-        # cloud may have updated syncable settings (theme etc.) — reapply
-        merged = app_settings.load(db)
-        theme_manager.apply(merged.theme_color, merged.theme_font, persist=False)
-        theme_manager.set_body_px(merged.font_size)
-        # push merged values into the Settings form so the next SAVE can't
-        # clobber cloud-newer rows with stale spinbox values, and update
-        # the website monitor cadence/thresholds live
-        if window._settings_tab is not None:
-            window._settings_tab.load_from(merged)
-        monitor.reconfigure(
-            interval_s=merged.website_interval_s,
-            timeout_s=merged.website_timeout_s,
-            ssl_warn_days=merged.ssl_warn_days,
-        )
-        # pulled sites (adds AND tombstones) must repaint the WEBSITES list
-        if window._sites_tab is not None:
-            window._sites_tab.reload_sites()
-
-    sync_engine.finished.connect(on_sync_done)
-
-    _rgb_attached = _rgb_set_driver_connected()
-    rgb_thread.start()
-    # Start the timer through a signal after the thread has started. Calling
-    # QTimer.start() directly from the UI thread would leave the render loop
-    # stopped (or produce a cross-thread Qt warning), which makes APPLY NOW
-    # update assignments without ever sending a hardware frame.
-    rgb_worker.start_requested.emit(rgb_values.rgb_engine_fps)
+    rgb.start()
 
     def shutdown() -> None:
-        # queued detach: engine closes the driver on the rgb thread — for the
-        # composite this also stops the OpenRGB server WE spawned. Fires
-        # before thread teardown so the worker's event loop can process it.
-        rgb_worker.detach_requested.emit()
-        rgb_thread.quit()
-        websites_thread.quit()
-        hardware_thread.quit()
-        processes_thread.quit()
-        rgb_thread.wait(2500)
-        websites_thread.wait(3000)
-        hardware_thread.wait(2500)
-        processes_thread.wait(2500)
+        scheduler.stop()
+        threads.shutdown()
         single.close()
-        supa.close()
+        cloud.close()
         db.close()
+        log.info("shut down cleanly")
 
     app.aboutToQuit.connect(shutdown)
 
     # being a good citizen: apply boot-time resource mode from settings
+    from pulse_hwm.processes import set_low_priority_mode, trim_working_set
+
     set_low_priority_mode(settings.limit_resources)
 
-    def on_check_done(outcome) -> None:
-        """UI-thread handler for update checks (UpdateChecker.checked)."""
-        release = dict(outcome.release or {})
-        version = str(release.get("version", ""))
-        manual = bool(getattr(outcome, "manual", False))
-        if outcome.state in ("available", "forced") and version:
-            seen = db.get_setting("update_highest_seen", "") or ""
-            if is_newer(version, seen):
-                db.set_setting("update_highest_seen", version)
-            if version != db.get_setting("update_notified_version", ""):
-                db.set_setting("update_notified_version", version)
-                alerts.notify(
-                    "info",
-                    "UPDATE AVAILABLE",
-                    f"Pulse v{version} is ready — you are on v{CURRENT_VERSION}.",
-                    play_sound=False,  # info-level: toast only, never a beep
-                )
-                import time as _time
-
-                db.insert_event(
-                    _time.time(), "INFO", "update", f"update available: v{version}"
-                )
-            if window._account_tab is None:
-                return  # the ACCOUNT tab is absent — banner updates lost, but the toast above still leaks the news
-            window._account_tab.show_update_available(
-                release,
-                current_version=CURRENT_VERSION,
-                forced=outcome.state == "forced",
-            )
-            offer.update({"release": release, "version": version})
-        elif outcome.state == "skipped":
-            if release and is_newer(
-                version, db.get_setting("update_highest_seen", "") or ""
-            ):
-                db.set_setting("update_highest_seen", version)  # seen-and-understood
-            # silent when periodic; manual checks explain themselves
-            if manual and outcome.reason and outcome.reason != "not signed in":
-                window.show_account_feedback(f"updates: {outcome.reason}")
-            if window._account_tab is not None:
-                window._account_tab.clear_update_banner()
-        elif outcome.state == "error":
-            # never toast on background check errors; log for diagnostics
-            if manual:
-                window.show_account_feedback(f"update check failed: {outcome.reason}")
-            import time as _time
-
-            db.insert_event(
-                _time.time(),
-                "ERROR",
-                "update",
-                f"update check failed: {outcome.reason}",
-            )
-
-    checker.checked.connect(on_check_done)
-
-    offer = {"release": None, "version": ""}
-
-    def on_install_requested() -> None:
-        release = offer.get("release")
-        if not release:
-            return
-        installer.install(release)
-
-    def on_install_progress(done: int, total: int) -> None:
-        window._account_tab.show_update_progress(int(done), int(total))
-
-    def on_install_finished(outcome) -> None:
-        installer.clear()
-        if outcome.ok:
-            import time as _time
-
-            db.insert_event(
-                _time.time(), "INFO", "update", f"update installing: v{outcome.version}"
-            )
-            window._account_tab.show_update_done(outcome.version)
-            # the silent installer needs OUR process gone to replace files;
-            # it relaunches Pulse itself (installer [Run] /LAUNCHAFTER check)
-            from PySide6.QtCore import QTimer as _QTimer
-
-            _QTimer.singleShot(1500, window.quit_for_update)
-        else:
-            import time as _time
-
-            db.insert_event(
-                _time.time(), "ERROR", "update", f"update failed: {outcome.error}"
-            )
-            window._account_tab.show_update_error(str(outcome.error))
-
-    if window._account_tab is not None:
-        window._account_tab.install_update_requested.connect(on_install_requested)
-        window._account_tab.update_dismissed.connect(
-            lambda version: (
-                db.set_setting("update_dismissed_version", str(version)),
-                window._account_tab.clear_update_banner(),
-            )
-        )
-        installer.progress.connect(on_install_progress)
-        installer.finished.connect(on_install_finished)
-        window.update_check_requested.connect(lambda: checker.check_now(manual=True))
-
-    # ── one scheduler for every background job ──────────────────────────
+    # —— one scheduler for every background job ————————————————————————
+    # Jobs read settings at fire time (cheap: app_settings.load is cached)
+    # so Settings toggles apply mid-session without a restart.
     def trim_memory() -> None:
-        # re-read on every fire so flipping the toggle in Settings applies
-        # without a restart
         if app_settings.load(db).limit_resources:
             trim_working_set()
 
     def prune_now() -> dict:
-        kept = app_settings.load(db)
-        return db.prune(kept.retention_days)
-
-    from pulse_hwm.scheduler import Scheduler
-
-    scheduler = Scheduler()
-    scheduler.add_job("sync", 60_000, sync_engine.sync_now, immediate=True)
+        return db.prune(app_settings.load(db).retention_days)
 
     def check_updates_job() -> None:
-        # a live read every fire so the Settings toggle applies mid-session
         if app_settings.load(db).update_check_enabled:
             checker.check_now()
 
+    scheduler.add_job("sync", 60_000, sync_engine.sync_now, immediate=True)
     scheduler.add_job(
         "update-check", 6 * 3600 * 1000, check_updates_job, immediate=True
     )
     scheduler.add_job("trim", 15 * 60 * 1000, trim_memory, immediate=False)
     scheduler.add_job("prune", 24 * 3600 * 1000, prune_now, immediate=False)
-
-    # ── reactive alerts (phase 16): error-level alerts flash the RGB
-    # devices for rgb_alert_hold_ms, then expiry sweeping reverts to the
-    # temperature map. Listener runs on the UI thread (fast planner pass).
-    alerts.add_dispatch_listener(lambda level, title: rgb_manager.handle_alert())
-
-    def rgb_maintain() -> None:
-        rgb_manager.maintain()
-
-    scheduler.add_job("rgb-alert", 500, rgb_maintain, immediate=False)
+    scheduler.job_event.connect(_log_job_errors)
     scheduler.start()
 
+    # reactive alerts: error-level alerts flash the RGB devices for
+    # rgb_alert_hold_ms, then they revert to the temperature map
+    alerts.add_dispatch_listener(rgb.on_alert)
     alerts.attach_tray(window.tray)
-    monitor.site_state_changed.connect(alerts.handle_site_transition)
+    monitor.site_state_changed.connect(site_alert_relay.on_site_state_changed)
     monitor.checked.connect(window.on_site_checked)
 
     prune_now()
-
-    hardware_thread.start()
-    websites_thread.start()
-    processes_thread.start()
+    threads.start_all()
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
-        print("[pulse] system tray unavailable")
+        log.warning("system tray unavailable")
     return app.exec()
+
+
+def _named_thread(thread_class, name: str):
+    thread = thread_class()
+    thread.setObjectName(name)
+    return thread
+
+
+def _create_app_mutex():
+    """Optional probe: the app runs fine without the mutex (the installer
+    just can't auto-close us), so any failure returns None."""
+    try:
+        import win32event
+
+        return win32event.CreateMutexW(None, False, "PulseHWMAppMutex")
+    except Exception:
+        return None
+
+
+def _log_job_errors(name: str, outcome: str) -> None:
+    if outcome.startswith("error"):
+        log.warning("scheduled job %s failed: %s", name, outcome)
 
 
 def _selftest() -> int:
@@ -598,26 +327,35 @@ def _selftest() -> int:
 
     from pulse_hwm.collectors.lhm import LibreSensors, is_available
 
-    # —— RGB probe (phase 7): enumerate + one red flash, best-effort ————
+    # —— RGB probe: the SAME OpenRGB path the app uses — enumerate every
+    # device and give each one red frame, best-effort ————————————————
     try:
-        from pulse_hwm.rgb.drivers.aula_f75 import AulaDriver
+        from pulse_hwm.rgb.drivers.openrgb.driver import OpenRgbDriver
         from pulse_hwm.rgb.model import RgbColor
 
-        rgb_driver = AulaDriver()
+        rgb_driver = OpenRgbDriver()
         rgb_probe = rgb_driver.probe()
         rgb_report = {
-            "aula_available": rgb_probe.available,
-            "aula_reason": rgb_probe.reason,
+            "openrgb_available": rgb_probe.available,
+            "openrgb_reason": rgb_probe.reason,
         }
         if rgb_probe.available:
             rgb_driver.open()
-            rgb_report["aula_devices"] = len(rgb_driver.devices())
-            rgb_report["aula_frame_set"] = rgb_driver.set_frame(
-                "aula:0", [RgbColor(255, 0, 0)] * 10
-            )
-            rgb_driver.close()
-            if not rgb_report["aula_frame_set"] and rgb_driver.last_error:
-                rgb_report["aula_error"] = rgb_driver.last_error
+            try:
+                devices = rgb_driver.devices()
+                rgb_report["openrgb_devices"] = [
+                    {
+                        "id": device.device_id,
+                        "name": device.name,
+                        "leds": device.leds,
+                        "frame_set": rgb_driver.set_frame(
+                            device.device_id, [RgbColor(255, 0, 0)] * device.leds
+                        ),
+                    }
+                    for device in devices
+                ]
+            finally:
+                rgb_driver.close()  # also stops the server if WE spawned it
         probes["rgb"] = rgb_report
     except Exception:
         probes["rgb"] = f"EXC: {traceback.format_exc(limit=2)}"

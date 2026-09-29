@@ -227,9 +227,12 @@ class RgbManager:
         self.apply_assignments = None
 
     def set_driver(self, driver_id: str, device_ids: list[str]) -> None:
-        self._driver_id = driver_id
-        self._device_ids = list(device_ids)
-        self._last_plan = None  # driver switch always means a fresh plan
+        # locked: reconsider() reads these same fields under the lock, so an
+        # unlocked write could hand it a half-updated driver/device pair
+        with self._lock:
+            self._driver_id = driver_id
+            self._device_ids = list(device_ids)
+            self._last_plan = None  # driver switch always means a fresh plan
 
     def clear_driver(self) -> None:
         self.set_driver("", [])
@@ -281,15 +284,27 @@ class RgbManager:
             self.apply_assignments(dict(plan.assignments))
         return True
 
+    @property
+    def alert_hold_ms(self) -> int:
+        return self._alert_clock.hold_ms
+
+    def set_alert_hold_ms(self, hold_ms: int) -> None:
+        """How long an alert flash overrides the reactive temperature map
+        (the rgb_alert_hold_ms setting)."""
+        self._alert_clock.set_hold_ms(hold_ms)
+
     def handle_alert(self) -> None:
         """Alert flash entry point (wired to alerts in phase 16)."""
         self._alert_clock.trigger()
+        # remember the flash is on, so the next maintain() after the hold
+        # expires knows to replan back to the temperature map
+        self._was_alert_active = True
         self.reconsider()
 
     def maintain(self) -> None:
         """Alert expiry sweep: when a held alert expires, replan once so
-        reactive devices go back to the temperature map. Cheap enough to
-        run on a 250 ms scheduler tick."""
+        reactive devices go back to the temperature map. The RGB controller
+        calls this from a one-shot timer armed when the alert fires."""
         was_active = self._was_alert_active
         now_active = self._alert_clock.active()
         if was_active and not now_active:

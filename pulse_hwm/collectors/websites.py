@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
 import httpx
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from pulse_hwm.db import Database
 
@@ -105,6 +105,9 @@ class WebsiteMonitor(QObject):
     checked = Signal(dict)  # every finished check
     site_state_changed = Signal(dict)  # down↔recovery transition
     ssl_updated = Signal(int, int)  # site_id, days_left
+    # internal: carries reconfigure() calls onto the monitor's own thread
+    # (interval_s, timeout_s, ssl_warn_days; each may be None = unchanged)
+    _reconfigure_requested = Signal(object, object, object)
 
     def __init__(
         self,
@@ -124,6 +127,7 @@ class WebsiteMonitor(QObject):
         self._fail_streaks: dict[int, int] = {}
         self._check_counts: dict[int, int] = {}
         self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pulse-site")
+        self._reconfigure_requested.connect(self._apply_config)
 
     def config(self) -> dict:
         return {
@@ -138,6 +142,15 @@ class WebsiteMonitor(QObject):
         timeout_s: float | None = None,
         ssl_warn_days: int | None = None,
     ) -> None:
+        """Safe to call from ANY thread (the settings form and sync call it
+        from the UI thread). The QTimer belongs to the websites thread and
+        setInterval() on a running timer restarts it, which Qt forbids from
+        another thread ("Timers cannot be stopped from another thread") -- so
+        the change is sent over as a queued signal instead of applied here."""
+        self._reconfigure_requested.emit(interval_s, timeout_s, ssl_warn_days)
+
+    @Slot(object, object, object)
+    def _apply_config(self, interval_s, timeout_s, ssl_warn_days) -> None:
         if interval_s is not None:
             self._interval_s = max(5, int(interval_s))
         if timeout_s is not None:

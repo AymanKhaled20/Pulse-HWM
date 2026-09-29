@@ -57,6 +57,25 @@ def clear(blob: str, driver_id: str, device_id: str) -> str:
     return _blob_text(entries)
 
 
+def rename_driver(blob: str, old_driver_id: str, new_driver_id: str) -> str:
+    """Re-key every "<old>/<device>" entry to "<new>/<device>".
+
+    One-time repair: the RGB tab used to save assignments under the
+    wrapper id "composite" while the planner looked them up under the
+    device's own driver id "openrgb", so saved effects never applied. An
+    entry that already exists under the new id wins (it is the newer one).
+    """
+    entries = parse_blob(blob)
+    prefix = f"{old_driver_id}/"
+    renamed = False
+    for key in [k for k in entries if k.startswith(prefix)]:
+        new_key = f"{new_driver_id}/{key[len(prefix):]}"
+        value = entries.pop(key)
+        entries.setdefault(new_key, value)
+        renamed = True
+    return _blob_text(entries) if renamed else blob
+
+
 def entry_of(blob: str, driver_id: str, device_id: str) -> dict | None:
     return parse_blob(blob).get(f"{driver_id}/{device_id}")
 
