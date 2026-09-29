@@ -78,6 +78,18 @@ class RgbEngine:
     def attached(self) -> bool:
         return self._driver is not None
 
+    @property
+    def driver(self) -> RgbDriver | None:
+        return self._driver
+
+    def poll_driver(self) -> list[RgbDevice] | None:
+        """Ask the driver whether its device list changed (unplug/replug).
+        Returns the NEW device list when it did, None otherwise."""
+        if self._driver is None or not self._driver.poll_changes():
+            return None
+        self._devices = {d.device_id: d for d in self._driver.devices()}
+        return list(self._devices.values())
+
     def device_ids(self) -> list[str]:
         return list(self._devices)
 

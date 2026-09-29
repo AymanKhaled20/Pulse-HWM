@@ -110,6 +110,18 @@ class OrgbController:
     location: str
     led_count: int
     zones: tuple[OrgbZone, ...] = field(default_factory=tuple)
+    # read back so the driver can CHECK what the server really holds:
+    # which mode is active, and the colors it last accepted (packed words,
+    # see pack_color). Defaults keep hand-built test controllers short.
+    active_mode: int = -1
+    mode_names: tuple[str, ...] = field(default_factory=tuple)
+    colors: tuple[int, ...] = field(default_factory=tuple)
+
+    @property
+    def active_mode_name(self) -> str:
+        if 0 <= self.active_mode < len(self.mode_names):
+            return self.mode_names[self.active_mode]
+        return "?"
 
 
 class _Reader:
@@ -143,9 +155,10 @@ class _Reader:
         return self.take(self.u16())[:-1].decode("utf-8", "replace")
 
 
-def _consume_mode(d: _Reader) -> None:
-    """Step over one Mode Data block (name + all fields incl. colors)."""
-    _ = d.strz()  # mode_name
+def _consume_mode(d: _Reader) -> str:
+    """Step over one Mode Data block (name + all fields incl. colors) and
+    return the mode's name."""
+    mode_name = d.strz()
     d.i32()  # mode_value (present at v5, dropped at v6)
     d.u32()  # flags
     d.u32()  # speed_min
@@ -160,6 +173,7 @@ def _consume_mode(d: _Reader) -> None:
     d.u32()  # color_mode
     colors = d.u16()
     d.take(4 * colors)
+    return mode_name
 
 
 def parse_controller_data(payload: bytes) -> OrgbController:
@@ -181,9 +195,8 @@ def parse_controller_data(payload: bytes) -> OrgbController:
     location = d.strz()
 
     num_modes = d.u16()
-    _ = d.i32()  # active_mode (we force the custom mode ourselves)
-    for _m in range(num_modes):
-        _consume_mode(d)
+    active_mode = d.i32()  # comes BEFORE the mode blocks
+    mode_names = tuple(_consume_mode(d) for _m in range(num_modes))
 
     zones: list[OrgbZone] = []
     num_zones = d.u16()
@@ -214,7 +227,8 @@ def parse_controller_data(payload: bytes) -> OrgbController:
         d.u32()  # led value (present at v5)
 
     num_colors = d.u16()
-    d.take(4 * num_colors)  # device color array
+    color_bytes = d.take(4 * num_colors)  # device color array
+    colors = struct.unpack(f"<{num_colors}I", color_bytes) if num_colors else ()
     display_names = d.u16()  # v5: LED display names
     for _n in range(display_names):
         _ = d.strz()
@@ -231,7 +245,15 @@ def parse_controller_data(payload: bytes) -> OrgbController:
         location=location,
         led_count=num_leds,
         zones=tuple(zones),
+        active_mode=active_mode,
+        mode_names=mode_names,
+        colors=tuple(colors),
     )
+
+
+def pack_color(r: int, g: int, b: int) -> int:
+    """One LED color as OpenRGB stores it: R | G<<8 | B<<16 (no alpha)."""
+    return (r & 0xFF) | ((g & 0xFF) << 8) | ((b & 0xFF) << 16)
 
 
 def encode_update_leds(colors: list[tuple[int, int, int]]) -> bytes:
@@ -247,6 +269,5 @@ def encode_update_leds(colors: list[tuple[int, int, int]]) -> bytes:
     """
     body = struct.pack("<H", len(colors))
     for r, g, b in colors:
-        word = (r & 0xFF) | ((g & 0xFF) << 8) | ((b & 0xFF) << 16)
-        body += struct.pack("<I", word)
+        body += struct.pack("<I", pack_color(r, g, b))
     return struct.pack("<I", len(body) + 4) + body

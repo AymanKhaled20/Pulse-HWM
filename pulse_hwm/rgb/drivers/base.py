@@ -64,3 +64,9 @@ class RgbDriver(ABC):
     def set_brightness(self, device_id: str, pct: int) -> bool:
         """Native brightness control when the SDK offers one."""
         return False
+
+    def poll_changes(self) -> bool:
+        """Called about once a second on the render thread. Return True when
+        the device list changed (e.g. a device was unplugged/replugged) so
+        the engine re-reads devices(). Optional: most drivers never change."""
+        return False

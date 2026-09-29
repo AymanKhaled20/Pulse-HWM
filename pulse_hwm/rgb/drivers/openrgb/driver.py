@@ -8,10 +8,19 @@ Mapping decisions:
     modes would fight our own frame producer otherwise.
   * OpenRGB is the ONLY transport: every device, including the AULA F75
     keyboard, is enumerated and driven through it.
+  * Frames get no reply, so "sent" does not prove "applied". A few frames
+    after (re)attach each device's stored colors are read back once; a
+    device whose colors never match is reported through last_error
+    instead of failing silently. (That is how the OpenRGB server bug where
+    every frame was dropped after a rescan went unnoticed.)
+  * OpenRGB announces unplug/replug with DEVICE_LIST_UPDATED; poll_changes()
+    re-reads the list and puts the devices back into direct mode, because
+    re-detected devices come back in their hardware mode.
 """
 
 from __future__ import annotations
 
+import logging
 import socket
 
 from pulse_hwm.rgb.drivers.base import ProbeResult, RgbDriver
@@ -22,6 +31,12 @@ from pulse_hwm.rgb.drivers.openrgb.server import (
     OrgbServerNotFound,
 )
 from pulse_hwm.rgb.model import LedLayout, RgbColor, RgbDevice
+
+log = logging.getLogger("pulse.rgb")
+
+# modes in which OpenRGB shows the per-LED colors we send (SetCustomMode
+# picks the first of these the device offers)
+_PER_LED_MODES = frozenset({"Direct", "Custom", "Static"})
 
 
 def frame_from_colors(
@@ -41,6 +56,13 @@ class OpenRgbDriver(RgbDriver):
     version = "1"
     requires_app = ""  # bundled in our installer; nothing for the user to install
     DEFAULT_RESIZABLE_ZONE_LEDS = 60
+    # after a replug the count only has to look stable briefly (the cold
+    # start needs the client's full window while detection runs)
+    REDETECT_SETTLE_S = 2.0
+    # read-back check: skip the first frames (the server applies them on a
+    # background thread), then allow a few misses before calling it broken
+    VERIFY_AFTER_FRAMES = 5
+    VERIFY_MAX_MISSES = 5
 
     def __init__(self, port: int = P.DEFAULT_PORT) -> None:
         self._port = port
@@ -48,6 +70,8 @@ class OpenRgbDriver(RgbDriver):
         self._client: OrgbClient | None = None
         self._devices: list[RgbDevice] = []
         self._spawned = False  # True iff WE started the server process
+        self.last_error = ""  # read by the engine when set_frame returns False
+        self._reset_verification()
 
     # ── RgbDriver contract ────────────────────────────────────────────────
 
@@ -73,13 +97,20 @@ class OpenRgbDriver(RgbDriver):
         self._spawned = bool(spawned_via)
         self._server = server
         client = OrgbClient(port=self._port)
+        # connect() waits until the controller count has been stable for a
+        # while, which already covers the late AULA/Sinowealth detection.
+        # NO rescan here: a rescan renumbers the server's controllers, and
+        # OpenRGB builds up to 13234cb then silently dropped every frame
+        # from protocol-5 clients (like us). A later replug is handled by
+        # poll_changes() instead.
         client.connect()
-        # The headless server can publish its controller list before the
-        # Sinowealth/AULA detector finishes. A rescan makes the SDK list match
-        # the standalone OpenRGB device list before we build Pulse devices.
-        client.rescan()
-        client.refresh()
-        resized = False
+        self._prepare_controllers(client)
+        self._client = client
+        self._reset_verification()
+
+    def _prepare_controllers(self, client: OrgbClient) -> None:
+        """Size the ARGB headers and switch every device to direct mode.
+        Used at open() and again after the device list changed."""
         for controller in client.controllers:
             for zone_index, zone in enumerate(controller.zones):
                 if zone.leds_count == 0 and _is_resizable_argb_zone(zone.name):
@@ -88,14 +119,41 @@ class OpenRgbDriver(RgbDriver):
                         zone_index,
                         self.DEFAULT_RESIZABLE_ZONE_LEDS,
                     )
-                    resized = True
-        if resized:
-            # The resize changes the server-side LED list; refresh the same
-            # indexes so the engine sends the full addressable chain.
-            client.refresh_current_controller_data()
         for controller in client.controllers:
             client.set_custom_mode(controller.index)
-        self._client = client
+        # re-read the same indexes: picks up resized LED counts AND lets us
+        # check the mode switch really happened
+        client.refresh_current_controller_data()
+        for controller in client.controllers:
+            if controller.active_mode_name not in _PER_LED_MODES:
+                log.warning(
+                    "%s stayed in mode %r after the switch to direct mode; "
+                    "its LEDs may not show Pulse's colors",
+                    controller.name,
+                    controller.active_mode_name,
+                )
+
+    def poll_changes(self) -> bool:
+        """Re-read devices after OpenRGB announced a device-list change."""
+        client = self._client
+        if client is None:
+            return False
+        try:
+            seen = client.poll_notifications()
+        except Exception as exc:
+            log.warning("reading OpenRGB notifications failed: %s", exc)
+            return False
+        if P.PKT_DEVICE_LIST_UPDATED not in seen:
+            return False
+        log.info("OpenRGB device list changed (replug?); re-reading devices")
+        try:
+            client.refresh(settle_s=self.REDETECT_SETTLE_S)
+            self._prepare_controllers(client)
+        except Exception:
+            log.exception("re-reading OpenRGB devices failed")
+            return False
+        self._reset_verification()
+        return True
 
     def close(self) -> None:
         """Best-effort release — never raises (matches driver contract)."""
@@ -108,6 +166,7 @@ class OpenRgbDriver(RgbDriver):
         if self._server is not None and self._spawned:
             self._server.stop()
         self._devices = []
+        self._reset_verification()
 
     def devices(self) -> list[RgbDevice]:
         client = self._client
@@ -142,11 +201,60 @@ class OpenRgbDriver(RgbDriver):
             device = next((d for d in self._devices if d.device_id == device_id), None)
             if device is None:
                 return False
+        frame = frame_from_colors(device, colors)
+        if self._verify_state.get(device_id) is None:
+            self._check_applied(client, index, device_id)
         try:
-            client.update_leds(index, frame_from_colors(device, colors))
-        except Exception:  # races degrade silently at render rate
+            client.update_leds(index, frame)
+        except Exception as exc:  # races degrade at render rate
+            self.last_error = f"send failed: {exc}"
+            return False
+        self._last_sent[device_id] = tuple(P.pack_color(*rgb) for rgb in frame)
+        self._frames_sent[device_id] = self._frames_sent.get(device_id, 0) + 1
+        if self._verify_state.get(device_id) is False:
+            self.last_error = (
+                "OpenRGB accepts frames but does not apply them "
+                "(outdated OpenRGB build?)"
+            )
             return False
         return True
+
+    # ── read-back check ──────────────────────────────────────────────────
+
+    def _reset_verification(self) -> None:
+        # device_id -> True (colors verified) / False (never applied);
+        # missing = not decided yet
+        self._verify_state: dict[str, bool] = {}
+        self._verify_misses: dict[str, int] = {}
+        self._last_sent: dict[str, tuple[int, ...]] = {}
+        self._frames_sent: dict[str, int] = {}
+
+    def _check_applied(self, client: OrgbClient, index: int, device_id: str) -> None:
+        """Compare the server's stored colors with the PREVIOUS frame (the
+        latest one may still be queued on the server's device thread)."""
+        previous = self._last_sent.get(device_id)
+        if previous is None or self._frames_sent.get(device_id, 0) < (
+            self.VERIFY_AFTER_FRAMES
+        ):
+            return
+        try:
+            stored = client.read_controller(index).colors
+        except Exception:
+            return  # try again on the next frame
+        if tuple(stored) == previous:
+            self._verify_state[device_id] = True
+            log.info("%s: OpenRGB applies Pulse's colors", device_id)
+            return
+        misses = self._verify_misses.get(device_id, 0) + 1
+        self._verify_misses[device_id] = misses
+        if misses >= self.VERIFY_MAX_MISSES:
+            self._verify_state[device_id] = False
+            log.error(
+                "%s: OpenRGB accepted %d frames but its stored colors never "
+                "matched them; the lights will not change",
+                device_id,
+                self._frames_sent.get(device_id, 0),
+            )
 
     # ── layout ────────────────────────────────────────────────────────────
 

@@ -10,14 +10,21 @@ Protocol notes (see protocol.py for packet formats):
     DETECTION_* / SIGNALUPDATE) on the socket at any time. Every wait loop
     therefore skips foreign packet IDs instead of trusting ordering.
   * RGB packets (UPDATELEDS / SETCUSTOMMODE) get NO reply in protocol 5 —
-    they are fire-and-forget at render rate.
+    they are fire-and-forget at render rate. Because nothing confirms a
+    frame, the driver reads colors back once (read_controller) to prove
+    the server really applies them.
+  * Notifications are remembered, not just skipped: poll_notifications()
+    reports them (e.g. DEVICE_LIST_UPDATED after a replug) so the driver
+    can re-read the device list.
 """
 
 from __future__ import annotations
 
+import select
 import socket
 import struct
 import time
+from dataclasses import replace
 
 from pulse_hwm.rgb.drivers.openrgb import protocol as P
 
@@ -31,6 +38,7 @@ class OrgbClient:
         port: int = P.DEFAULT_PORT,
         timeout: float = P.DEFAULT_TIMEOUT_S,
         client_name: str = "Pulse-HWM",
+        settle_s: float = 15.0,
     ) -> None:
         self._host = host
         self._port = port
@@ -39,6 +47,12 @@ class OrgbClient:
         self._sock: socket.socket | None = None
         self._proto = 0
         self._controllers: list[P.OrgbController] = []
+        # minimum time the controller count must look stable before we trust
+        # it (detection finishes AFTER the server starts answering)
+        self._settle_s = settle_s
+        # notification ids seen while waiting for other replies, handed out
+        # by poll_notifications() so none are lost
+        self._pending_notifications: set[int] = set()
 
     # ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -74,10 +88,12 @@ class OrgbClient:
     def controllers(self) -> list[P.OrgbController]:
         return list(self._controllers)
 
-    def refresh(self) -> None:
-        """Re-read the device list (after DEVICE_LIST_UPDATED / rescan)."""
+    def refresh(self, settle_s: float | None = None) -> None:
+        """Re-read the device list (after DEVICE_LIST_UPDATED / rescan).
+        settle_s overrides the stable-count window (a replug needs far less
+        than the cold-start detection)."""
         self._ensure_open()
-        self._refresh_controllers()
+        self._refresh_controllers(settle_s)
 
     def refresh_current_controller_data(self) -> None:
         """Re-read known controller records without another detection wait.
@@ -107,13 +123,14 @@ class OrgbClient:
         # unique-id list; our negotiated cap of 5 means we never see it.)
         return list(range(count))
 
-    def _refresh_controllers(self) -> None:
+    def _refresh_controllers(self, settle_s: float | None = None) -> None:
         # The server starts answering before hardware detection finishes.
         # A count that merely changes over time means detection is still
         # running — devices added mid-enumeration get lost (seen in the
         # wild: only 2 of 6 controllers). Wait for a count that is both
         # nonzero and unchanged across three consecutive polls (with a
         # minimum lock-in window), capped by a global deadline.
+        settle = self._settle_s if settle_s is None else settle_s
         deadline = time.monotonic() + 90.0
         ids: list[int] = []
         prev: list[int] | None = None
@@ -127,7 +144,7 @@ class OrgbClient:
                 stable_polls = 0
             prev = chosen
             elapsed = 90.0 - (deadline - time.monotonic())
-            if elapsed >= 15.0 and chosen is not None and stable_polls >= 3:
+            if elapsed >= settle and chosen is not None and stable_polls >= 3:
                 break
             if time.monotonic() > deadline:
                 break
@@ -141,21 +158,36 @@ class OrgbClient:
             payload = struct.pack("<I", self._proto)
             self._send_dev(idx, P.PKT_REQUEST_CONTROLLER_DATA, payload)
             _, _, data = self._await_packet(P.PKT_REQUEST_CONTROLLER_DATA, dev=idx)
-            controller = P.parse_controller_data(data)
-            replaced = P.OrgbController(
-                index=idx,
-                device_type=controller.device_type,
-                name=controller.name,
-                vendor=controller.vendor,
-                description=controller.description,
-                version=controller.version,
-                serial=controller.serial,
-                location=controller.location,
-                led_count=controller.led_count,
-                zones=controller.zones,
-            )
-            found.append(replaced)
+            found.append(replace(P.parse_controller_data(data), index=idx))
         self._controllers = found
+
+    def read_controller(self, index: int) -> P.OrgbController:
+        """Fresh data for ONE controller, including the mode it is in and
+        the colors the server currently holds for it."""
+        self._ensure_open()
+        self._send_dev(
+            index, P.PKT_REQUEST_CONTROLLER_DATA, struct.pack("<I", self._proto)
+        )
+        _, _, data = self._await_packet(P.PKT_REQUEST_CONTROLLER_DATA, dev=index)
+        return replace(P.parse_controller_data(data), index=index)
+
+    def poll_notifications(self) -> set[int]:
+        """Non-blocking: read whatever the server pushed on its own and
+        return the packet ids seen (plus any skipped while awaiting other
+        replies). Also keeps our receive buffer drained."""
+        self._ensure_open()
+        assert self._sock is not None
+        seen = set(self._pending_notifications)
+        self._pending_notifications.clear()
+        for _ in range(256):  # bounded: never spin forever on a chatty server
+            readable, _, _ = select.select([self._sock], [], [], 0)
+            if not readable:
+                break
+            _, pkt_id, size = P.decode_header(self._recv_exact(16))
+            if size:
+                self._recv_exact(size)
+            seen.add(pkt_id)
+        return seen
 
     # ── rendering ────────────────────────────────────────────────────────
 
@@ -226,5 +258,6 @@ class OrgbClient:
             if got_id == want_id and want_dev:
                 return got_dev, got_id, payload
             if got_id in P.NOTIFICATION_IDS:
+                self._pending_notifications.add(got_id)
                 continue
         raise P.ProtocolError(f"no reply for packet {want_id} (dev={dev})")

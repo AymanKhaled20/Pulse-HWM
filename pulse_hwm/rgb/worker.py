@@ -27,6 +27,8 @@ log = logging.getLogger("pulse.rgb")
 # the same failing device reports an error EVERY tick (30+/s); only log a
 # repeat of the same message this often so pulse.log stays readable
 _ERROR_LOG_REPEAT_S = 10.0
+# how often the render loop asks the driver about unplugged/replugged devices
+_POLL_CHANGES_S = 1.0
 
 
 class RgbWorker(QObject):
@@ -58,6 +60,7 @@ class RgbWorker(QObject):
         self._fps = 30
         self._last_success_log = 0.0
         self._last_error_logged = ("", 0.0)  # (message, monotonic time)
+        self._last_change_poll = 0.0
         # queued onto OUR thread: driver probe/open I/O never runs on the
         # caller's thread during a mode/device switch
         self.attach_requested.connect(self.attach)
@@ -154,6 +157,7 @@ class RgbWorker(QObject):
 
     # ── internals ──────────────────────────────────────────────────────
     def _on_tick(self) -> None:
+        self._poll_device_changes()
         try:
             applied = self.engine.tick()
         except Exception as exc:  # ticking must survive catastrophic state
@@ -169,6 +173,30 @@ class RgbWorker(QObject):
         if self.engine.last_error:
             self._log_error_throttled(f"tick error: {self.engine.last_error}")
             self.driver_error.emit(self.engine.last_error)
+
+    def _poll_device_changes(self) -> None:
+        """About once a second: did the driver's device list change? If so,
+        report it exactly like a fresh attach so the manager re-plans and
+        the RGB tab redraws its device rows."""
+        now = time.monotonic()
+        if now - self._last_change_poll < _POLL_CHANGES_S:
+            return
+        self._last_change_poll = now
+        try:
+            devices = self.engine.poll_driver()
+        except Exception as exc:  # a broken poll must not stop rendering
+            self._log_error_throttled(f"device poll failed: {exc}")
+            return
+        driver = self.engine.driver
+        if devices is None or driver is None:
+            return
+        log.info(
+            "devices changed: driver=%s devices=%s",
+            driver.driver_id,
+            [(d.device_id, d.leds) for d in devices],
+        )
+        self.devices_changed.emit(list(devices))
+        self.devices_reported.emit(driver.driver_id, driver.name, list(devices))
 
     def _log_error_throttled(self, message: str) -> None:
         """Log a NEW error at once; the same error again only every

@@ -137,3 +137,57 @@ def test_worker_start_signal_starts_render_timer():
         assert worker._timer.isActive()
     finally:
         worker.stop()
+
+
+class ReplugDriver(FakeDriver):
+    """FakeDriver whose second device disappears when `unplug()` is called."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._changed = False
+        self._unplugged = False
+
+    def unplug(self) -> None:
+        self._unplugged = True
+        self._changed = True
+
+    def poll_changes(self) -> bool:
+        changed, self._changed = self._changed, False
+        return changed
+
+    def devices(self):
+        devices = super().devices()
+        return devices[:1] if self._unplugged else devices
+
+
+def test_engine_poll_driver_rereads_devices_only_on_change():
+    engine = RgbEngine()
+    driver = ReplugDriver()
+    engine.attach_driver(driver)
+    assert engine.poll_driver() is None
+    driver.unplug()
+    changed = engine.poll_driver()
+    assert [d.device_id for d in changed] == ["fake:0"]
+    assert engine.device_ids() == ["fake:0"]
+    assert engine.poll_driver() is None  # reported once
+
+
+def test_worker_reports_device_changes_like_an_attach():
+    from PySide6.QtWidgets import QApplication
+
+    _app = QApplication.instance() or QApplication([])
+    worker = RgbWorker()
+    driver = ReplugDriver()
+    worker.engine.attach_driver(driver)
+    changed_lists: list[list] = []
+    reports: list[tuple] = []
+    worker.devices_changed.connect(changed_lists.append)
+    worker.devices_reported.connect(lambda *args: reports.append(args))
+
+    driver.unplug()
+    worker._poll_device_changes()
+    assert [d.device_id for d in changed_lists[-1]] == ["fake:0"]
+    assert reports[-1][0] == "fake"
+
+    worker._poll_device_changes()  # throttled: under a second later, no poll
+    assert len(changed_lists) == 1

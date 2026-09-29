@@ -113,9 +113,54 @@ Implementation shipped on `feature/rgb-openrgb-backend`:
 `rgb/drivers/openrgb/{protocol,client,server,driver}.py`; `OpenRgbDriver` is
 the single driver behind the engine contract (the `CompositeDriver` wrapper
 was removed 2026-09-29 once OpenRGB became the only transport).
-The client rescans once at startup so late keyboard detection is included.
+The client waits for the device count to stay stable (15 s window) so late
+keyboard detection is included; it does NOT rescan (see the 2026-09-29 note).
 Settings:
 `rgb_openrgb_enabled` (default on), `rgb_openrgb_port` (6742),
 `rgb_openrgb_path` (override). Backend binaries bundled in
 `pulse_hwm/assets/openrgb/` (+ OpenRGB-LICENSE.txt, SOURCE.txt); CI smoke
 test = headless server listens on 127.0.0.1:6742 before artifact upload.
+
+## 2026-09-29 — "every frame accepted, no light changes" (FIXED)
+
+Symptom: the RGB tab showed all devices and `tick applied=6` every second,
+but no LED ever changed. OpenRGB logged nothing.
+
+Root cause (server side, our fork up to `13234cb`): OpenRGB queues
+UPDATELEDS / UPDATEMODE packets to one worker thread per controller, and that
+thread passed the controller's unique **ID** to a lookup that, for protocol
+< 6 clients (Pulse speaks 5), expects an **index**. IDs equal indexes only
+until the first rescan or hotplug. Pulse rescanned on every startup, so from
+then on every frame was dropped as "invalid id" — silently, since protocol 5
+gets no ACK. Proven on hardware: a fresh server stores our colors; the same
+server after one rescan keeps the device black.
+
+Fixes:
+- fork branch `fix/v5-index-after-rescan`: pass the index for protocol < 6
+  and the ID for protocol >= 6 (one-line change in `ControllerListenThread`).
+- Pulse no longer rescans; it waits for a stable device count instead.
+- Pulse listens for `DEVICE_LIST_UPDATED` (replug) and re-reads devices,
+  re-sizes ARGB zones and switches everything back to direct mode.
+- Read-back check: a few frames after attach, each device's stored colors
+  are compared with what we sent. A device that never matches is logged as
+  an ERROR and shown in the RGB tab instead of pretending to work.
+
+Verified on hardware after the fix: a fresh fork build (`0aada2a`) still
+stores and shows our colors after a rescan (the old build stayed black).
+
+## AULA F75 known issue — H key has no blue in direct mode (open)
+
+In OpenRGB's direct (streaming) mode the H key (LED 39) shows red + green but
+never blue: white looks yellow, purple looks pink. Its blue is packet byte
+127. Raw-HID tests with Pulse closed showed the firmware ignores that byte in
+every variant tried: 520- and 386-byte reports, H lit alone, every spare LED
+slot (84, 90-125, matrix gaps) and the report tail (bytes 386-519), plus the
+521-byte packet used by the community F87 Pro driver
+(github.com/HowardJoness/aula-f87pro-rgb, same header, same H = index 39).
+Windows reports the collection's feature length as exactly 520, so OpenRGB's
+packet size and layout are correct. No other key is affected, and the
+keyboard's onboard effects are fine: only its live (0x08) channel drops this
+one byte. A one-shot vendor "custom per-key" packet (cmd 0x06, planar
+R[126] G[126] B[126]) did not stick on its own; it likely needs the keyboard
+switched to its Self_define effect first (20-byte protocol, see the retired
+AULA notes above). That is the remaining route to a correct H.

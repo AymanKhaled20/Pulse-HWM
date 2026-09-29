@@ -56,7 +56,7 @@ def _build_device_block() -> bytes:
         body += _str(f"LED {i}") + struct.pack("<I", i)
 
     # device colors + LED display names + controller flags (v5)
-    body += struct.pack("<H", 1) + struct.pack("<I", 0)
+    body += struct.pack("<H", 1) + struct.pack("<I", 0x0000FF)  # one red color
     body += struct.pack("<H", 2)  # num display names
     body += _str("Zone title")
     body += _str("Per-LED title")
@@ -112,3 +112,17 @@ def test_parse_controller_data_raises_on_truncation() -> None:
     with pytest.raises(P.ProtocolError):
         payload = _build_device_block()
         P.parse_controller_data(payload[: len(payload) // 2])
+
+
+def test_parse_controller_data_reads_active_mode_and_stored_colors() -> None:
+    """The driver's read-back check depends on these two fields."""
+    controller = P.parse_controller_data(_build_device_block())
+    assert controller.mode_names == ("Direct mode",)
+    assert controller.active_mode == 0
+    assert controller.active_mode_name == "Direct mode"
+    assert controller.colors == (P.pack_color(255, 0, 0),)
+
+
+def test_pack_color_matches_update_leds_words() -> None:
+    payload = P.encode_update_leds([(1, 2, 3)])
+    assert struct.unpack_from("<I", payload, 6)[0] == P.pack_color(1, 2, 3)

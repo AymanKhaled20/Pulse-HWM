@@ -267,3 +267,76 @@ def test_client_resize_zone_round_trip() -> None:
 def test_client_rejects_wrong_port() -> None:
     with pytest.raises(OSError):
         OrgbClient(port=1, timeout=0.5).connect()
+
+
+class NotifyingServer(FakeSdkServer):
+    """Pushes DEVICE_LIST_UPDATED on its own: right after SETCUSTOMMODE, and
+    (when armed) just BEFORE the next controller-data reply."""
+
+    notice_before_data = False
+
+    def run(self) -> None:
+        try:
+            conn, _ = self._srv.accept()
+        except OSError:
+            return
+        while self._running:
+            head = self._recv_exact(conn, 16)
+            if head is None:
+                break
+            _, dev, pkt_id, size = struct.unpack("<4sIII", head)
+            self._recv_exact(conn, size) if size else None
+            if pkt_id == P.PKT_REQUEST_PROTOCOL_VERSION:
+                conn.sendall(_frame(dev, 40, struct.pack("<I", 5)))
+            elif pkt_id == P.PKT_REQUEST_CONTROLLER_COUNT:
+                conn.sendall(_frame(dev, 0, struct.pack("<I", 1)))
+            elif pkt_id == P.PKT_REQUEST_CONTROLLER_DATA:
+                if self.notice_before_data:
+                    conn.sendall(_frame(0, P.PKT_DEVICE_LIST_UPDATED, b""))
+                conn.sendall(_frame(dev, 1, _fake_controller_payload()))
+            elif pkt_id == P.PKT_RGB_SETCUSTOMMODE:
+                conn.sendall(_frame(0, P.PKT_DEVICE_LIST_UPDATED, b""))
+        conn.close()
+
+
+def _quick_client(port: int) -> OrgbClient:
+    # settle_s=0: only the three stable polls (~3 s) instead of the 15 s
+    # cold-start window, so these tests stay well inside the 30 s budget
+    return OrgbClient(port=port, timeout=2.0, settle_s=0.0)
+
+
+def test_poll_notifications_reports_device_list_updated() -> None:
+    server = NotifyingServer()
+    server.start()
+    client = _quick_client(server.port)
+    try:
+        client.connect()
+        assert client.poll_notifications() == set()  # nothing pushed yet
+        client.set_custom_mode(0)  # the fake answers with a list-changed notice
+        seen: set[int] = set()
+        for _ in range(100):
+            seen |= client.poll_notifications()
+            if seen:
+                break
+            threading.Event().wait(0.02)
+        assert seen == {P.PKT_DEVICE_LIST_UPDATED}
+        assert client.poll_notifications() == set()  # reported once, then cleared
+    finally:
+        client.close()
+        server.stop()
+
+
+def test_notice_skipped_during_a_request_is_not_lost() -> None:
+    server = NotifyingServer()
+    server.start()
+    client = _quick_client(server.port)
+    try:
+        client.connect()
+        server.notice_before_data = True
+        controller = client.read_controller(0)  # skips the notice to get its reply
+        assert controller.name == "Test Mouse"
+        assert controller.index == 0
+        assert P.PKT_DEVICE_LIST_UPDATED in client.poll_notifications()
+    finally:
+        client.close()
+        server.stop()

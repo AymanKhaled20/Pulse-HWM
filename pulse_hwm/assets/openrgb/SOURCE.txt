@@ -1,1 +1,1 @@
-SOURCE: fork https://github.com/AymanKhaled20/OpenRGB branch pulse-headless (GPL-2.0-or-later). Built by AymanKhaled20/OpenRGB action 'windows-headless-build'.
+SOURCE: fork https://github.com/AymanKhaled20/OpenRGB branch fix/v5-index-after-rescan @ 0aada2a (pulse-headless + protocol<6 index fix) (GPL-2.0-or-later). Built by AymanKhaled20/OpenRGB action 'windows-headless-build', run 36598523430.
