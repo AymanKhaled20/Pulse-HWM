@@ -117,6 +117,7 @@ class RgbTab(QWidget):
         catalog=None,
         parent=None,
     ):
+        """Build the tab's panels and fill them from the saved settings."""
         super().__init__(parent)
         self.setObjectName("root")
         self._db = db
@@ -169,6 +170,7 @@ class RgbTab(QWidget):
 
     # ── building ────────────────────────────────────────────────────────
     def _build_status_panel(self) -> PixelPanel:
+        """Status line, error list, RE-SEND button and brightness slider."""
         panel = PixelPanel("RGB STATUS")
         self._status_line = _plain_label("STARTING…")
         self._status_detail = _plain_label("DRIVER: probing…", "muted")
@@ -208,6 +210,7 @@ class RgbTab(QWidget):
         return panel
 
     def _build_mode_panel(self) -> PixelPanel:
+        """The OFF/EFFECTS/REACTIVE/OVERRIDE buttons and one page each."""
         panel = PixelPanel("CONTROL MODE")
         self._mode_group = QButtonGroup(self)
         self._mode_group.setExclusive(True)
@@ -238,6 +241,7 @@ class RgbTab(QWidget):
         return panel
 
     def _build_off_page(self) -> QWidget:
+        """OFF page: just explains that Pulse leaves the lights alone."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 6, 0, 0)
@@ -252,6 +256,7 @@ class RgbTab(QWidget):
         return page
 
     def _build_effects_page(self) -> QWidget:
+        """EFFECTS page: one row per device, plus the import panel."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 6, 0, 0)
@@ -267,6 +272,7 @@ class RgbTab(QWidget):
         return page
 
     def _build_import_panel(self) -> QWidget:
+        """Folded-away controls for importing effects (file/paste/URL)."""
         # rarely used, so it starts folded away behind one button
         self._import_toggle = QPushButton("IMPORT MORE EFFECTS ▸")
         self._import_toggle.setCheckable(True)
@@ -314,12 +320,14 @@ class RgbTab(QWidget):
         return wrapper
 
     def _on_import_toggled(self, shown: bool) -> None:
+        """Show or hide the import panel and flip its button's arrow."""
         self._import_panel.setVisible(shown)
         self._import_toggle.setText(
             "IMPORT MORE EFFECTS ▾" if shown else "IMPORT MORE EFFECTS ▸"
         )
 
     def _build_reactive_page(self) -> QWidget:
+        """REACTIVE page: sensor to follow, its range, colors, alerts."""
         page = QWidget()
         form = QFormLayout(page)
         form.setContentsMargins(0, 6, 0, 0)
@@ -367,6 +375,7 @@ class RgbTab(QWidget):
         return page
 
     def _build_override_page(self) -> QWidget:
+        """OVERRIDE page: one effect (and its settings) for every device."""
         page = QWidget()
         form = QFormLayout(page)
         form.setContentsMargins(0, 6, 0, 0)
@@ -380,6 +389,7 @@ class RgbTab(QWidget):
         return page
 
     def _build_preview_panel(self) -> PixelPanel:
+        """Live preview: one LED strip per device showing what we send."""
         panel = PixelPanel("LIVE PREVIEW — WHAT PULSE IS SENDING")
         self._preview_empty = _plain_label("No devices.", "muted")
         panel.add_body(self._preview_empty)
@@ -388,6 +398,7 @@ class RgbTab(QWidget):
         return panel
 
     def _fill_effect_combo(self, combo: QComboBox) -> None:
+        """Refill `combo` with the pickable effects, keeping its choice."""
         combo.blockSignals(True)
         current = combo.currentData()
         combo.clear()
@@ -442,6 +453,7 @@ class RgbTab(QWidget):
         self._update_reactive_readout()
 
     def _show_mode(self, mode_id: str) -> None:
+        """Switch the visible page and help text to `mode_id` (no saving)."""
         mode_id = mode_id if mode_id in MODE_IDS else "off"
         index = MODE_IDS.index(mode_id)
         self._mode_buttons[mode_id].setChecked(True)
@@ -461,6 +473,7 @@ class RgbTab(QWidget):
         self._render_status()
 
     def _rebuild_override_editor(self, values=None) -> None:
+        """Rebuild the OVERRIDE settings for the chosen effect."""
         values = values or app_settings.load(self._db)
         effect = self._catalog.get(str(self._override_effect.currentData() or ""))
         self._override_editor.set_effect(
@@ -475,6 +488,7 @@ class RgbTab(QWidget):
     # ── slots fed from the rgb thread / hardware collector ─────────────
     @Slot(str, str, list)
     def show_driver(self, driver_id: str, name: str, devices: list) -> None:
+        """The rgb thread attached a driver (or none): rebuild device lists."""
         self._driver_id = str(driver_id)
         self._driver_name = str(name)
         self._seen_devices = list(devices) if driver_id else []
@@ -513,12 +527,14 @@ class RgbTab(QWidget):
 
     @Slot(dict)
     def show_sensors(self, snapshot: dict) -> None:
+        """New hardware readings; refresh the REACTIVE "NOW" line."""
         self._sensors = sensors_from_snapshot(snapshot or {})
         if self._mode == "reactive":
             self._update_reactive_readout()
 
     # ── status line ─────────────────────────────────────────────────────
     def _render_status(self) -> None:
+        """Redraw the status line and error list from the latest facts."""
         mode = getattr(self, "_mode", "off")
         status = self._last_status or {}
         errors = status.get("errors") or {}
@@ -565,6 +581,7 @@ class RgbTab(QWidget):
 
     # ── handlers: mode, brightness, re-send ─────────────────────────────
     def _on_mode_clicked(self, index: int) -> None:
+        """A mode button was clicked: save the mode and re-plan the lights."""
         mode_id = MODE_IDS[index]
         # clicked path == instant-apply contract: persist the single field
         app_settings.save_field(self._db, "rgb_mode", mode_id)
@@ -575,6 +592,7 @@ class RgbTab(QWidget):
         self._reconsider()
 
     def _on_brightness_moved(self, value: int) -> None:
+        """Send each slider step to the worker; save once it settles."""
         self._brightness_value.setText(f"{value} %")
         # the worker gets every step (it only rescales the next frames);
         # the settings write waits until the slider stops moving
@@ -583,11 +601,13 @@ class RgbTab(QWidget):
         self._brightness_save.start()
 
     def _save_brightness(self) -> None:
+        """Persist the brightness (runs after the slider settles)."""
         app_settings.save_field(
             self._db, "rgb_brightness", int(self._brightness.value())
         )
 
     def _resend(self) -> None:
+        """Push the current look to every device again and say what happened."""
         if self._manager is None:
             return
         if self._mode == "off":
@@ -602,11 +622,13 @@ class RgbTab(QWidget):
         )
 
     def _show_feedback(self, text: str) -> None:
+        """Show a short message that clears itself after a few seconds."""
         self._feedback.setText(text)
         self._feedback_clear.start()
 
     # ── handlers: EFFECTS page (per-device rows) ────────────────────────
     def _rebuild_device_rows(self, devices: list) -> None:
+        """One row per device: enable box, effect picker, settings."""
         _clear_layout(self._device_rows_layout)
         self._device_rows.clear()
         self._effects_empty.setVisible(not devices)
@@ -652,6 +674,7 @@ class RgbTab(QWidget):
             self._device_rows[did] = _DeviceRow(checkbox, combo, editor)
 
     def _on_assignment_toggled(self, device_id: str, on: bool) -> None:
+        """A device was ticked or unticked on the EFFECTS page."""
         row = self._device_rows.get(device_id)
         if row is None:
             return
@@ -666,6 +689,7 @@ class RgbTab(QWidget):
             self._remove_assignment(device_id)
 
     def _on_effect_picked(self, device_id: str) -> None:
+        """A new effect was picked for a device: swap controls and save."""
         row = self._device_rows.get(device_id)
         if row is None:
             return
@@ -687,6 +711,7 @@ class RgbTab(QWidget):
         )
 
     def _on_device_params(self, device_id: str, values: dict) -> None:
+        """A device's effect settings changed: save them if enabled."""
         row = self._device_rows.get(device_id)
         if row is None or not row.checkbox.isChecked():
             return
@@ -694,9 +719,11 @@ class RgbTab(QWidget):
 
     @staticmethod
     def _row_effect(row: _DeviceRow) -> str:
+        """The effect id picked in a device row ("static" as a fallback)."""
         return str(row.combo.currentData() or "static")
 
     def _remove_assignment(self, device_id: str) -> None:
+        """Stop driving a device: delete its saved effect and re-plan."""
         blob = assignment_store.clear(
             app_settings.load(self._db).rgb_device_assignment,
             self._driver_id,
@@ -706,6 +733,7 @@ class RgbTab(QWidget):
         self._reconsider()
 
     def _upsert_assignment(self, device_id: str, effect_id: str, params: dict) -> None:
+        """Save (add or replace) a device's effect + settings, re-plan."""
         blob = assignment_store.assign(
             app_settings.load(self._db).rgb_device_assignment,
             self._driver_id,
@@ -719,11 +747,13 @@ class RgbTab(QWidget):
 
     # ── handlers: REACTIVE page ─────────────────────────────────────────
     def _on_reactive_source(self, _index: int) -> None:
+        """The FOLLOW sensor changed: save it and re-plan."""
         self._save_and_replan(
             "rgb_reactive_source", str(self._reactive_source.currentData())
         )
 
     def _on_reactive_range(self, _value: int) -> None:
+        """COOL AT / HOT AT changed: keep HOT above COOL, save, re-plan."""
         low = self._reactive_low.value()
         high = self._reactive_high.value()
         if high <= low:
@@ -739,11 +769,16 @@ class RgbTab(QWidget):
         self._reconsider()
 
     def _on_alert_hold(self, seconds: float) -> None:
-        app_settings.save_field(
-            self._db, "rgb_alert_hold_ms", int(round(seconds * 1000))
-        )
+        """FLASH FOR changed: save it and apply it to the running manager."""
+        hold_ms = int(round(seconds * 1000))
+        app_settings.save_field(self._db, "rgb_alert_hold_ms", hold_ms)
+        # the manager keeps its own copy of the hold time, so push the new
+        # value now — otherwise FLASH FOR only takes effect after a restart
+        if self._manager is not None:
+            self._manager.set_alert_hold_ms(hold_ms)
 
     def _save_and_replan(self, key: str, value) -> None:
+        """Save one REACTIVE setting, refresh the readout and re-plan."""
         app_settings.save_field(self._db, key, value)
         self._update_reactive_readout()
         self._reconsider()
@@ -787,12 +822,14 @@ class RgbTab(QWidget):
 
     # ── handlers: OVERRIDE page ─────────────────────────────────────────
     def _on_override_effect(self, _index: int) -> None:
+        """New OVERRIDE effect picked: save it, rebuild its settings."""
         effect_id = str(self._override_effect.currentData() or "static")
         app_settings.save_field(self._db, "rgb_override_effect", effect_id)
         self._rebuild_override_editor()
         self._reconsider()
 
     def _on_override_params(self, values: dict) -> None:
+        """OVERRIDE color/speed changed: save them and re-plan."""
         if "color" in values:
             app_settings.save_field(
                 self._db, "rgb_override_color", str(values["color"])
@@ -805,6 +842,7 @@ class RgbTab(QWidget):
 
     # ── preview rows ────────────────────────────────────────────────────
     def _rebuild_preview_rows(self, devices: list) -> None:
+        """One preview row (name, LED strip, state) per device."""
         while self._preview_form.rowCount():
             self._preview_form.removeRow(0)
         self._preview_rows.clear()
@@ -832,6 +870,7 @@ class RgbTab(QWidget):
 
     # ── effect import (phase 13) ────────────────────────────────────────
     def _import_effect_file(self) -> None:
+        """Let the user pick a .json effect file and import it."""
         from PySide6.QtWidgets import QFileDialog
 
         path, _filter = QFileDialog.getOpenFileName(
@@ -857,6 +896,7 @@ class RgbTab(QWidget):
             self._import_raw(raw)
 
     def _import_raw(self, raw: str) -> None:
+        """Validate effect JSON, store it, and make it pickable right away."""
         from pulse_hwm.rgb.effects.loader import UserEffectStore, validate_definition
 
         definition, errors = validate_definition(raw)
@@ -873,6 +913,7 @@ class RgbTab(QWidget):
         self._after_import()
 
     def _import_url(self) -> None:
+        """Fetch an effect over HTTPS (only when the URL toggle is on)."""
         # the gate is real: rgb_allow_effect_urls defaults off
         values = app_settings.load(self._db)
         if not values.rgb_allow_effect_urls:

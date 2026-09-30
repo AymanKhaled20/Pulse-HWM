@@ -35,6 +35,7 @@ def downsample(colors: list[str], limit: int = MAX_SQUARES) -> list[str]:
 
 class LedStrip(QWidget):
     def __init__(self, parent=None):
+        """Start empty: an empty strip draws outlined squares (not driven)."""
         super().__init__(parent)
         self._colors: list[str] = []
         self._led_count = 0
@@ -42,6 +43,7 @@ class LedStrip(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def sizeHint(self) -> QSize:
+        """Preferred size: a wide, one-square-tall row."""
         return QSize(320, STRIP_HEIGHT)
 
     def set_colors(self, colors: list[str]) -> None:
@@ -55,9 +57,11 @@ class LedStrip(QWidget):
         self.update()
 
     def colors(self) -> list[str]:
+        """The frame currently shown, as "#RRGGBB" strings (a copy)."""
         return list(self._colors)
 
     def paintEvent(self, event) -> None:
+        """Draw one hard-edged square per (downsampled) LED."""
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)

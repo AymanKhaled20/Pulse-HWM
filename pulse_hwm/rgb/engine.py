@@ -39,6 +39,7 @@ class RgbEngine:
     the worker's own thread (QTimer on the rgb-engine QThread)."""
 
     def __init__(self, catalog: EffectCatalog | None = None) -> None:
+        """Start with no driver and no devices; attach_driver() wires one up."""
         self.catalog = catalog or EffectCatalog()
         self._driver: RgbDriver | None = None
         self._devices: dict[str, RgbDevice] = {}
@@ -72,6 +73,7 @@ class RgbEngine:
         self._close_driver()
 
     def _close_driver(self) -> None:
+        """Release the driver and forget everything tied to its devices."""
         if self._driver is not None:
             try:
                 self._driver.close()
@@ -115,6 +117,7 @@ class RgbEngine:
     def set_assignment(
         self, device_id: str, assignment: DeviceAssignment | None
     ) -> None:
+        """Set (or with None, remove) the effect one device should render."""
         if assignment is None:
             self._assignments.pop(device_id, None)
             # not driven any more: nothing to preview, nothing failing
@@ -157,7 +160,10 @@ class RgbEngine:
         for device_id, device in self._devices.items():
             assignment = self._assignments.get(device_id)
             if not (assignment and assignment.enabled):
+                # not driven any more → forget its preview AND any old error,
+                # or the tab keeps showing PROBLEM for a device we don't touch
                 self.last_frames.pop(device_id, None)
+                self.device_errors.pop(device_id, None)
                 continue
             effect = self.catalog.get(assignment.effect_id)
             if effect is None:

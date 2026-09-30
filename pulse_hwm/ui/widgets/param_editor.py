@@ -45,6 +45,7 @@ class ColorSwatchButton(QPushButton):
     color_changed = Signal(str)
 
     def __init__(self, hex_value: str = "#FFD400", parent=None):
+        """Create the chip showing `hex_value`; a click opens the picker."""
         super().__init__(parent)
         self.setObjectName("colorSwatch")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -57,9 +58,11 @@ class ColorSwatchButton(QPushButton):
         self.clicked.connect(self._open_picker)
 
     def hex(self) -> str:
+        """The current color as a clean "#RRGGBB" string."""
         return self._hex
 
     def set_hex(self, value: str) -> None:
+        """Show a new color WITHOUT emitting color_changed (for loading)."""
         # always normalized through RgbColor: the stylesheet below only ever
         # sees a clean "#RRGGBB", whatever the stored settings contained
         self._hex = RgbColor.from_hex(str(value)).to_hex()
@@ -76,6 +79,7 @@ class ColorSwatchButton(QPushButton):
         )
 
     def _open_picker(self) -> None:
+        """Pop the pixel color picker up just below this button."""
         popup = QFrame(self, Qt.WindowType.Popup)
         popup.setObjectName("pixelPanel")
         layout = QVBoxLayout(popup)
@@ -91,6 +95,7 @@ class ColorSwatchButton(QPushButton):
         self._popup = popup  # closes itself on an outside click
 
     def _on_picked(self, value: str) -> None:
+        """The user chose a color in the popup: show and announce it."""
         self.set_hex(value)
         self.color_changed.emit(self._hex)
 
@@ -99,6 +104,7 @@ class ParamEditor(QWidget):
     params_changed = Signal(dict)  # all current values, after the debounce
 
     def __init__(self, parent=None):
+        """Start with no controls; set_effect() builds them."""
         super().__init__(parent)
         self._form = QFormLayout(self)
         self._form.setContentsMargins(0, 0, 0, 0)
@@ -148,6 +154,7 @@ class ParamEditor(QWidget):
             self._controls[spec.key] = control
 
     def _build_control(self, spec, current):
+        """Make the widget for one param spec, plus a function reading it."""
         if spec.kind == "color":
             swatch = ColorSwatchButton(str(current))
             swatch.color_changed.connect(self._schedule)
@@ -162,6 +169,7 @@ class ParamEditor(QWidget):
             slider.valueChanged.connect(self._schedule)
 
             def read_float(slider=slider, spec=spec, span=span) -> float:
+                """Map the slider's 0..100 back to the spec's range."""
                 return round(spec.minimum + span * slider.value() / _SLIDER_STEPS, 3)
 
             return slider, read_float
@@ -180,6 +188,7 @@ class ParamEditor(QWidget):
 
     # ── values ──────────────────────────────────────────────────────────
     def values(self) -> dict:
+        """Every control's current value, keyed by param name."""
         return {key: reader() for key, reader in self._readers.items()}
 
     def control(self, key: str):
@@ -193,7 +202,9 @@ class ParamEditor(QWidget):
             self._emit_now()
 
     def _schedule(self, *_args) -> None:
+        """A control changed: wait a moment so a dragged slider emits once."""
         self._debounce.start()  # restarts the wait on every new change
 
     def _emit_now(self) -> None:
+        """Announce all current values to whoever saves them."""
         self.params_changed.emit(self.values())

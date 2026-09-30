@@ -28,47 +28,61 @@ DEVICES = [
 
 @pytest.fixture(scope="module")
 def app():
+    """One QApplication for the whole module (Qt allows only one)."""
     return QApplication.instance() or QApplication([])
 
 
 class FakeManager:
     def __init__(self) -> None:
+        """Start with no recorded calls."""
         self.catalog = EffectCatalog()
         self.reconsiders = 0
         self.forced = 0
+        self.alert_hold_ms: int | None = None
+
+    def set_alert_hold_ms(self, hold_ms: int) -> None:
+        """Record the hold time the tab pushed."""
+        self.alert_hold_ms = hold_ms
 
     def reconsider(self) -> bool:
+        """Count a normal re-plan request."""
         self.reconsiders += 1
         return True
 
     def force_reconsider(self) -> bool:
+        """Count a forced re-plan (RE-SEND)."""
         self.forced += 1
         return True
 
 
 @pytest.fixture()
 def db(tmp_path: Path) -> Database:
+    """A fresh throwaway database per test."""
     return Database(tmp_path / "rgb-tab.db")
 
 
 @pytest.fixture()
 def manager() -> FakeManager:
+    """A fake manager that records what the tab asks of it."""
     return FakeManager()
 
 
 @pytest.fixture()
 def tab(app, db, manager):
+    """An RGB tab already showing two OpenRGB devices."""
     widget = RgbTab(db, manager=manager, brightness_bridge=lambda pct: None)
     widget.show_driver("openrgb", "OpenRGB", DEVICES)
     return widget
 
 
 def _settings(db):
+    """The settings as currently saved in `db`."""
     return app_settings.load(db)
 
 
 # ── mode buttons ────────────────────────────────────────────────────────
 def test_mode_button_saves_mode_switches_page_and_replans(tab, db, manager):
+    """A mode click saves the mode, shows its page and re-plans."""
     tab._mode_buttons["override"].click()
     assert _settings(db).rgb_mode == "override"
     assert tab._pages.currentIndex() == MODE_IDS.index("override")
@@ -76,6 +90,7 @@ def test_mode_button_saves_mode_switches_page_and_replans(tab, db, manager):
 
 
 def test_saved_mode_restored_on_load(app, db, manager):
+    """A new tab opens on the saved mode."""
     app_settings.save_field(db, "rgb_mode", "reactive")
     widget = RgbTab(db, manager=manager)
     assert widget._mode_buttons["reactive"].isChecked()
@@ -84,6 +99,7 @@ def test_saved_mode_restored_on_load(app, db, manager):
 
 # ── EFFECTS page ────────────────────────────────────────────────────────
 def test_reactive_effects_not_offered_per_device(tab):
+    """Device pickers list the new effects but not internal ones."""
     combo = tab._device_rows["openrgb:0"].combo
     ids = [combo.itemData(i) for i in range(combo.count())]
     assert "reactive_temp" not in ids and "reactive_alert" not in ids
@@ -91,6 +107,7 @@ def test_reactive_effects_not_offered_per_device(tab):
 
 
 def test_ticking_a_device_saves_its_effect_and_replans(tab, db, manager):
+    """Ticking a device saves its effect with the shown settings."""
     row = tab._device_rows["openrgb:0"]
     row.checkbox.click()
     entry = entry_of(_settings(db).rgb_device_assignment, "openrgb", "openrgb:0")
@@ -100,6 +117,7 @@ def test_ticking_a_device_saves_its_effect_and_replans(tab, db, manager):
 
 
 def test_device_color_change_is_saved(tab, db, manager):
+    """Picking a device color saves it and re-plans."""
     row = tab._device_rows["openrgb:0"]
     row.checkbox.click()
     before = manager.reconsiders
@@ -111,6 +129,7 @@ def test_device_color_change_is_saved(tab, db, manager):
 
 
 def test_picking_an_effect_enables_the_device_and_keeps_its_color(tab, db):
+    """Picking an effect ticks the device and keeps its color."""
     row = tab._device_rows["openrgb:1"]
     row.checkbox.click()
     row.editor.control("color")._on_picked("#0000FF")
@@ -124,6 +143,7 @@ def test_picking_an_effect_enables_the_device_and_keeps_its_color(tab, db):
 
 
 def test_unticking_removes_the_assignment(tab, db):
+    """Unticking a device deletes its effect and greys its editor."""
     row = tab._device_rows["openrgb:0"]
     row.checkbox.click()
     row.checkbox.click()
@@ -133,6 +153,7 @@ def test_unticking_removes_the_assignment(tab, db):
 
 # ── OVERRIDE page ───────────────────────────────────────────────────────
 def test_override_effect_is_saved(tab, db):
+    """The OVERRIDE effect is saved; the editor shows only its settings."""
     combo = tab._override_effect
     combo.setCurrentIndex(combo.findData("rainbow"))
     assert _settings(db).rgb_override_effect == "rainbow"
@@ -142,6 +163,7 @@ def test_override_effect_is_saved(tab, db):
 
 
 def test_override_speed_is_saved_as_percent(tab, db):
+    """OVERRIDE speed is stored as 0..100, as the setting expects."""
     combo = tab._override_effect
     combo.setCurrentIndex(combo.findData("wave"))
     slider = tab._override_editor.control("speed")
@@ -152,6 +174,7 @@ def test_override_speed_is_saved_as_percent(tab, db):
 
 # ── REACTIVE page ───────────────────────────────────────────────────────
 def test_reactive_settings_are_saved(tab, db):
+    """Every REACTIVE control saves its value."""
     tab._reactive_source.setCurrentIndex(tab._reactive_source.findData("gpu"))
     tab._reactive_low.setValue(30)
     tab._reactive_high.setValue(70)
@@ -163,6 +186,7 @@ def test_reactive_settings_are_saved(tab, db):
 
 
 def test_hot_stays_above_cool(tab, db):
+    """HOT AT is pushed above COOL AT instead of inverting."""
     tab._reactive_high.setValue(50)
     tab._reactive_low.setValue(60)
     assert tab._reactive_high.value() == 61
@@ -170,6 +194,7 @@ def test_hot_stays_above_cool(tab, db):
 
 
 def test_reactive_readout_uses_live_sensor(tab):
+    """The "NOW" line shows the live reading and the color it maps to."""
     tab._mode_buttons["reactive"].click()
     tab.show_sensors({"temps": [{"label": "CPU Package", "temp": 85.0}]})
     # 85 °C is the default HOT point → the default hot color
@@ -179,6 +204,7 @@ def test_reactive_readout_uses_live_sensor(tab):
 
 # ── status line + preview ───────────────────────────────────────────────
 def test_status_shows_live_and_paints_preview(tab):
+    """A good report shows LIVE and paints each device's preview."""
     tab._mode_buttons["effects"].click()
     tab.show_status(
         {
@@ -195,6 +221,7 @@ def test_status_shows_live_and_paints_preview(tab):
 
 
 def test_status_shows_problem_then_recovers(tab):
+    """A failing device shows PROBLEM, which clears once it recovers."""
     tab._mode_buttons["effects"].click()
     tab.show_status(
         {
@@ -221,11 +248,13 @@ def test_status_shows_problem_then_recovers(tab):
 
 
 def test_no_driver_is_reported(tab):
+    """Without a driver the status says so plainly."""
     tab.show_driver("", "", [])
     assert tab._status_line.text() == "NO RGB DRIVER"
 
 
 def test_resend_forces_a_replan_and_says_so(tab, manager):
+    """RE-SEND forces a re-plan and reports how many devices."""
     tab._mode_buttons["effects"].click()
     tab._resend_btn.click()
     assert manager.forced == 1
@@ -233,6 +262,7 @@ def test_resend_forces_a_replan_and_says_so(tab, manager):
 
 
 def test_resend_in_off_mode_explains_instead(tab, manager):
+    """RE-SEND in OFF mode explains why nothing was sent."""
     tab._mode_buttons["off"].click()
     tab._resend_btn.click()
     assert manager.forced == 0
@@ -240,6 +270,7 @@ def test_resend_in_off_mode_explains_instead(tab, manager):
 
 
 def test_brightness_slider_forwards_and_saves(app, db, manager):
+    """Brightness goes to the worker at once and is saved later."""
     sent: list[int] = []
     widget = RgbTab(db, manager=manager, brightness_bridge=sent.append)
     widget._brightness.setValue(40)
@@ -249,6 +280,7 @@ def test_brightness_slider_forwards_and_saves(app, db, manager):
 
 
 def test_color_button_opens_the_picker(tab):
+    """Clicking a color chip opens the picker popup."""
     swatch = tab._reactive_cool
     swatch.click()
     assert swatch._popup is not None and swatch._popup.isVisible()
@@ -257,6 +289,7 @@ def test_color_button_opens_the_picker(tab):
 
 # ── safety ──────────────────────────────────────────────────────────────
 def test_device_names_are_shown_as_plain_text(tab):
+    """Device names with HTML in them are never rendered as markup."""
     from PySide6.QtCore import Qt
 
     # a device name containing HTML must not be rendered as markup
@@ -267,3 +300,11 @@ def test_device_names_are_shown_as_plain_text(tab):
     ]
     names = [label for label in labels if "AULA" in label.text()]
     assert names and names[0].textFormat() == Qt.TextFormat.PlainText
+
+
+def test_flash_for_saves_and_updates_the_running_manager(tab, db, manager):
+    """FLASH FOR is saved and reaches the running manager at once."""
+    tab._alert_hold.setValue(7.5)
+    assert _settings(db).rgb_alert_hold_ms == 7500
+    # the live manager must see it too, not only after a restart
+    assert manager.alert_hold_ms == 7500

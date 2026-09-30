@@ -60,6 +60,7 @@ class RgbWorker(QObject):
     def __init__(
         self, catalog: EffectCatalog | None = None, parent: QObject | None = None
     ):
+        """Own the engine and the frame timer; both live on the rgb thread."""
         super().__init__(parent)
         self.engine = RgbEngine(catalog)
         self._timer = QTimer(self)
@@ -168,6 +169,7 @@ class RgbWorker(QObject):
 
     # ── internals ──────────────────────────────────────────────────────
     def _on_tick(self) -> None:
+        """Render and send one frame, then maybe report status to the tab."""
         self._poll_device_changes()
         self._ticks_since_report += 1
         try:

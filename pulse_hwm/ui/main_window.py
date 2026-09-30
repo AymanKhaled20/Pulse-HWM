@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         rgb_manager=None,
         rgb_worker=None,
     ):
+        """Build the window, its tabs and the tray icon from the app services."""
         super().__init__()
         self._theme_manager = theme_manager
         self._db = db  # closeEvent + update flows read settings from here

@@ -77,6 +77,7 @@ class RainbowEffect(Effect):
     params = (_SPEED_SPEC,)
 
     def render(self, ctx: EffectContext) -> list[RgbColor]:
+        """Spread the color wheel across the LEDs and rotate it over time."""
         count = self.frame_size(ctx)
         shift = ctx.now * _cycles_per_second(float(ctx.param(self.params[0])))
         # each LED sits at its own spot on the color wheel; adding `shift`
@@ -95,6 +96,7 @@ class SpectrumEffect(Effect):
     params = (_SPEED_SPEC,)
 
     def render(self, ctx: EffectContext) -> list[RgbColor]:
+        """Paint every LED the same hue, stepping around the wheel over time."""
         hue = (ctx.now * _cycles_per_second(float(ctx.param(self.params[0])))) % 1.0
         return [hsv_to_rgb(hue, 1.0, 1.0)] * self.frame_size(ctx)
 
@@ -107,6 +109,7 @@ class WaveEffect(Effect):
     params = (_COLOR_SPEC, _SPEED_SPEC)
 
     def render(self, ctx: EffectContext) -> list[RgbColor]:
+        """Draw a soft band of the chosen color that sweeps along the LEDs."""
         color = RgbColor.from_hex(str(ctx.param(self.params[0])))
         count = self.frame_size(ctx)
         # where the middle of the band is right now, 0..1 along the strip
