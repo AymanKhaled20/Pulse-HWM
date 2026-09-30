@@ -190,6 +190,18 @@ def test_download_uses_bearer_header(tmp_path):
     assert calls.get("url", "").endswith(f"/dl/{ASSET}")
 
 
+def test_bearer_only_for_the_exact_worker_download_route():
+    ok = installer.is_worker_download_url
+    assert ok(f"{WORKER}/dl/{ASSET}", WORKER)
+    assert ok(f"{WORKER}/dl/{ASSET}", WORKER + "/")  # trailing slash in config
+    # same host, but another path / port / scheme / climb-out → no token
+    assert not ok(f"{WORKER}/sync/pull", WORKER)
+    assert not ok(WORKER.replace(".dev", ".dev:8443") + f"/dl/{ASSET}", WORKER)
+    assert not ok(WORKER.replace("https", "http") + f"/dl/{ASSET}", WORKER)
+    assert not ok(f"{WORKER}/dl/../sync/pull", WORKER)
+    assert not ok(f"https://github.com/dl/{ASSET}", WORKER)
+
+
 def test_github_fallback_never_receives_the_bearer(tmp_path):
     # no R2 → the worker sends no download_url and GitHub is the only host
     payload = b"z" * 10

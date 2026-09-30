@@ -23,6 +23,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
@@ -47,6 +48,20 @@ class UpdateError(Exception):
 
 def _worker_hosts(worker_base: str) -> frozenset[str]:
     return frozenset({host_of(worker_base.rstrip("/"))})
+
+
+def is_worker_download_url(url: str, worker_base: str) -> bool:
+    """True only for the worker's own /dl/ route on the EXACT configured
+    origin (scheme + host + port). download_url is an unsigned server
+    field, so a host-only match could leak the token to another port or
+    path; everything else (e.g. the GitHub fallback) gets no token."""
+    target, base = urlsplit(url), urlsplit(worker_base.rstrip("/"))
+    same_origin = (
+        target.scheme.lower() == base.scheme.lower() == "https"
+        and target.netloc.lower() == base.netloc.lower()
+    )
+    # ".." could climb out of /dl/ once the server normalises the path
+    return same_origin and target.path.startswith("/dl/") and ".." not in target.path
 
 
 def pick_download_url(release: dict, worker_base: str) -> str:
@@ -110,7 +125,7 @@ def download_installer(
     # Our access token is only for OUR worker (/dl/ streams the private
     # bucket). The GitHub fallback is public, so never hand it the token.
     headers = {}
-    if host_of(url) in _worker_hosts(worker_base):
+    if is_worker_download_url(url, worker_base):
         headers["Authorization"] = f"Bearer {access_token}"
     hasher = hashlib.sha256()
     done = 0
