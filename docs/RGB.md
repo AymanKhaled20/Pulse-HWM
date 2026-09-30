@@ -148,19 +148,23 @@ Fixes:
 Verified on hardware after the fix: a fresh fork build (`0aada2a`) still
 stores and shows our colors after a rescan (the old build stayed black).
 
-## AULA F75 known issue — H key has no blue in direct mode (open)
+## AULA F75 known issue — H key has no blue (HARDWARE, not software)
 
-In OpenRGB's direct (streaming) mode the H key (LED 39) shows red + green but
-never blue: white looks yellow, purple looks pink. Its blue is packet byte
-127. Raw-HID tests with Pulse closed showed the firmware ignores that byte in
-every variant tried: 520- and 386-byte reports, H lit alone, every spare LED
-slot (84, 90-125, matrix gaps) and the report tail (bytes 386-519), plus the
-521-byte packet used by the community F87 Pro driver
-(github.com/HowardJoness/aula-f87pro-rgb, same header, same H = index 39).
-Windows reports the collection's feature length as exactly 520, so OpenRGB's
-packet size and layout are correct. No other key is affected, and the
-keyboard's onboard effects are fine: only its live (0x08) channel drops this
-one byte. A one-shot vendor "custom per-key" packet (cmd 0x06, planar
-R[126] G[126] B[126]) did not stick on its own; it likely needs the keyboard
-switched to its Self_define effect first (20-byte protocol, see the retired
-AULA notes above). That is the remaining route to a correct H.
+The owner's F75 shows the H key (LED 39) with red + green but no blue: white
+looks yellow, purple looks pink. The LEDs on this board sit ON THE SWITCH
+(they come out with it); with a fresh switch/LED in the H socket the blue part
+still stays dark while G's lights. Conclusion: the fault is the H socket's
+blue LED contact (or the driver-chip output behind it). Evidence:
+
+- the keyboard's OWN static-blue effect (Pulse and OpenRGB closed) leaves H
+  dark, and a factory reset changes nothing;
+- no OpenRGB/raw-HID packet variant could produce blue on H: 520/386/521-byte
+  reports, H lit alone, every spare LED slot, the report tail, header
+  variants. Windows reports the collection's feature length as exactly 520,
+  and OpenRGB's layout matches the community F87 Pro driver
+  (github.com/HowardJoness/aula-f87pro-rgb, same header, H = index 39);
+- every other key shows all three channels correctly.
+
+So nothing needs fixing in Pulse or OpenRGB for this. Before hardware testing,
+check a suspect LED in the keyboard's own static white/blue effect first; it
+separates hardware faults from software ones in one step.
