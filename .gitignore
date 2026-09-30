@@ -42,10 +42,12 @@ Thumbs.db
 # .claude/settings.json (shared project permissions) is tracked; everything
 # else in .claude/ is machine-local. Skills are cloned into .agents/skills
 # (linked from .claude/skills) and are reproducible from skills-lock.json.
-# Exceptions: the hook scripts settings.json runs, and our own project skills.
+# Exceptions: the hook scripts settings.json runs, our subagents, and our own
+# project skills. (.mcp.json lives at the repo root and is tracked.)
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
+!.claude/agents/
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/ship-exe/
