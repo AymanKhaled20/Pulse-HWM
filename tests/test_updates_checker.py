@@ -12,19 +12,22 @@ VERSION = "1.2.0"
 ASSET_NAME = "PulseHWM-Setup-1.2.0.exe"
 
 
-def _signed_payload(version: str = VERSION, overwrite: dict | None = None):
+def _signed_payload(
+    version: str = VERSION,
+    overwrite: dict | None = None,
+    signed_extra: dict | None = None,
+):
     """A real Ed25519-signed /updates/latest payload (+ its public key)."""
     from nacl.signing import SigningKey
 
     sk = SigningKey.generate()
-    manifest = json.dumps(
-        {
-            "version": version,
-            "asset_name": f"PulseHWM-Setup-{version}.exe",
-            "sha256": "a" * 64,
-        },
-        separators=(",", ":"),
-    )
+    manifest_fields = {
+        "version": version,
+        "asset_name": f"PulseHWM-Setup-{version}.exe",
+        "sha256": "a" * 64,
+    }
+    manifest_fields.update(signed_extra or {})
+    manifest = json.dumps(manifest_fields, separators=(",", ":"))
     sig = (
         base64.urlsafe_b64encode(sk.sign(manifest.encode("utf-8")).signature)
         .decode("ascii")
@@ -143,6 +146,21 @@ def test_available_offer_is_signed_and_carried(monkeypatch, tmp_path):
     assert outcome.release["version"] == VERSION
     assert outcome.release["manifest"]  # used for install-time re-verify
     assert outcome.release["download_url"].endswith(f"/dl/{ASSET_NAME}")
+
+
+def test_unsigned_mandatory_flag_cannot_force_an_update(monkeypatch, tmp_path):
+    # the server claims "mandatory" but the signed manifest does not
+    payload, pub = _signed_payload(
+        overwrite={"mandatory": True, "min_supported": "9.0.0"}
+    )
+    outcome = _task(monkeypatch, tmp_path, [(200, payload)], pub)
+    assert outcome.state == "available"
+
+
+def test_signed_security_floor_forces_the_update(monkeypatch, tmp_path):
+    payload, pub = _signed_payload(signed_extra={"min_supported": "1.2.0"})
+    outcome = _task(monkeypatch, tmp_path, [(200, payload)], pub)
+    assert outcome.state == "forced"  # running 1.1.6 is below the floor
 
 
 def test_dismissed_version_stays_skipped(monkeypatch, tmp_path):

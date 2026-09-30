@@ -190,6 +190,17 @@ def test_download_uses_bearer_header(tmp_path):
     assert calls.get("url", "").endswith(f"/dl/{ASSET}")
 
 
+def test_github_fallback_never_receives_the_bearer(tmp_path):
+    # no R2 → the worker sends no download_url and GitHub is the only host
+    payload = b"z" * 10
+    calls = {}
+    transport = _http_handler(payload, calls)
+    release = _release(payload, download_url="")
+    download_installer(release, WORKER, "tok", tmp_path, transport=transport)
+    assert calls.get("url", "").startswith("https://github.com/")
+    assert calls.get("auth") == ""
+
+
 # —— verification gate (pre-spawn TOCTOU shrink) —————————————————————
 def test_verify_installer_passes_on_matching_hash(tmp_path):
     payload = b"valid-binary-content"
