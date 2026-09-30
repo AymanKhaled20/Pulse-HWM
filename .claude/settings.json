@@ -34,7 +34,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|NotebookEdit|Bash|PowerShell",
         "hooks": [
           {
             "type": "command",

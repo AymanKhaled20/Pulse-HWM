@@ -33,10 +33,23 @@ def main() -> int:
     except ValueError:
         return 0
 
-    # Normalize Windows backslashes so the suffix match works on any path form.
-    file_path = event.get("tool_input", {}).get("file_path", "").replace("\\", "/")
+    tool_input = event.get("tool_input", {})
+    # Normalize Windows backslashes so matching works on any path form.
+    file_path = (
+        (tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+        .replace("\\", "/")
+        .lower()
+    )
+    # Shell tools can write files too (sed -i, Set-Content, git checkout ...).
+    # Commands can't be parsed reliably, so ANY command that mentions a
+    # protected file asks first; a rare extra prompt beats a silent bypass.
+    command = str(tool_input.get("command", "")).replace("\\", "/").lower()
+
     for protected, reason in PROTECTED_FILES.items():
-        if file_path.lower().endswith(protected):
+        # Match the bare file name in commands: after a `cd`, a command can
+        # refer to the file by a relative path such as just "trust.py".
+        file_name = protected.rsplit("/", 1)[-1]
+        if file_path.endswith(protected) or file_name in command:
             decision = {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
