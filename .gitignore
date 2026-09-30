@@ -38,6 +38,22 @@ data/
 Thumbs.db
 .DS_Store
 
+# ── Claude Code / agent tooling ─────────────────────────
+# .claude/settings.json (shared project permissions) is tracked; everything
+# else in .claude/ is machine-local. Skills are cloned into .agents/skills
+# (linked from .claude/skills) and are reproducible from skills-lock.json.
+# Exceptions: the hook scripts settings.json runs, and our own project skills.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/ship-exe/
+!.claude/skills/release/
+.agents/
+node_modules/
+.wrangler/
+
 # ── Logs ────────────────────────────────────────────────
 *.log
 
