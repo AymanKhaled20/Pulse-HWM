@@ -97,6 +97,10 @@ class Effect(ABC):
     effect_id: str = ""
     name: str = ""
     description: str = ""
+    # False for effects the MODE planner drives on its own (the reactive
+    # pair): they need planner-supplied params, so offering them in the
+    # per-device/override dropdowns would only produce a confusing look
+    user_selectable: bool = True
 
     params: tuple[ParamSpec, ...] = ()
 

@@ -285,6 +285,13 @@ class RgbManager:
         return True
 
     @property
+    def catalog(self) -> EffectCatalog:
+        """The catalog the planner AND the engine use. The RGB tab registers
+        imported effects into this same object, so a freshly imported effect
+        renders right away instead of only after a restart."""
+        return self._catalog
+
+    @property
     def alert_hold_ms(self) -> int:
         return self._alert_clock.hold_ms
 

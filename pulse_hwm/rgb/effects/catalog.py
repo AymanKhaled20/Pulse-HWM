@@ -41,6 +41,18 @@ class EffectCatalog:
     def all(self) -> list[Effect]:
         return [self._effects[eid] for eid in self.ids()]
 
+    def selectable(self) -> list[Effect]:
+        """Effects a user may pick in the RGB tab, in a friendly order:
+        built-ins first (as listed in builtin.py), then imported effects by
+        name. Planner-only effects (user_selectable=False) are left out."""
+        builtin_order = [cls.effect_id for cls in BUILTIN_EFFECT_CLASSES]
+        builtins = [self._effects[eid] for eid in builtin_order if eid in self._effects]
+        imported = sorted(
+            (e for eid, e in self._effects.items() if eid not in builtin_order),
+            key=lambda effect: effect.name,
+        )
+        return [e for e in builtins + imported if e.user_selectable]
+
     def validate_params(
         self, effect_id: str, params: dict[str, float | int | str]
     ) -> dict[str, float | int | str]:

@@ -44,6 +44,31 @@ LED) → pure mode planner (`rgb/manager.py`) decides who drives the hardware
 OpenRGB-like per-LED contracts or vendor SDKs. Settings persist in the
 standard `settings` table; `rgb_*` keys are device-local and never synced.
 
+## RGB tab — 2026-09-30 rework (`feature/rgb-tab-rework`)
+
+The old tab "felt fake": most controls changed nothing visible. Causes and
+what replaced them:
+
+| Old problem | Now |
+|---|---|
+| Override COLOR/SPEED always editable, but only used in OVERRIDE mode | Mode buttons; only the active mode's page is shown |
+| SPEED did nothing (override effect was fixed to STATIC) | OVERRIDE has an EFFECT picker; editor shows only params that effect uses |
+| EFFECTS had no color: STATIC was always default yellow | Per-device editor built from the effect's `ParamSpec`s, saved in the assignment blob `params` |
+| REACTIVE settings existed but had no UI | REACTIVE page: source, cool/hot points + colors, alert color/hold, live readout |
+| APPLY NOW + RECONSIDER NOW re-sent identical frames | One RE-SEND button that says what it did |
+| Reactive effects offered in dropdowns | `Effect.user_selectable`; `EffectCatalog.selectable()` |
+| No feedback; `driver_error` fired 30×/s and never cleared | Worker `status_reported` (~5/s): fps, per-device errors, and the frames sent → LIVE PREVIEW strip per device |
+| Imported effects only rendered after a restart (tab had its own catalog) | Tab uses the engine's catalog (`RgbManager.catalog`) |
+
+New built-in effects: RAINBOW (hue scrolls along LED index), SPECTRUM CYCLE
+(whole device fades through hues), WAVE (band of a color sweeps along LEDs).
+All moving effects share one SPEED mapping (0.05..1.0 = loops per second).
+
+Widgets: `ui/widgets/param_editor.py` (auto-built controls, debounced 150 ms
+so dragging doesn't write the DB per pixel), `ui/widgets/led_strip.py`
+(preview, downsampled to ≤ 64 squares). Color math moved to
+`rgb/color_math.py` (shared by the picker and the hue effects).
+
 ## AULA F75 (native HID driver) — RETIRED 2026-09-29
 
 The native `aula_f75.py` / `aula_protocol.py` driver, `CompositeDriver`, and

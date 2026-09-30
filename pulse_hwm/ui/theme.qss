@@ -308,3 +308,27 @@ QPushButton#railButton:checked {
 QPushButton#railButton:checked:hover {
     border-color: $PRIMARY;
 }
+
+/* === RGB tab: mode buttons (the active mode is filled) ================ */
+QPushButton#modeButton {
+    background-color: $PANEL;
+    color: $MUTED;
+    border: 2px solid $LINE;
+    padding: 9px 14px;
+}
+QPushButton#modeButton:hover {
+    color: $TEXT;
+    border-color: $PRIMARY;
+    background-color: $PANEL;
+}
+QPushButton#modeButton:checked {
+    background-color: $PRIMARY;
+    color: $BG;
+    border-color: $PRIMARY;
+}
+QLabel#rgbLive {
+    color: $SUCCESS;
+}
+QLabel#rgbProblem {
+    color: $DANGER;
+}

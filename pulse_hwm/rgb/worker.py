@@ -29,6 +29,9 @@ log = logging.getLogger("pulse.rgb")
 _ERROR_LOG_REPEAT_S = 10.0
 # how often the render loop asks the driver about unplugged/replugged devices
 _POLL_CHANGES_S = 1.0
+# how often the RGB tab gets a status + preview report. 5/s looks live but
+# keeps cross-thread traffic and repainting tiny compared with 30 FPS
+_STATUS_REPORT_S = 0.2
 
 
 class RgbWorker(QObject):
@@ -39,7 +42,11 @@ class RgbWorker(QObject):
     devices_changed = Signal(list)  # list[RgbDevice] — manager leg
     devices_reported = Signal(str, str, list)  # (driver_id, name, devices) — tab leg
     rendered = Signal(int)  # frames accepted this tick
-    driver_error = Signal(str)  # human-readable failure for the UI strip
+    driver_error = Signal(str)  # attach/probe failure for the UI strip
+    # throttled live report for the RGB tab (plain data only, so nothing
+    # shared crosses threads): {"fps": float, "driven": int, "ok": int,
+    # "frames": {device_id: ["#RRGGBB", ...]}, "errors": {device_id: str}}
+    status_reported = Signal(dict)
     start_requested = Signal(int)  # queued render-loop startup
     attach_requested = Signal(object)  # RgbDriver handed off to this thread
     # DriverRegistry handed off to this thread: probe() does socket/file I/O,
@@ -61,6 +68,10 @@ class RgbWorker(QObject):
         self._last_success_log = 0.0
         self._last_error_logged = ("", 0.0)  # (message, monotonic time)
         self._last_change_poll = 0.0
+        # measured frame rate for the status report: ticks counted since the
+        # last report, divided by the time since then
+        self._last_status_report = time.monotonic()
+        self._ticks_since_report = 0
         # queued onto OUR thread: driver probe/open I/O never runs on the
         # caller's thread during a mode/device switch
         self.attach_requested.connect(self.attach)
@@ -158,11 +169,12 @@ class RgbWorker(QObject):
     # ── internals ──────────────────────────────────────────────────────
     def _on_tick(self) -> None:
         self._poll_device_changes()
+        self._ticks_since_report += 1
         try:
             applied = self.engine.tick()
         except Exception as exc:  # ticking must survive catastrophic state
             self._log_error_throttled(f"render failed: {exc}")
-            self.driver_error.emit(f"render failed: {exc}")
+            self._report_status(extra_error=f"render failed: {exc}")
             return
         self.rendered.emit(applied)
         if applied:
@@ -172,7 +184,36 @@ class RgbWorker(QObject):
                 self._last_success_log = now
         if self.engine.last_error:
             self._log_error_throttled(f"tick error: {self.engine.last_error}")
-            self.driver_error.emit(self.engine.last_error)
+        # per-frame errors now travel in the throttled status report (they
+        # used to be emitted 30x a second and never cleared in the UI)
+        self._report_status()
+
+    def _report_status(self, extra_error: str = "") -> None:
+        """At most every _STATUS_REPORT_S: tell the RGB tab what is being
+        sent right now (preview frames as hex strings) and what is failing."""
+        now = time.monotonic()
+        elapsed = now - self._last_status_report
+        if elapsed < _STATUS_REPORT_S:
+            return
+        fps = self._ticks_since_report / elapsed if elapsed > 0 else 0.0
+        self._last_status_report = now
+        self._ticks_since_report = 0
+        frames = {
+            device_id: [color.to_hex() for color in frame]
+            for device_id, frame in self.engine.last_frames.items()
+        }
+        errors = dict(self.engine.device_errors)
+        if extra_error:
+            errors["*"] = extra_error  # "*" = the whole engine, not one device
+        self.status_reported.emit(
+            {
+                "fps": round(fps, 1),
+                "driven": len(frames),
+                "ok": len([d for d in frames if d not in errors]),
+                "frames": frames,
+                "errors": errors,
+            }
+        )
 
     def _poll_device_changes(self) -> None:
         """About once a second: did the driver's device list change? If so,

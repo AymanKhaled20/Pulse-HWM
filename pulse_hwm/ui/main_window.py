@@ -137,6 +137,11 @@ class MainWindow(QMainWindow):
             )
             rgb_worker.devices_reported.connect(self._rgb_tab.show_driver)
             rgb_worker.driver_error.connect(self._rgb_tab.show_error)
+            # live preview + status line (~5 reports a second)
+            rgb_worker.status_reported.connect(self._rgb_tab.show_status)
+            if hardware_collector is not None:
+                # REACTIVE page readout: "NOW: CPU 52 °C → color"
+                hardware_collector.updated.connect(self._rgb_tab.show_sensors)
             self.tabs.addTab(self._rgb_tab, "RGB")
         else:
             self._rgb_tab = None

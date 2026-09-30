@@ -1,4 +1,5 @@
-"""Color math for the pixel picker — Qt-free, fully unit-testable.
+"""Color math shared by the pixel picker and the hue-based effects
+(rainbow/spectrum) — Qt-free, fully unit-testable.
 
 HSV over 0..1 channels; integer-hex conversion happens at the widget edge
 via the shared RgbColor model. Round-trips rgb→hsv→rgb within ±1 per
