@@ -110,6 +110,12 @@ jobs:
             exit 1
           }
           $sig = python 'scripts\update_signing.py' sign --manifest "dist-assets\manifest-$v.json" --key-env UPDATE_SIGNING_KEY
+          # a failing native command does NOT stop a pwsh step on its own:
+          # fail here, at the real cause, instead of shipping an empty $sig
+          if ($LASTEXITCODE -ne 0 -or -not $sig) {
+            Write-Error 'signing the update manifest failed'
+            exit 1
+          }
           Set-Content -Path "dist-assets\manifest-$v.sig" -Value $sig -Encoding ascii
 
           # release notes for the client: extract OUR version's changelog

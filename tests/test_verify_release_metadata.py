@@ -67,6 +67,16 @@ def test_signature_over_file_with_trailing_newline_is_caught(guard):
     assert any("signature" in p for p in problems)
 
 
+def test_signing_key_not_trusted_by_the_app_is_caught(guard):
+    # e.g. the UPDATE_SIGNING_KEY secret was rotated but trust.py was not
+    manifest = _manifest()
+    sig, _signer_pub = _sign(manifest.encode("utf-8"))
+    _other_sig, other_pub = _sign(b"unrelated")
+    meta = {"version": VERSION, "manifest": manifest, "manifest_sig": sig}
+    problems = guard.find_problems(meta, INSTALLER_SHA, VERSION, frozenset({other_pub}))
+    assert any("signature" in p for p in problems)
+
+
 def test_wrong_installer_hash_is_caught(guard):
     manifest = _manifest()
     sig, pub = _sign(manifest.encode("utf-8"))

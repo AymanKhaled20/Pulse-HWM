@@ -163,6 +163,19 @@ def test_signed_security_floor_forces_the_update(monkeypatch, tmp_path):
     assert outcome.state == "forced"  # running 1.1.6 is below the floor
 
 
+def test_signed_mandatory_flag_forces_the_update(monkeypatch, tmp_path):
+    payload, pub = _signed_payload(signed_extra={"mandatory": True})
+    outcome = _task(monkeypatch, tmp_path, [(200, payload)], pub)
+    assert outcome.state == "forced"
+
+
+def test_signed_mandatory_must_be_a_real_boolean(monkeypatch, tmp_path):
+    # the string "true" is not the JSON boolean CI writes: never force on it
+    payload, pub = _signed_payload(signed_extra={"mandatory": "true"})
+    outcome = _task(monkeypatch, tmp_path, [(200, payload)], pub)
+    assert outcome.state == "available"
+
+
 def test_dismissed_version_stays_skipped(monkeypatch, tmp_path):
     payload, pub = _signed_payload()
     db = Database(tmp_path / "d.db")
