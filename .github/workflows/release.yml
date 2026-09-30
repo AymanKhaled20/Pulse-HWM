@@ -97,13 +97,25 @@ jobs:
           $manifest = @"
           {"version": "$v", "asset_name": "$asset", "sha256": "$sha", "published_at": "$now", "mandatory": $($mandatory.ToString().ToLower()), "min_supported": "$minSupported"}
           "@
-          Set-Content -Path "dist-assets\manifest-$v.json" -Value $manifest -Encoding utf8
+          # We sign the file's BYTES but publish the $manifest STRING, so the
+          # file must be exactly that string: UTF-8, no BOM, no trailing
+          # newline. (v1.3.0 used Set-Content, which added a CRLF, and every
+          # client rejected its signature.) WriteAllText behaves the same on
+          # every PowerShell version, unlike Set-Content -Encoding utf8.
+          $manifestPath = Join-Path (Get-Location) "dist-assets\manifest-$v.json"
+          [System.IO.File]::WriteAllText($manifestPath, $manifest, (New-Object System.Text.UTF8Encoding $false))
 
           if (-not $env:UPDATE_SIGNING_KEY) {
             Write-Error 'UPDATE_SIGNING_KEY secret missing — refusing to release unsigned updates'
             exit 1
           }
           $sig = python 'scripts\update_signing.py' sign --manifest "dist-assets\manifest-$v.json" --key-env UPDATE_SIGNING_KEY
+          # a failing native command does NOT stop a pwsh step on its own:
+          # fail here, at the real cause, instead of shipping an empty $sig
+          if ($LASTEXITCODE -ne 0 -or -not $sig) {
+            Write-Error 'signing the update manifest failed'
+            exit 1
+          }
           Set-Content -Path "dist-assets\manifest-$v.sig" -Value $sig -Encoding ascii
 
           # release notes for the client: extract OUR version's changelog
@@ -122,6 +134,15 @@ jobs:
           } | ConvertTo-Json -Compress
           Set-Content -Path 'dist-assets\metadata.json' -Value $meta -Encoding utf8
           Write-Output "staged: $asset ($sha)"
+
+      - name: Verify the release exactly like the desktop app will
+        # runs the app's own trust + policy code on metadata.json, so a
+        # release that clients would refuse fails HERE, before anything is
+        # uploaded to GitHub, R2, or the worker
+        run: |
+          $v = $env:GITHUB_REF_NAME -replace '^v', ''
+          python 'scripts\verify_release_metadata.py' --metadata 'dist-assets\metadata.json' --installer "dist-assets\PulseHWM-Setup-$v.exe" --version $v
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       # OPTIONAL Authenticode signing (defense-in-depth, removes SmartScreen
       # warnings). Enable once SignPath OSS verification completes — keep

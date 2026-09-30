@@ -7,6 +7,8 @@
 #include "version.iss"
 #define AppExeName "PulseHWM.exe"
 #define AppPublisher "Pulse-HWM"
+; must match the mutex name pulse_hwm/app.py creates
+#define AppMutexName "PulseHWMAppMutex"
 
 [Setup]
 AppId={{4E5C1B77-D5F2-4A0F-9B33-2D1C1B0AA001}
@@ -27,7 +29,7 @@ UninstallDisplayIcon={app}\{#AppExeName}
 SetupIconFile=..\pulse_hwm\assets\icons\pulse.ico
 ; the running app flags itself with this mutex so setup can detect (and, in
 ; silent mode, close) an instance that is still using the files
-AppMutex=PulseHWMAppMutex
+AppMutex={#AppMutexName}
 ; Restart-Manager closes the app when files are locked (default), never
 ; restart-via-RM: the updater controls its own relaunch via /LAUNCHAFTER
 CloseApplications=yes
@@ -66,4 +68,26 @@ Type: filesandordirs; Name: "{app}\data"
 function LaunchAfter: Boolean;
 begin
   Result := ExpandConstant('{param:LAUNCHAFTER|0}') = '1';
+end;
+
+// The in-app updater starts this installer and THEN quits (~1.5 s later),
+// so the app still holds PulseHWMAppMutex for a moment. Without a wait the
+// AppMutex check pops a "Pulse-HWM is running, close it" box during a
+// "silent" update. So for updater runs only, give the app up to 30 s to
+// exit. We always return True: if it is somehow still running, Inno's
+// normal AppMutex prompt takes over as before.
+function InitializeSetup: Boolean;
+var
+  WaitedMs: Integer;
+begin
+  if LaunchAfter then
+  begin
+    WaitedMs := 0;
+    while CheckForMutexes('{#AppMutexName}') and (WaitedMs < 30000) do
+    begin
+      Sleep(250);
+      WaitedMs := WaitedMs + 250;
+    end;
+  end;
+  Result := True;
 end;

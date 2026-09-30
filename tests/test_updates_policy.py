@@ -23,10 +23,20 @@ def test_is_newer_semantics():
     assert not policy.is_newer("1.1.5", "1.1.6")
 
 
-def test_is_rollback_blocks_downgrades_and_replays():
+def test_is_rollback_blocks_downgrades_only():
     assert policy.is_rollback("1.1.5", "1.1.6")
-    assert policy.is_rollback("1.1.6", "1.1.6")  # replay of the same version
+    # the same version as the highest seen is the pending offer, not a replay
+    assert not policy.is_rollback("1.1.6", "1.1.6")
     assert not policy.is_rollback("1.1.7", "1.1.6")
+
+
+def test_evaluate_keeps_offering_an_already_seen_update():
+    # regression: the controller stores the offered version as highest-seen,
+    # so the NEXT check must still say "available" (the banner used to vanish)
+    first = policy.evaluate(_payload("1.1.7"), "1.1.6", "", WORKER, {WORKER_HOST})
+    again = policy.evaluate(_payload("1.1.7"), "1.1.6", "1.1.7", WORKER, {WORKER_HOST})
+    assert first.state == "available"
+    assert again.state == "available"
 
 
 def test_below_min_supported_flags_forced_security_fix():

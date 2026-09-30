@@ -161,6 +161,11 @@ signed. Until then the Ed25519 + SHA-256 pair carries the security.
    git tag v1.2.1
    git push origin v1.2.1
    ```
+   Before uploading anything, CI runs `scripts/verify_release_metadata.py`,
+   which checks the signed metadata with the app's own trust code. If a
+   client would reject the release, the build fails there instead.
+   (v1.3.0 was signed over the manifest file plus a trailing CRLF, so every
+   client refused it. That is why this check exists.)
    That is the whole job: CI builds the installer, uploads it to R2 (only
    when `R2_ENABLED=true` — otherwise the GitHub release asset is the
    delivery path) and publishes metadata; member installs update themselves

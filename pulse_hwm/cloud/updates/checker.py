@@ -128,8 +128,11 @@ class _CheckTask(QRunnable):
                 "notes": str(payload.get("notes", "") or ""),
                 "html_url": str(payload.get("html_url", "") or ""),
                 "published_at": str(payload.get("published_at", "") or ""),
-                "min_supported": str(payload.get("min_supported", "") or ""),
-                "mandatory": bool(payload.get("mandatory")),
+                # the security floor comes from the SIGNED manifest only: the
+                # unsigned copies could otherwise let a compromised server
+                # force the "SECURITY UPDATE / no LATER" banner on anyone
+                "min_supported": str(signed.get("min_supported", "") or ""),
+                "mandatory": signed.get("mandatory") is True,
                 "download_url": str(payload.get("download_url", "") or ""),
                 "fallback_url": str(payload.get("fallback_url", "") or ""),
             }
