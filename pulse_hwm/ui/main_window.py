@@ -135,6 +135,8 @@ class MainWindow(QMainWindow):
                 # a signal emit, so the brightness change is queued onto
                 # the rgb thread instead of running on the UI thread
                 brightness_bridge=rgb_worker.brightness_requested.emit,
+                # queued too: the rescan blocks for seconds on the rgb thread
+                rescan_bridge=rgb_worker.rescan_requested.emit,
             )
             rgb_worker.devices_reported.connect(self._rgb_tab.show_driver)
             rgb_worker.driver_error.connect(self._rgb_tab.show_error)

@@ -177,3 +177,37 @@ def test_device_list_change_rereads_devices_and_resets_checks(monkeypatch) -> No
     assert client.custom_mode_calls == [0, 1]  # both back in direct mode
     assert driver._verify_state == {}  # re-verify the new numbering
     assert [d.device_id for d in driver.devices()] == ["openrgb:0", "openrgb:1"]
+
+
+def test_rescan_finds_a_device_missed_at_startup(monkeypatch) -> None:
+    """OpenRGB's startup detection missed the keyboard; a rescan must ask
+    the server to detect again, re-read devices and switch them to direct."""
+    client = FakeClient([_controller(0, "Mouse")])
+    driver = _open_driver(monkeypatch, client)
+    _send(driver, "openrgb:0", OpenRgbDriver.VERIFY_AFTER_FRAMES + 2)
+
+    client.controllers = [_controller(0, "Mouse"), _controller(1, "AULA F75")]
+    client.notifications = {P.PKT_DEVICE_LIST_UPDATED}  # the rescan's own notice
+    client.custom_mode_calls.clear()
+    assert driver.rescan() is True
+    assert client.rescans == 1
+    assert client.refreshes == [OpenRgbDriver.RESCAN_SETTLE_S]
+    assert client.custom_mode_calls == [0, 1]
+    assert driver._verify_state == {}
+    assert [d.name for d in driver.devices()] == ["Mouse", "AULA F75"]
+    assert driver.poll_changes() is False  # notice consumed, no double re-read
+
+
+def test_rescan_failure_is_reported_not_raised(monkeypatch) -> None:
+    client = FakeClient([_controller(0, "Mouse")])
+    driver = _open_driver(monkeypatch, client)
+
+    def broken_rescan() -> None:
+        raise OSError("server went away")
+
+    client.rescan = broken_rescan
+    assert driver.rescan() is False
+
+
+def test_rescan_without_a_connection_does_nothing() -> None:
+    assert OpenRgbDriver(port=1).rescan() is False

@@ -191,3 +191,73 @@ def test_worker_reports_device_changes_like_an_attach():
 
     worker._poll_device_changes()  # throttled: under a second later, no poll
     assert len(changed_lists) == 1
+
+
+class RescanDriver(FakeDriver):
+    """FakeDriver whose first detection missed the second device."""
+
+    def __init__(self, rescan_works: bool = True) -> None:
+        super().__init__()
+        self._found_all = False
+        self._rescan_works = rescan_works
+        self.rescans = 0
+
+    def rescan(self) -> bool:
+        self.rescans += 1
+        if self._rescan_works:
+            self._found_all = True
+        return self._rescan_works
+
+    def devices(self):
+        devices = super().devices()
+        return devices if self._found_all else devices[:1]
+
+
+def test_engine_rescan_picks_up_a_missed_device():
+    engine = RgbEngine()
+    driver = RescanDriver()
+    engine.attach_driver(driver)
+    assert engine.device_ids() == ["fake:0"]
+    found = engine.rescan_driver()
+    assert [d.device_id for d in found] == engine.device_ids()
+    assert len(engine.device_ids()) == 2
+
+
+def test_engine_rescan_without_driver_or_on_failure_returns_none():
+    engine = RgbEngine()
+    assert engine.rescan_driver() is None
+    engine.attach_driver(RescanDriver(rescan_works=False))
+    assert engine.rescan_driver() is None
+    assert engine.device_ids() == ["fake:0"]
+
+
+def test_worker_rescan_reports_devices_even_when_nothing_changed():
+    """The RGB tab waits for a report to leave its "rescanning" state."""
+    from PySide6.QtWidgets import QApplication
+
+    _app = QApplication.instance() or QApplication([])
+    for works, expected in ((True, 2), (False, 1)):
+        worker = RgbWorker()
+        driver = RescanDriver(rescan_works=works)
+        worker.engine.attach_driver(driver)
+        reports: list[tuple] = []
+        worker.devices_reported.connect(lambda *args: reports.append(args))
+        worker.rescan_requested.emit()  # same thread → direct call
+        assert driver.rescans == 1
+        assert reports[-1][0] == "fake"
+        assert len(reports[-1][2]) == expected
+
+
+def test_worker_rescan_without_driver_retries_the_attach():
+    from PySide6.QtWidgets import QApplication
+
+    from pulse_hwm.rgb.drivers.registry import DriverRegistry
+
+    _app = QApplication.instance() or QApplication([])
+    worker = RgbWorker()
+    worker.attach_first_available(DriverRegistry(()))  # nothing available
+    driver = FakeDriver()
+    worker._registry = DriverRegistry((driver,))
+    worker._registry.load()
+    worker.rescan()
+    assert worker.engine.driver is driver

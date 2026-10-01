@@ -139,7 +139,9 @@ Implementation shipped on `feature/rgb-openrgb-backend`:
 the single driver behind the engine contract (the `CompositeDriver` wrapper
 was removed 2026-09-29 once OpenRGB became the only transport).
 The client waits for the device count to stay stable (15 s window) so late
-keyboard detection is included; it does NOT rescan (see the 2026-09-29 note).
+keyboard detection is included; it does NOT rescan at startup (see the
+2026-09-29 note), only on RESCAN or when a saved device is missing
+(see the 2026-10-01 note).
 Settings:
 `rgb_openrgb_enabled` (default on), `rgb_openrgb_port` (6742),
 `rgb_openrgb_path` (override). Backend binaries bundled in
@@ -172,6 +174,25 @@ Fixes:
 
 Verified on hardware after the fix: a fresh fork build (`0aada2a`) still
 stores and shows our colors after a rescan (the old build stayed black).
+
+## 2026-10-01 — keyboard missing after startup, RE-SEND didn't help (FIXED)
+
+Symptom: the RGB tab showed 5 devices instead of 6; the AULA F75 was gone and
+RE-SEND only re-sent to the 5 it had.
+
+Cause (OpenRGB detection, not Pulse's wait): OpenRGB's own log for that run
+lists the keyboard's HID interfaces (`258a:010c`) but never
+`Registering RGB controller AULA F75`. Its detector tried the keyboard and got
+no answer, and OpenRGB only detects once at startup, so the keyboard stayed
+missing. RE-SEND only replays the current plan to known devices.
+
+Fix:
+- `RgbDriver.rescan()` (OpenRGB: REQUEST_RESCAN_DEVICES, re-read with a 5 s
+  settle window, direct mode again, read-back check reset). Safe on the
+  bundled fork since `0aada2a`.
+- RGB tab: a **RESCAN** button next to RE-SEND (lights pause a few seconds).
+- `RgbController` rescans automatically ONCE per run when a device with a saved
+  effect isn't reported after attach.
 
 ## AULA F75 known issue — H key has no blue (HARDWARE, not software)
 

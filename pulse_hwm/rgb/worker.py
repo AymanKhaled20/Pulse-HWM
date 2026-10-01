@@ -56,6 +56,7 @@ class RgbWorker(QObject):
     sensors_requested = Signal(dict)  # hardware snapshot push, queued
     assignments_requested = Signal(dict)  # {device_id: DeviceAssignment | None}
     detach_requested = Signal()  # queued close: releases driver (OpenRGB proc)
+    rescan_requested = Signal()  # queued hardware re-detection (RESCAN button)
 
     def __init__(
         self, catalog: EffectCatalog | None = None, parent: QObject | None = None
@@ -73,6 +74,9 @@ class RgbWorker(QObject):
         # last report, divided by the time since then
         self._last_status_report = time.monotonic()
         self._ticks_since_report = 0
+        # kept from the startup attach so a RESCAN with no driver attached
+        # (e.g. OpenRGB failed to start) can simply try the attach again
+        self._registry = None
         # queued onto OUR thread: driver probe/open I/O never runs on the
         # caller's thread during a mode/device switch
         self.attach_requested.connect(self.attach)
@@ -84,6 +88,7 @@ class RgbWorker(QObject):
         self.sensors_requested.connect(self.set_sensors)
         self.assignments_requested.connect(self.apply_assignments)
         self.detach_requested.connect(self.detach)
+        self.rescan_requested.connect(self.rescan)
 
     # ── slots (invoked cross-thread via signals) ──────────────────────
     @Slot(int)
@@ -99,6 +104,7 @@ class RgbWorker(QObject):
     def attach_first_available(self, registry) -> None:
         """Probe every registered driver (on THIS thread) and attach the
         first one that is available; report "no driver" otherwise."""
+        self._registry = registry
         try:
             available = registry.available()
         except Exception as exc:  # a broken registry must not kill the thread
@@ -134,6 +140,36 @@ class RgbWorker(QObject):
         self.engine.detach_driver()
         self.devices_changed.emit([])
         self.devices_reported.emit("", "", [])
+
+    @Slot()
+    def rescan(self) -> None:
+        """Detect hardware again. With a driver attached the driver rescans
+        (OpenRGB only detects once, at startup); without one, re-run the
+        startup attach. Always ends with a device report so the RGB tab
+        leaves its "rescanning" state."""
+        driver = self.engine.driver
+        if driver is None:
+            if self._registry is not None:
+                self.attach_first_available(self._registry)
+            else:
+                self.devices_reported.emit("", "", [])
+            return
+        try:
+            devices = self.engine.rescan_driver()
+        except Exception as exc:  # a broken rescan must not kill the thread
+            log.exception("rescan failed")
+            devices = None
+            self.driver_error.emit(f"rescan failed: {exc}")
+        if devices is None:
+            # nothing changed; repeat the current list so the tab updates
+            devices = self.engine.devices()
+        log.info(
+            "rescan: driver=%s devices=%s",
+            driver.driver_id,
+            [(d.device_id, d.leds) for d in devices],
+        )
+        self.devices_changed.emit(list(devices))
+        self.devices_reported.emit(driver.driver_id, driver.name, list(devices))
 
     def set_assignment(
         self, device_id: str, assignment: DeviceAssignment | None

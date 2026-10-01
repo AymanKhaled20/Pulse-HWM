@@ -308,3 +308,35 @@ def test_flash_for_saves_and_updates_the_running_manager(tab, db, manager):
     assert _settings(db).rgb_alert_hold_ms == 7500
     # the live manager must see it too, not only after a restart
     assert manager.alert_hold_ms == 7500
+
+
+def test_rescan_asks_the_worker_and_reports_the_new_count(app, db, manager):
+    """RESCAN re-detects devices (RE-SEND only talks to known ones); the
+    button stays disabled until the worker reports back."""
+    requests: list[bool] = []
+    widget = RgbTab(
+        db,
+        manager=manager,
+        brightness_bridge=lambda pct: None,
+        rescan_bridge=lambda: requests.append(True),
+    )
+    widget.show_driver("openrgb", "OpenRGB", DEVICES[:1])
+    widget._rescan_btn.click()
+    assert requests == [True]
+    assert not widget._rescan_btn.isEnabled()
+    assert "RESCANNING" in widget._feedback.text()
+
+    widget.show_driver("openrgb", "OpenRGB", DEVICES)
+    assert widget._rescan_btn.isEnabled()
+    assert "2 DEVICES FOUND" in widget._feedback.text()
+
+
+def test_rescan_failure_reenables_the_button(app, db, manager):
+    widget = RgbTab(db, manager=manager, rescan_bridge=lambda: None)
+    widget._rescan_btn.click()
+    widget.show_error("rescan failed: boom")
+    assert widget._rescan_btn.isEnabled()
+
+
+def test_rescan_unavailable_without_a_worker(tab):
+    assert not tab._rescan_btn.isEnabled()

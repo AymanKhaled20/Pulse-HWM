@@ -97,6 +97,18 @@ class RgbEngine:
         Returns the NEW device list when it did, None otherwise."""
         if self._driver is None or not self._driver.poll_changes():
             return None
+        return self._reload_devices()
+
+    def rescan_driver(self) -> list[RgbDevice] | None:
+        """Ask the driver to detect hardware again. Returns the NEW device
+        list, or None when there is no driver or the rescan failed."""
+        if self._driver is None or not self._driver.rescan():
+            return None
+        return self._reload_devices()
+
+    def _reload_devices(self) -> list[RgbDevice]:
+        """Re-read the driver's devices after its list changed."""
+        assert self._driver is not None
         self._devices = {d.device_id: d for d in self._driver.devices()}
         # forget preview/error state of devices that went away
         self.last_frames = {

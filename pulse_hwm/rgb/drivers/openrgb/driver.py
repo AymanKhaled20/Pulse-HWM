@@ -16,6 +16,12 @@ Mapping decisions:
   * OpenRGB announces unplug/replug with DEVICE_LIST_UPDATED; poll_changes()
     re-reads the list and puts the devices back into direct mode, because
     re-detected devices come back in their hardware mode.
+  * OpenRGB detects hardware ONCE at startup. A device that does not answer
+    then (seen with the AULA F75: its HID interfaces were listed but the
+    controller was never registered) stays missing until something asks for
+    a rescan, so rescan() exists for the RGB tab's RESCAN button and the
+    controller's one automatic retry. Safe on the bundled fork since
+    0aada2a; before that a rescan made the server drop every frame.
 """
 
 from __future__ import annotations
@@ -59,6 +65,9 @@ class OpenRgbDriver(RgbDriver):
     # after a replug the count only has to look stable briefly (the cold
     # start needs the client's full window while detection runs)
     REDETECT_SETTLE_S = 2.0
+    # a full rescan re-runs detection (~1.3 s on the owner's PC; the
+    # keyboard registers near the end), so wait a bit longer than a replug
+    RESCAN_SETTLE_S = 5.0
     # read-back check: skip the first frames (the server applies them on a
     # background thread), then allow a few misses before calling it broken
     VERIFY_AFTER_FRAMES = 5
@@ -151,6 +160,28 @@ class OpenRgbDriver(RgbDriver):
             self._prepare_controllers(client)
         except Exception:
             log.exception("re-reading OpenRGB devices failed")
+            return False
+        self._reset_verification()
+        return True
+
+    def rescan(self) -> bool:
+        """Have OpenRGB detect hardware again, then re-read the devices and
+        put them back into direct mode. Blocks the render thread for the
+        settle window; returns False (and logs) when the rescan failed."""
+        client = self._client
+        if client is None:
+            return False
+        log.info("asking OpenRGB to rescan its devices")
+        try:
+            client.rescan()
+            client.refresh(settle_s=self.RESCAN_SETTLE_S)
+            self._prepare_controllers(client)
+            # the rescan's own DEVICE_LIST_UPDATED notices are already
+            # handled by the refresh above; drop them so poll_changes()
+            # doesn't re-read everything a second time
+            client.poll_notifications()
+        except Exception:
+            log.exception("OpenRGB rescan failed")
             return False
         self._reset_verification()
         return True

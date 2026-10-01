@@ -2,7 +2,8 @@
 
 Layout, top to bottom:
   * RGB STATUS   — one honest line (LIVE · 30 FPS · 2/2 DEVICES OK, or what
-                   is wrong), the global BRIGHTNESS slider and RE-SEND.
+                   is wrong), the global BRIGHTNESS slider, RE-SEND and
+                   RESCAN (detect devices again).
   * CONTROL MODE — four buttons (OFF / EFFECTS / REACTIVE / OVERRIDE). Only
                    the active mode's controls are shown, so every visible
                    control changes the lights right now.
@@ -115,6 +116,7 @@ class RgbTab(QWidget):
         manager=None,
         brightness_bridge=None,
         catalog=None,
+        rescan_bridge=None,
         parent=None,
     ):
         """Build the tab's panels and fill them from the saved settings."""
@@ -123,6 +125,8 @@ class RgbTab(QWidget):
         self._db = db
         self._manager = manager  # Qt-free RgbManager (may be None in tests)
         self._brightness_bridge = brightness_bridge  # fn(pct) → rgb worker
+        self._rescan_bridge = rescan_bridge  # fn() → rgb worker re-detects
+        self._rescanning = False
         # use the SAME catalog as the engine when there is one, so imported
         # effects work immediately (see RgbManager.catalog)
         self._catalog = catalog or getattr(manager, "catalog", None)
@@ -185,11 +189,21 @@ class RgbTab(QWidget):
             "app changed your lights)"
         )
         self._resend_btn.clicked.connect(self._resend)
+        # RE-SEND only talks to devices already found; RESCAN asks OpenRGB to
+        # detect hardware again (e.g. the keyboard was missed at startup)
+        self._rescan_btn = QPushButton("RESCAN")
+        self._rescan_btn.setToolTip(
+            "Look for RGB devices again (use this if a device is missing). "
+            "The lights pause for a few seconds while devices are detected."
+        )
+        self._rescan_btn.clicked.connect(self._rescan)
+        self._rescan_btn.setEnabled(self._rescan_bridge is not None)
         self._feedback = _plain_label("", "muted")
 
         top_row = QHBoxLayout()
         top_row.addWidget(self._status_line, 1)
         top_row.addWidget(self._resend_btn)
+        top_row.addWidget(self._rescan_btn)
 
         self._brightness = QSlider(Qt.Orientation.Horizontal)
         self._brightness.setRange(0, 100)
@@ -497,6 +511,8 @@ class RgbTab(QWidget):
         self._rebuild_device_rows(self._seen_devices)
         self._rebuild_preview_rows(self._seen_devices)
         self._render_status()
+        if self._rescanning:
+            self._finish_rescan()
 
     @Slot(str)
     def show_error(self, message: str) -> None:
@@ -504,6 +520,8 @@ class RgbTab(QWidget):
         show_status instead)."""
         self._driver_error = str(message)
         self._render_status()
+        if self._rescanning:
+            self._finish_rescan()
 
     @Slot(dict)
     def show_status(self, status: dict) -> None:
@@ -619,6 +637,26 @@ class RgbTab(QWidget):
             f"RE-SENT TO {count} DEVICE{'S' if count != 1 else ''}"
             if count
             else "No devices to send to."
+        )
+
+    def _rescan(self) -> None:
+        """Ask the rgb thread to detect devices again; show_driver (or
+        show_error) reports the outcome and re-enables the button."""
+        if self._rescan_bridge is None or self._rescanning:
+            return
+        self._rescanning = True
+        self._rescan_btn.setEnabled(False)
+        self._feedback_clear.stop()  # keep the message until the rescan ends
+        self._feedback.setText("RESCANNING FOR DEVICES…")
+        self._rescan_bridge()
+
+    def _finish_rescan(self) -> None:
+        """The rescan finished: say how many devices were found."""
+        self._rescanning = False
+        self._rescan_btn.setEnabled(True)
+        count = len(self._seen_devices)
+        self._show_feedback(
+            f"RESCAN DONE: {count} DEVICE{'S' if count != 1 else ''} FOUND"
         )
 
     def _show_feedback(self, text: str) -> None:
