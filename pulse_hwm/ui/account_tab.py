@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
+from datetime import date
+
+from PySide6.QtCore import QDate, QObject, QRunnable, Qt, QThreadPool, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QDateEdit,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -13,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pulse_hwm.cloud.age import AGE_BLOCK_SETTING, MIN_ACCOUNT_AGE, age_gate_error
 from pulse_hwm.cloud.oauth import OauthCoordinator
 from pulse_hwm.cloud.rest import AuthResult
 from pulse_hwm.cloud.session import SessionManager
@@ -77,7 +81,7 @@ class AccountTab(QWidget):
         self.setObjectName("root")
         self._session = session
         self._oauth = oauth
-        self._db = db  # unused now; kept so callers can pass it harmlessly
+        self._db = db  # remembers an under-age block (see _age_gate_ok)
         self._pool = QThreadPool.globalInstance()
         self._signals = _AuthSignals()
         self._signals.done.connect(self._on_auth_done)
@@ -115,23 +119,37 @@ class AccountTab(QWidget):
         self.password.setPlaceholderText("8+ characters")
         form.addWidget(self.password, 1, 1, 1, 3)
 
+        # Age gate: asked as a plain date of birth (not an "I am 16+" tick
+        # box, which nudges people toward the right answer). It starts
+        # EMPTY — the minimum date doubles as "not entered yet" — so
+        # nobody passes by accident. Only used locally, never sent.
+        form.addWidget(self._mk_label("BORN"), 2, 0)
+        self.birth_date = QDateEdit()
+        self.birth_date.setDisplayFormat("yyyy-MM-dd")
+        self.birth_date.setCalendarPopup(True)
+        self.birth_date.setMinimumDate(QDate(1900, 1, 1))
+        self.birth_date.setMaximumDate(QDate.currentDate())
+        self.birth_date.setSpecialValueText("date of birth (to create an account)")
+        self.birth_date.setDate(self.birth_date.minimumDate())
+        form.addWidget(self.birth_date, 2, 1, 1, 3)
+
         self.btn_sign_in = QPushButton("SIGN IN")
         self.btn_sign_up = QPushButton("CREATE ACCOUNT")
-        form.addWidget(self.btn_sign_in, 2, 1)
-        form.addWidget(self.btn_sign_up, 2, 2)
+        form.addWidget(self.btn_sign_in, 3, 1)
+        form.addWidget(self.btn_sign_up, 3, 2)
         self.btn_forgot = QPushButton("FORGOT PASSWORD?")
         self.btn_forgot.setObjectName("muted")
-        form.addWidget(self.btn_forgot, 2, 3)
+        form.addWidget(self.btn_forgot, 3, 3)
 
         divider = QLabel("───  OR CONTINUE WITH  ───")
         divider.setObjectName("muted")
         divider.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        form.addWidget(divider, 3, 0, 1, 4)
+        form.addWidget(divider, 4, 0, 1, 4)
 
         self.btn_google = QPushButton("GOOGLE")
         self.btn_github = QPushButton("GITHUB")
-        form.addWidget(self.btn_google, 4, 1)
-        form.addWidget(self.btn_github, 4, 2)
+        form.addWidget(self.btn_google, 5, 1)
+        form.addWidget(self.btn_github, 5, 2)
         outer.addWidget(self._signed_out_form)
 
         # ── signed-in panel ──
@@ -283,7 +301,33 @@ class AccountTab(QWidget):
             )
         )
 
+    def _entered_birth_date(self) -> date | None:
+        """The typed date of birth, or None while it is still blank."""
+        if self.birth_date.date() == self.birth_date.minimumDate():
+            return None
+        return self.birth_date.date().toPython()
+
+    def _age_gate_ok(self) -> bool:
+        """Every way of CREATING an account runs through here first
+        (CREATE ACCOUNT, Google, GitHub). Plain password sign-in to an
+        existing account does not need it."""
+        blocked_message = f"you must be {MIN_ACCOUNT_AGE} or older to create an account"
+        if self._db is not None and self._db.get_setting(AGE_BLOCK_SETTING) == "1":
+            self._set_feedback(blocked_message)
+            return False
+        error = age_gate_error(self._entered_birth_date(), date.today())
+        if error:
+            if error == blocked_message and self._db is not None:
+                # remember it, so changing the date and retrying can't
+                # get round the check on this device
+                self._db.set_setting(AGE_BLOCK_SETTING, "1")
+            self._set_feedback(error)
+            return False
+        return True
+
     def _on_sign_up(self) -> None:
+        if not self._age_gate_ok():
+            return
         if self._auth_busy():
             return
         email = clean_email(self.email.text())
@@ -340,6 +384,9 @@ class AccountTab(QWidget):
         )
 
     def _on_provider(self, provider: str) -> None:
+        # Google/GitHub create the account on first use, so they are gated
+        if not self._age_gate_ok():
+            return
         if self._auth_busy():
             return
         try:
@@ -433,6 +480,7 @@ class AccountTab(QWidget):
         for w in (
             self.email,
             self.password,
+            self.birth_date,
             self.btn_sign_in,
             self.btn_sign_up,
             self.btn_forgot,

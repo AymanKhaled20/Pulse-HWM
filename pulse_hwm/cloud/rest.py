@@ -109,6 +109,10 @@ class CloudClient:
                 json={
                     "email": email,
                     "password": password,
+                    # the account tab's age gate ran before we got here
+                    # (ui/account_tab.py _age_gate_ok); the server refuses
+                    # new accounts without this. The birth date stays local.
+                    "age_confirmed": True,
                     # with confirm-email ON, the challenge binds the LATER
                     # verification-link code exchange to our parked verifier
                     **({"code_challenge": code_challenge} if code_challenge else {}),
@@ -193,6 +197,8 @@ class CloudClient:
                 "redirect_to": redirect_to,
                 "code_challenge": code_challenge,
                 "code_challenge_method": "s256",
+                # Google/GitHub can CREATE an account; the age gate ran first
+                "age_confirmed": "1",
             }
         )
         return f"{self._base}/auth/v1/authorize?{params}"

@@ -6,6 +6,7 @@ import { sha256Hex } from "../lib/hash.js";
 import { makeIntent } from "../lib/ints.js";
 import { providerProfile } from "../lib/providers.js";
 import { handoffHtml } from "../lib/html.js";
+import { AGE_REQUIRED_MSG } from "./auth.js";
 
 // â”€â”€ OAuth provider authorize/callback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -18,12 +19,15 @@ async function oauthAuthorize(env, url, origin) {
   if (provider !== "google" && provider !== "github") {
     return fail(400, "unsupported provider");
   }
+  // the app's 16+ age gate ran before opening this URL; remembered on
+  // the state so the callback may CREATE an account (see oauthCallback)
+  const ageConfirmed = url.searchParams.get("age_confirmed") === "1" ? 1 : 0;
   const state = randToken();
   await env.DB.prepare(
-    `INSERT INTO oauth_states (state, provider, code_challenge, app_code, expires_at)
-     VALUES (?, ?, ?, '', ?)`
+    `INSERT INTO oauth_states (state, provider, code_challenge, app_code, expires_at, age_confirmed)
+     VALUES (?, ?, ?, '', ?, ?)`
   )
-    .bind(state, provider, challenge, isoIn(900))
+    .bind(state, provider, challenge, isoIn(900), ageConfirmed)
     .run();
   let authorizeUrl;
   if (provider === "google") {
@@ -104,14 +108,22 @@ async function oauthCallback(env, url, provider) {
       .run();
   }
   if (!user) {
+    // creating a NEW account needs the app's 16+ confirmation; signing
+    // in to an existing one does not
+    if (!Number(row.age_confirmed)) {
+      return handoffHtml(
+        `${back}?error_description=${encodeURIComponent(AGE_REQUIRED_MSG)}`,
+        `Sign-in failed: ${AGE_REQUIRED_MSG}`
+      );
+    }
     // stable id from the provider identity (re-signing in recreates it)
     const id = "u" + (await sha256Hex(profile.uid)).slice(0, 32);
     user = { id, email };
     await env.DB.prepare(
-      `INSERT OR IGNORE INTO users (id, email, password_hash, provider, email_verified, created_at)
-       VALUES (?, ?, NULL, ?, 1, ?)`
+      `INSERT OR IGNORE INTO users (id, email, password_hash, provider, email_verified, created_at, age_confirmed_at)
+       VALUES (?, ?, NULL, ?, 1, ?, ?)`
     )
-      .bind(id, email, provider, nowIso())
+      .bind(id, email, provider, nowIso(), nowIso())
       .run();
   }
   // the app code is PKCE-bound like any other intent code

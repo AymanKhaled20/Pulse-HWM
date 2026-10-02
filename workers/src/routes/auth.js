@@ -11,6 +11,10 @@ import { touchAndCheck } from "../lib/activity.js";
 
 // ── signup ─────────────────────────────────────────────────────────────
 
+// shown when a signup arrives without the app's 16+ confirmation
+export const AGE_REQUIRED_MSG =
+  "you must be 16 or older to create an account (update Pulse-HWM if you don't see a date of birth field)";
+
 // redirect_to MUST be the app deep link: accepting arbitrary URLs would
 // turn the emailed one-time links into an open redirect / phishing vector
 function safeRedirectTo(v) {
@@ -43,6 +47,12 @@ async function authSignup(request, env) {
   if (confirmed) {
     return fail(400, "user already registered");
   }
+  // Age gate (GDPR Art. 8 / COPPA): the app asks for a date of birth and
+  // only sends this flag for users aged 16+. Older app versions don't
+  // send it, so they can't create accounts until they update.
+  if (body.age_confirmed !== true) {
+    return fail(400, AGE_REQUIRED_MSG);
+  }
 
   // when confirmation email is required, a parked signup MUST come with
   // the PKCE challenge the parked verifier claims — else the confirm
@@ -66,11 +76,13 @@ async function authSignup(request, env) {
     // when the mailbox owner redeems it. Storing it here let anyone who
     // signed up first with someone else's email keep a working password
     // on that person's account once they confirmed it (pre-hijack).
+    // age_confirmed_at records WHEN the 16+ confirmation was given (the
+    // birth date itself is never sent or stored — data minimisation)
     await env.DB.prepare(
-      `INSERT INTO users (id, email, password_hash, provider, email_verified, created_at)
-       VALUES (?, ?, ?, 'password', ${verified}, ?)`
+      `INSERT INTO users (id, email, password_hash, provider, email_verified, created_at, age_confirmed_at)
+       VALUES (?, ?, ?, 'password', ${verified}, ?, ?)`
     )
-      .bind(id, email, requireEmail ? null : storedHash, nowIso())
+      .bind(id, email, requireEmail ? null : storedHash, nowIso(), nowIso())
       .run();
     user = { id, email };
   }

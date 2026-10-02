@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash  TEXT,                        -- PBKDF2-SHA256(10k), salt$hash; NULL = OAuth-only
     provider       TEXT NOT NULL DEFAULT 'password',  -- signup origin
     email_verified INTEGER NOT NULL DEFAULT 0,
-    created_at     TEXT NOT NULL
+    created_at     TEXT NOT NULL,
+    age_confirmed_at TEXT                       -- when the 16+ age gate was passed (no birth date stored)
 );
 
 -- refresh token ROTATION FAMILIES: children share a family_id; if a
@@ -39,7 +40,8 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     provider       TEXT NOT NULL,
     code_challenge TEXT NOT NULL,
     app_code       TEXT NOT NULL,             -- handed to the desktop at callback
-    expires_at     TEXT NOT NULL
+    expires_at     TEXT NOT NULL,
+    age_confirmed  INTEGER NOT NULL DEFAULT 0 -- app's 16+ gate passed (may create an account)
 );
 
 -- per-user sync tables (ownership enforced by the worker = the RLS stand-in)
