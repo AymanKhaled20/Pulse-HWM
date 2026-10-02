@@ -24,6 +24,8 @@ from pulse_hwm.ui.widgets.gauges import CpuCoreGrid, GaugeBar, StatRow
 from pulse_hwm.ui.widgets.pixel_panel import PixelPanel
 from pulse_hwm.util import human_bytes, human_rate, human_uptime, short_cpu_name
 
+_TEMP_NAME_MAX = 38  # longest temperature label that fits the right rail
+
 
 class Caption(QWidget):
     def __init__(self, title: str, child: QWidget, parent=None):
@@ -396,6 +398,17 @@ class DashboardTab(QWidget):
             else:
                 rows.append({**t, "name": sensor[:30], "prio": 8})
         rows.sort(key=lambda r: (r["prio"], r["name"]))
+        # Names key the row widgets, so they must be unique. Two drives both
+        # report "Composite Temperature" (-> "SSD"), and twin GPUs share
+        # sensor names. Duplicates hid all but one row and forced a full
+        # panel rebuild on every refresh, so repeats get "#2", "#3", ...
+        times_seen: dict[str, int] = {}
+        for row in rows:
+            name = str(row["name"])[:_TEMP_NAME_MAX]
+            times_seen[name] = times_seen.get(name, 0) + 1
+            if times_seen[name] > 1:
+                name = f"{name} #{times_seen[name]}"
+            row["name"] = name
         return rows
 
     def _refresh_temps(self, temps: list[dict] | None) -> None:
@@ -403,9 +416,9 @@ class DashboardTab(QWidget):
         # Rebuilding the row widgets every 5s created constant widget churn.
         if temps and len(self._temp_rows) == len(temps):
             categorized = self._categorize_temps(temps)
-            if tuple(str(t["name"])[:38] for t in categorized) == self._temp_names:
+            if tuple(t["name"] for t in categorized) == self._temp_names:
                 for t in categorized:
-                    name = str(t["name"])[:38]
+                    name = t["name"]
                     value = t.get("temp")
                     self._temp_rows[name].set_value(
                         f"{value:.0f} °C" if value is not None else "N/A"
@@ -421,7 +434,7 @@ class DashboardTab(QWidget):
             self._temp_names = ()
             return
         for t in self._categorize_temps(temps):
-            name = str(t["name"])[:38]
+            name = t["name"]
             value = t.get("temp")
             row = StatRow(name)
             row.set_value(f"{value:.0f} °C" if value is not None else "N/A")
@@ -464,9 +477,13 @@ class GaugeLed(QWidget):
         super().__init__(parent)
         self.setFixedSize(14, 14)
         self.setProperty("ok", True)
+        self._color: str | None = None  # explicit color from set_state
 
-    def set_state(self, on: bool, color=None) -> None:
+    def set_state(self, on: bool, color: str | None = None) -> None:
+        # the color used to be ignored, so the CPU LED never turned red
+        # above 80% load; when given it now wins over the on/off default
         self.setProperty("ok", on)
+        self._color = color
         self.update()
 
     def paintEvent(self, ev) -> None:
@@ -474,7 +491,7 @@ class GaugeLed(QWidget):
 
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(T.PANEL))
-        color = T.SUCCESS if self.property("ok") else T.DANGER
+        color = self._color or (T.SUCCESS if self.property("ok") else T.DANGER)
         p.fillRect(2, 2, self.width() - 4, self.height() - 4, QColor(color))
         p.setPen(QPen(QColor(T.LINE), 1))
         p.drawRect(0, 0, self.width() - 1, self.height() - 1)

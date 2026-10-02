@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Optional
 
@@ -15,6 +16,13 @@ try:
     import wmi as wmi_module
 except Exception:
     wmi_module = None
+
+try:
+    import pythoncom
+except Exception:  # pywin32 missing: WMI fallbacks simply stay unavailable
+    pythoncom = None
+
+log = logging.getLogger("pulse.hardware")
 
 
 TOP_PROC_REFRESH = 5
@@ -56,6 +64,10 @@ class HardwareCollector(QObject):
         return snap
 
     def start(self) -> None:
+        # start() runs on the collector's own QThread. WMI (the temperature
+        # fallbacks) is COM, and COM must be initialised once per thread —
+        # without this every WMI query here failed silently.
+        self._com_ready = _com_init()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.collect)
         self._timer.start(self.interval_ms)
@@ -64,14 +76,14 @@ class HardwareCollector(QObject):
     def stop(self) -> None:
         if getattr(self, "_timer", None):
             self._timer.stop()
-        if isinstance(getattr(self, "_lhm", None), object) and self._lhm not in (
-            None,
-            False,
-        ):
+        if self._lhm not in (None, False):
             try:
                 self._lhm.close()
             except Exception:
-                pass
+                log.debug("LibreHardwareMonitor close failed", exc_info=True)
+        if getattr(self, "_com_ready", False):
+            pythoncom.CoUninitialize()
+            self._com_ready = False
 
     # -- core snapshot ------------------------------------------------------
     def _collect_core(self) -> dict:
@@ -219,12 +231,15 @@ class HardwareCollector(QObject):
         if pynvml is None:
             return None
         if not state["tried"]:
-            self._gpu_try_init()
-        if not state["tried"]:
-            state["fail_count"] += 1
+            # Probe NVML on the first tick, then only once every
+            # GPU_RETRY_TICKS ticks. Without an NVIDIA GPU nvmlInit fails
+            # every time, so retrying on every tick was wasted work.
             if state["fail_count"] % GPU_RETRY_TICKS == 0:
-                state["tried"] = False
-            return None
+                self._gpu_try_init()
+            if not state["tried"]:
+                state["fail_count"] += 1
+                return None
+            state["fail_count"] = 0
         devices = []
         try:
             for handle in state["handles"]:
@@ -349,7 +364,22 @@ class HardwareCollector(QObject):
             db.insert_hardware_samples(samples)
             self.persisted.emit(n)
         except Exception:
-            pass
+            # never crash the collector over history, but leave a trace —
+            # this used to fail silently, leaving gaps in the History tab
+            log.warning("could not save hardware samples", exc_info=True)
+
+
+def _com_init() -> bool:
+    """Initialise COM on the calling thread. True when it must be undone
+    later with CoUninitialize; False when pywin32 is missing or it failed."""
+    if pythoncom is None:
+        return False
+    try:
+        pythoncom.CoInitialize()
+        return True
+    except Exception:
+        log.warning("COM init failed; WMI temperature fallbacks disabled")
+        return False
 
 
 def _cpu_name() -> str:
