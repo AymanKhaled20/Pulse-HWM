@@ -217,6 +217,30 @@ async function handleLogout(env, request) {
   return json({});
 }
 
+// Right to erasure (GDPR Art. 17): permanently delete the bearer's account
+// and EVERY row tied to it, in one atomic batch so a failure can't leave
+// half an account behind. Refresh tokens go too, so no device stays
+// signed in; /rest/v1 refuses the (up to 1h) leftover access token
+// because the user row is gone (see routes/rest.js).
+async function handleDeleteAccount(env, request) {
+  const p = await bearerPayload(env, request);
+  if (!p || !p.sub) return fail(401, "invalid credentials");
+  const uid = String(p.sub);
+  await env.DB.batch(
+    [
+      "DELETE FROM user_settings WHERE user_id = ?",
+      "DELETE FROM user_sites WHERE user_id = ?",
+      "DELETE FROM refresh_tokens WHERE user_id = ?",
+      "DELETE FROM intent_codes WHERE user_id = ?",
+      "DELETE FROM user_update_state WHERE user_id = ?",
+      "DELETE FROM users WHERE id = ?",
+    ].map((sql) => env.DB.prepare(sql).bind(uid))
+  );
+  return json({ deleted: true });
+}
+
+export { handleDeleteAccount };
+
 // moved verbatim from route(): the client reads `id` (session._adopt), keep email as-is
 async function handleUser(env, request) {
   const p = await bearerPayload(env, request);

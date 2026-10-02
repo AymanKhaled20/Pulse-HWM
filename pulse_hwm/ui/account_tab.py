@@ -170,6 +170,10 @@ class AccountTab(QWidget):
         self.btn_sign_out = QPushButton("SIGN OUT")
         grid.addWidget(self.btn_sync_now, 2, 1)
         grid.addWidget(self.btn_sign_out, 2, 2)
+        # right to erasure: removes the cloud account and all synced data
+        self.btn_delete_account = QPushButton("DELETE ACCOUNT")
+        self.btn_delete_account.setObjectName("danger")
+        grid.addWidget(self.btn_delete_account, 2, 3)
         outer.addWidget(self._signed_in_panel)
 
         self.feedback = QLabel("")
@@ -242,6 +246,7 @@ class AccountTab(QWidget):
         self.btn_google.clicked.connect(lambda: self._on_provider("google"))
         self.btn_github.clicked.connect(lambda: self._on_provider("github"))
         self.btn_sign_out.clicked.connect(self._on_sign_out)
+        self.btn_delete_account.clicked.connect(self._on_delete_account)
         self.btn_sync_now.clicked.connect(self.sync_requested)
         self.btn_cta_log_in.clicked.connect(self._cta_login)
         self.btn_install_now.clicked.connect(self.install_update_requested)
@@ -398,6 +403,33 @@ class AccountTab(QWidget):
         self._set_feedback(f"finish signing in with {provider.upper()} in your browser")
         self._signals.open_url.emit(url)
 
+    def _confirm_delete(self) -> bool:
+        """Deleting is permanent, so the user must type DELETE — a plain
+        OK button is too easy to hit by accident."""
+        from PySide6.QtWidgets import QInputDialog
+
+        typed, ok = QInputDialog.getText(
+            self,
+            "Delete account",
+            "This permanently deletes your Pulse-HWM account and every site\n"
+            "and setting synced to it, on all devices. It cannot be undone.\n"
+            "Data stored only on this PC is kept.\n\n"
+            "Type DELETE to confirm:",
+        )
+        return ok and typed.strip() == "DELETE"
+
+    def _on_delete_account(self) -> None:
+        if not self._confirm_delete():
+            self._set_feedback("account NOT deleted")
+            return
+        if self._auth_busy():
+            return
+        self.btn_delete_account.setEnabled(False)
+        self._set_feedback("deleting account …")
+        self._pool.start(
+            _AuthTask("delete-account", self._session.delete_account, self._signals)
+        )
+
     def _on_sign_out(self) -> None:
         self._session.sign_out()
         self._set_feedback("signed out")
@@ -423,6 +455,14 @@ class AccountTab(QWidget):
             elif result.ok:
                 self.refresh_from_session()
                 self.signed_in_changed.emit(True)
+            else:
+                self._set_feedback(result.error)
+        elif tag == "delete-account":
+            self.btn_delete_account.setEnabled(True)
+            if result.ok:
+                self.refresh_from_session()
+                self.signed_out.emit()  # same teardown as SIGN OUT
+                self._set_feedback("account and all synced data deleted")
             else:
                 self._set_feedback(result.error)
         elif tag == "recover":

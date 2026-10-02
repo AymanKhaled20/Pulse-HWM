@@ -9,6 +9,7 @@
 //   POST /auth/v1/recover   {email,code_challenge} → reset email
 //   POST /auth/v1/logout    (Bearer) — revokes all refresh tokens for the user
 //   GET  /auth/v1/user      (Bearer) → {id,email}
+//   POST /auth/v1/delete_account (Bearer) — erases the account + all its data
 //   GET  /auth/v1/authorize?provider=google|github&code_challenge=...&state
 //   GET  /cb/google|github?state&code → 302 pulsehwm://auth-callback?code=
 //   GET  /auth/confirm?code=...&redirect_to=... → 302 pulsehwm://...?code=
@@ -36,6 +37,7 @@ import {
   authRecover,
   handleLogout,
   handleUser,
+  handleDeleteAccount,
 } from "./routes/auth.js";
 import { oauthAuthorize, oauthCallback } from "./routes/oauth.js";
 import { rest } from "./routes/rest.js";
@@ -74,6 +76,9 @@ export async function route(request, env) {
   }
   if (path === "/auth/v1/user" && method === "GET") {
     return handleUser(env, request);
+  }
+  if (path === "/auth/v1/delete_account" && method === "POST") {
+    return handleDeleteAccount(env, request);
   }
   if (path === "/auth/v1/authorize" && method === "GET") {
     return oauthAuthorize(env, url, url.origin);

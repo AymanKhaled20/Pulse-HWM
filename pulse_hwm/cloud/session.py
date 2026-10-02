@@ -114,6 +114,19 @@ class SessionManager:
         self.tokens = None
         self.session_info = Session()
 
+    def delete_account(self) -> AuthResult:
+        """Erase the cloud account, then forget the local session — the
+        server has already revoked every token, so there is nothing to
+        log out of. Local monitoring data on this PC is untouched."""
+        if self.tokens is None:
+            return AuthResult(error="sign in first to delete your account")
+        result = self._client.delete_account(self.tokens.access_token)
+        if result.ok:
+            self._store.clear_refresh_token()
+            self.tokens = None
+            self.session_info = Session()
+        return result
+
     # —— access token for REST calls ———————————————————————————————————
     def bearer(self) -> str:
         return self.tokens.access_token if self.tokens else ""

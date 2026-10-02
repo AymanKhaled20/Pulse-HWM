@@ -28,6 +28,13 @@ async function rest(request, env, table) {
   const payload = await bearerPayload(env, request);
   if (!payload || !payload.sub) return fail(401, "invalid or expired token");
   const uid = String(payload.sub);
+  // a deleted account's access token stays cryptographically valid until
+  // it expires (≤1h); without this check it could re-create sync rows
+  // for a user who has asked to be erased
+  const exists = await env.DB.prepare(`SELECT 1 FROM users WHERE id = ?`)
+    .bind(uid)
+    .first();
+  if (!exists) return fail(401, "account no longer exists");
   // activity signal for update entitlement: synced installs are active
   // users — touch is throttled (≥12h between writes), never gated
   await touchAndCheck(env, uid, 0);

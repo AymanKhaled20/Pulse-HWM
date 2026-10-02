@@ -16,6 +16,12 @@ datas = [
     ("pulse_hwm\\assets\\icons", "pulse_hwm\\assets\\icons"),
     ("pulse_hwm\\assets\\openrgb", "pulse_hwm\\assets\\openrgb"),
     ("pulse_hwm\\ui\\theme.qss", "pulse_hwm\\ui"),
+    # licence notices must travel WITH the binaries we redistribute (MIT
+    # for Pulse itself, MPL-2.0 for LibreHardwareMonitorLib, and the
+    # third-party credits); font licences ship inside assets\fonts
+    ("LICENSE", "licenses"),
+    ("THIRD_PARTY.md", "licenses"),
+    ("pulse_hwm\\assets\\lhm\\MPL-2.0.txt", "licenses"),
 ] + certifi_datas
 if os.path.isdir("pulse_hwm\\assets\\lhm_runtime"):
     datas.append(("pulse_hwm\\assets\\lhm_runtime", "lhm_runtime"))

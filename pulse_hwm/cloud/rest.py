@@ -237,6 +237,22 @@ class CloudClient:
         except httpx.HTTPError:
             pass
 
+    def delete_account(self, access_token: str) -> AuthResult:
+        """Permanently erase the account and everything synced to it
+        (right to erasure). The server also revokes every session."""
+        try:
+            r = self._http.post(
+                "/auth/v1/delete_account",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+        except httpx.HTTPError:
+            return AuthResult(error="network error reaching the auth server")
+        if r.status_code >= 400:
+            return AuthResult(
+                error=_parse_error(r.json(), "could not delete the account")
+            )
+        return AuthResult(ok=True)
+
     def user(self, access_token: str) -> AuthResult:
         try:
             r = self._http.get(

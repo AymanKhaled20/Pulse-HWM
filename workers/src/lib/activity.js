@@ -23,6 +23,12 @@ export async function touchAndCheck(env, uid, windowDays) {
     .first();
   const now = Date.now();
   if (!row) {
+    // never start tracking an account that was deleted (its access token
+    // can outlive the account by up to an hour)
+    const user = await env.DB.prepare(`SELECT 1 FROM users WHERE id = ?`)
+      .bind(uid)
+      .first();
+    if (!user) return false;
     await env.DB.prepare(
       `INSERT INTO user_update_state (user_id, last_seen_at, last_check_at, last_seen_version)
        VALUES (?, ?, '', '')`

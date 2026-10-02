@@ -46,7 +46,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF3B30",
         "#9BE800",
         "#E8E8E8",
-        "#6A6A6A",
+        "#808080",
     ),
     ColorTheme(
         "matrix",
@@ -60,7 +60,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF5545",
         "#00E6C3",
         "#C8FFD4",
-        "#3C7A50",
+        "#448B5B",
     ),
     ColorTheme(
         "ice",
@@ -74,7 +74,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF6B5E",
         "#8AE68C",
         "#DFF2FF",
-        "#5E7F99",
+        "#62849F",
     ),
     ColorTheme(
         "crimson",
@@ -85,10 +85,10 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#4A1418",
         "#FF4757",
         "#FF8A94",
-        "#E61700",
+        "#F51900",
         "#7CE577",
         "#FFE3E5",
-        "#7E4A4E",
+        "#A96C71",
     ),
     ColorTheme(
         "synthwave",
@@ -102,7 +102,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF5E5B",
         "#00F5A0",
         "#F3E9FF",
-        "#7A5CA8",
+        "#8C72B4",
     ),
     ColorTheme(
         "gameboy",
@@ -113,10 +113,10 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#2B3320",
         "#A3C63A",
         "#C2DA6A",
-        "#C75B32",
+        "#CE633B",
         "#8FBF7F",
         "#D8E4C2",
-        "#6E7A58",
+        "#7A8762",
     ),
     ColorTheme(
         "paper",
@@ -144,7 +144,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF5C5C",
         "#3DDC97",
         "#E3E9FF",
-        "#5D6C99",
+        "#6F7DA8",
     ),
     ColorTheme(
         "ember",
@@ -158,7 +158,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF3B30",
         "#A3E635",
         "#FFEAD9",
-        "#8A6A4E",
+        "#9A7757",
     ),
     ColorTheme(
         "toxic",
@@ -172,7 +172,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF4242",
         "#00E5A0",
         "#F2FFD9",
-        "#71802E",
+        "#788831",
     ),
     ColorTheme(
         "steel",
@@ -186,7 +186,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#F87171",
         "#4ADE80",
         "#E2E8F0",
-        "#737C85",
+        "#7B848D",
     ),
     ColorTheme(
         "grape",
@@ -200,7 +200,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FB7185",
         "#34D399",
         "#F1EAFE",
-        "#6F5B94",
+        "#8875AA",
     ),
     ColorTheme(
         "lagoon",
@@ -214,7 +214,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF6459",
         "#84CC16",
         "#D9FFF8",
-        "#4E8578",
+        "#559082",
     ),
     ColorTheme(
         "sakura",
@@ -228,7 +228,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF4E3E",
         "#86EFAC",
         "#FFE8EF",
-        "#8F6376",
+        "#A07688",
     ),
     ColorTheme(
         "hunter",
@@ -242,7 +242,7 @@ COLOR_THEMES: tuple[ColorTheme, ...] = (
         "#FF7849",
         "#8AE68C",
         "#E7F5EC",
-        "#4E7A5E",
+        "#5B8E6E",
     ),
 )
 
