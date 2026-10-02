@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
+from pulse_hwm import config as app_config
 
 # —— PUBLIC values, not secrets —————————————————————————————————————————
 # The Worker URL + client key are public client values (ownership is
@@ -33,7 +33,10 @@ class AuthConfig:
 
 def auth_config() -> AuthConfig:
     """Load public cloud settings, falling back to the hosted service."""
-    load_dotenv(override=False)
+    # same fixed .env locations as the rest of the app — a bare
+    # load_dotenv() would also read a .env from whatever folder we were
+    # launched in (see config.load_env)
+    app_config.load_env()
     return AuthConfig(
         base_url=os.environ.get("CLOUD_URL", "").strip().rstrip("/")
         or DEFAULT_BASE_URL,

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS intent_codes (
     user_id        TEXT NOT NULL REFERENCES users(id),
     code_challenge TEXT NOT NULL,             -- PKCE S256 challenge parked at signup
     kind           TEXT NOT NULL,             -- 'signup-verify'
-    expires_at     TEXT NOT NULL
+    expires_at     TEXT NOT NULL,
+    password_hash  TEXT                       -- signup only: applied on redeem
 );
 
 -- in-flight OAuth: desktop parks challenge, browser comes back with state

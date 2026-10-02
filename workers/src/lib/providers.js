@@ -61,18 +61,19 @@ async function providerProfile(env, provider, code, origin) {
     });
     if (!me.ok) return { error: `github user http ${me.status}` };
     const p = await me.json();
-    let email = p.email;
-    if (!email) {
-      const em = await fetch("https://api.github.com/user/emails", {
-        headers: { ...ghHeaders, Authorization: `Bearer ${t.access_token}` },
-      });
-      if (em.ok) {
-        const list = await em.json();
-        const primary = (list || []).find((e) => e.primary) || (list || [])[0];
-        email = primary && primary.email;
-      }
-    }
-    return { email: String(email || ""), uid: `github:${p.id}` };
+    // Like Google above, only a VERIFIED address may be trusted: this email
+    // links the sign-in to an existing account, and GitHub lets anyone add
+    // an unverified address (e.g. a victim's) to their profile. The profile
+    // `email` field carries no verified flag, so always read /user/emails.
+    const em = await fetch("https://api.github.com/user/emails", {
+      headers: { ...ghHeaders, Authorization: `Bearer ${t.access_token}` },
+    });
+    if (!em.ok) return { error: `github emails http ${em.status}` };
+    const list = (await em.json()) || [];
+    const verified = list.filter((e) => e && e.verified);
+    const chosen = verified.find((e) => e.primary) || verified[0];
+    if (!chosen) return { error: "github account has no verified email" };
+    return { email: String(chosen.email || ""), uid: `github:${p.id}` };
   }
   return { error: "unsupported provider" };
 }

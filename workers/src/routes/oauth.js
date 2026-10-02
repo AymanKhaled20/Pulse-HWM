@@ -13,6 +13,11 @@ async function oauthAuthorize(env, url, origin) {
   const provider = url.searchParams.get("provider") || "";
   const challenge = url.searchParams.get("code_challenge") || "";
   if (!provider || !challenge) return fail(400, "provider and code_challenge required");
+  // reject unknown providers BEFORE writing a state row, so anonymous
+  // junk requests can't fill the table
+  if (provider !== "google" && provider !== "github") {
+    return fail(400, "unsupported provider");
+  }
   const state = randToken();
   await env.DB.prepare(
     `INSERT INTO oauth_states (state, provider, code_challenge, app_code, expires_at)
@@ -68,7 +73,8 @@ async function oauthCallback(env, url, provider) {
   if (row && row.provider === provider) {
     await env.DB.prepare(`DELETE FROM oauth_states WHERE state = ?`).bind(state).run();
   }
-  if (!code || !row || row.provider !== provider) {
+  // states live 15 minutes (see oauthAuthorize); an old one must not work
+  if (!code || !row || row.provider !== provider || row.expires_at < nowIso()) {
     return fail(400, "unknown or expired sign-in state");
   }
   const profile = await providerProfile(env, provider, code, url.origin);
@@ -81,9 +87,22 @@ async function oauthCallback(env, url, provider) {
     return handoffHtml(`${back}?error_description=${encodeURIComponent("provider did not share an email")}`, "Provider did not share an email - close this tab and try again.");
   const email = profile.email.toLowerCase();
 
-  let user = await env.DB.prepare(`SELECT id, email FROM users WHERE email = ?`)
+  let user = await env.DB.prepare(
+    `SELECT id, email, email_verified FROM users WHERE email = ?`
+  )
     .bind(email)
     .first();
+  if (user && !Number(user.email_verified)) {
+    // Pre-hijack guard: an UNCONFIRMED row was made by someone who typed
+    // this email into the signup form but never proved they own it. The
+    // provider just proved the real owner is here, so the stranger's
+    // password must not survive into the owner's account.
+    await env.DB.prepare(
+      `UPDATE users SET password_hash = NULL, email_verified = 1 WHERE id = ?`
+    )
+      .bind(user.id)
+      .run();
+  }
   if (!user) {
     // stable id from the provider identity (re-signing in recreates it)
     const id = "u" + (await sha256Hex(profile.uid)).slice(0, 32);

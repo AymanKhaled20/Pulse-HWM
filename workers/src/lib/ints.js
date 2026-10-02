@@ -8,13 +8,17 @@ const CODE_TTL_S = 24 * 3600; // email links / app codes
 
 // ── intent codes (email-link / OAuth app codes) ───────────────────────
 
-async function makeIntent(env, userId, kind, challenge) {
+// passwordHash (signup only) travels WITH the emailed code and is applied
+// when that code is redeemed — so the password that ends up on the account
+// is the one chosen by whoever proved they own the mailbox, never one typed
+// by a stranger who merely knew the email address.
+async function makeIntent(env, userId, kind, challenge, passwordHash = null) {
   const code = randToken();
   await env.DB.prepare(
-    `INSERT INTO intent_codes (code, user_id, code_challenge, kind, expires_at)
-     VALUES (?, ?, ?, ?, ?)`
+    `INSERT INTO intent_codes (code, user_id, code_challenge, kind, expires_at, password_hash)
+     VALUES (?, ?, ?, ?, ?, ?)`
   )
-    .bind(code, userId, challenge, kind, isoIn(CODE_TTL_S))
+    .bind(code, userId, challenge, kind, isoIn(CODE_TTL_S), passwordHash)
     .run();
   return code;
 }

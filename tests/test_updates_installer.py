@@ -118,6 +118,19 @@ def test_download_streams_verifies_and_lands_atomically(tmp_path):
     assert seen[-1][0] == len(payload)
 
 
+def test_github_fallback_never_receives_the_access_token(tmp_path):
+    # no R2 download_url -> the public GitHub asset is used; the user's
+    # Pulse token must not be sent to a third party
+    payload = b"PULSE-INSTALLER-BINARY" * 10
+    release = _release(payload, download_url="")
+    transport = _http_handler(payload, calls := {})
+    download_installer(
+        release, WORKER, access_token="tok-123", dest_dir=tmp_path, transport=transport
+    )
+    assert calls["url"].startswith("https://github.com/")
+    assert calls["auth"] == ""
+
+
 def test_download_reports_progress_even_without_total(tmp_path):
     payload = b"x" * 2048
     handler_transport = httpx.MockTransport(

@@ -59,7 +59,11 @@ def load_env() -> None:
         if candidate.is_file():
             load_dotenv(candidate, override=False)
             return
-    load_dotenv(override=False)
+    # python-dotenv's default search walks up from the CURRENT folder. An
+    # installed app must never do that: a .env sitting next to a download
+    # could point CLOUD_URL at an attacker's server and capture sign-ins.
+    if not getattr(sys, "frozen", False):
+        load_dotenv(override=False)
 
 
 @dataclass

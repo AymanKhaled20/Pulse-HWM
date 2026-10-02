@@ -38,4 +38,15 @@ async function hashPassword(password, saltHex, pepper) {
   return pbkdf2Hex(password, saltHex + "|" + pepper);
 }
 
-export { sha256Hex, pkceChallenge, pbkdf2Hex, hashPassword, ITER };
+// compare two hex digests without an early exit, so response timing
+// doesn't reveal how many leading characters matched
+function constantTimeEqual(a, b) {
+  const x = String(a);
+  const y = String(b);
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i += 1) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+
+export { sha256Hex, pkceChallenge, pbkdf2Hex, hashPassword, constantTimeEqual, ITER };

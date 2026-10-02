@@ -107,7 +107,11 @@ def download_installer(
     dest_dir.mkdir(parents=True, exist_ok=True)
     final_path = dest_dir / asset
 
-    headers = {"Authorization": f"Bearer {access_token}"}
+    # the Pulse access token is for OUR worker only — the GitHub fallback
+    # is a public asset and must never receive a user's credentials
+    headers = {}
+    if host_of(url) in _worker_hosts(worker_base):
+        headers["Authorization"] = f"Bearer {access_token}"
     hasher = hashlib.sha256()
     done = 0
     total: int | None = None
