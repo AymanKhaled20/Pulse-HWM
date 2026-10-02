@@ -18,9 +18,9 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from pulse_hwm.rgb.color_math import hsv_to_rgb, rgb_to_hsv
 from pulse_hwm.rgb.model import RgbColor
 from pulse_hwm.ui import theme as T
-from pulse_hwm.ui.widgets.color_math import hsv_to_rgb, rgb_to_hsv
 
 HUE_STRIP_WIDTH = 26
 HUE_SEGMENTS = 12

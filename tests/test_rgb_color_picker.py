@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from pulse_hwm.rgb.color_math import hsv_to_rgb, rgb_to_hsv
 from pulse_hwm.rgb.model import RgbColor
-from pulse_hwm.ui.widgets.color_math import hsv_to_rgb, rgb_to_hsv
 
 
 def test_primary_hues_map_to_expected_rgb():

@@ -38,16 +38,41 @@ def _blob_text(entries: dict) -> str:
 
 
 def assign(
-    blob: str, driver_id: str, device_id: str, effect_id: str, enabled: bool
+    blob: str,
+    driver_id: str,
+    device_id: str,
+    effect_id: str,
+    enabled: bool,
+    params: dict | None = None,
 ) -> str:
     """One device's assignment upsert. Returns the NEW blob text (immutable
-    flow: callers save the returned string via save_field)."""
+    flow: callers save the returned string via save_field).
+
+    params=None keeps the device's stored params, so switching effects keeps
+    e.g. the chosen color (keys the new effect doesn't use are simply
+    ignored when the planner validates them)."""
     entries = parse_blob(blob)
-    entries[f"{driver_id}/{device_id}"] = {
+    key = f"{driver_id}/{device_id}"
+    kept = _safe_params(entries.get(key, {}))
+    entries[key] = {
         "effect": effect_id,
-        "params": entries.get(f"{driver_id}/{device_id}", {}).get("params", {}),
+        "params": dict(params) if isinstance(params, dict) else kept,
         "enabled": bool(enabled),
     }
+    return _blob_text(entries)
+
+
+def set_params(blob: str, driver_id: str, device_id: str, params: dict) -> str:
+    """Merge params into one device's entry (e.g. a new color from the RGB
+    tab). No entry yet → blob unchanged: params without an effect can't
+    render anything. Values are NOT trusted here; the planner re-validates
+    every param against the effect's ParamSpecs before rendering."""
+    entries = parse_blob(blob)
+    key = f"{driver_id}/{device_id}"
+    if key not in entries:
+        return blob
+    merged = {**_safe_params(entries[key]), **dict(params)}
+    entries[key] = {**entries[key], "params": merged}
     return _blob_text(entries)
 
 

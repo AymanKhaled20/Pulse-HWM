@@ -70,3 +70,9 @@ class RgbDriver(ABC):
         the device list changed (e.g. a device was unplugged/replugged) so
         the engine re-reads devices(). Optional: most drivers never change."""
         return False
+
+    def rescan(self) -> bool:
+        """Ask the backend to detect hardware again (the user pressed
+        RESCAN, or a device is missing). Return True when devices() should
+        be re-read. Optional: drivers with a fixed device list keep False."""
+        return False

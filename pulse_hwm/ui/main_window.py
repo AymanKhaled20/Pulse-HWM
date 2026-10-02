@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         rgb_manager=None,
         rgb_worker=None,
     ):
+        """Build the window, its tabs and the tray icon from the app services."""
         super().__init__()
         self._theme_manager = theme_manager
         self._db = db  # closeEvent + update flows read settings from here
@@ -134,9 +135,16 @@ class MainWindow(QMainWindow):
                 # a signal emit, so the brightness change is queued onto
                 # the rgb thread instead of running on the UI thread
                 brightness_bridge=rgb_worker.brightness_requested.emit,
+                # queued too: the rescan blocks for seconds on the rgb thread
+                rescan_bridge=rgb_worker.rescan_requested.emit,
             )
             rgb_worker.devices_reported.connect(self._rgb_tab.show_driver)
             rgb_worker.driver_error.connect(self._rgb_tab.show_error)
+            # live preview + status line (~5 reports a second)
+            rgb_worker.status_reported.connect(self._rgb_tab.show_status)
+            if hardware_collector is not None:
+                # REACTIVE page readout: "NOW: CPU 52 °C → color"
+                hardware_collector.updated.connect(self._rgb_tab.show_sensors)
             self.tabs.addTab(self._rgb_tab, "RGB")
         else:
             self._rgb_tab = None

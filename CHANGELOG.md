@@ -9,6 +9,32 @@ contracts.
 The `## [x.y.z]` section of a release is machine-extracted and published as
 both the GitHub release body and the in-app update banner — write for users.
 
+## [Unreleased]
+
+### Added
+
+- **Redesigned RGB tab.** Pick OFF, EFFECTS, REACTIVE or OVERRIDE with one
+  click, and only the controls for that mode are shown, so everything you
+  see changes your lights.
+- **A color and speed for each device** in EFFECTS mode. Before, STATIC was
+  always yellow.
+- **New effects:** Rainbow, Spectrum Cycle and Wave.
+- **Live preview** of the colors Pulse is sending to each device, plus a
+  status line (`LIVE · 30 FPS · 2/2 DEVICES OK`) that names the device when
+  something goes wrong.
+- **REACTIVE settings are now editable:** which temperature to follow, the
+  cool and hot points and colors, and the alert flash. A readout shows the
+  current reading and the color it maps to.
+- Brightness is a slider at the top of the tab, and works in every mode.
+
+### Fixed
+
+- The SPEED control in OVERRIDE did nothing; you can now choose the
+  override effect as well.
+- Imported effects work right away instead of after a restart.
+- Removed the confusing APPLY NOW and RECONSIDER NOW buttons. A single
+  RE-SEND button now tells you what it sent.
+
 ## [1.4.0] - 2026-09-22
 
 ### Added

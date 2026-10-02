@@ -39,6 +39,7 @@ class RgbEngine:
     the worker's own thread (QTimer on the rgb-engine QThread)."""
 
     def __init__(self, catalog: EffectCatalog | None = None) -> None:
+        """Start with no driver and no devices; attach_driver() wires one up."""
         self.catalog = catalog or EffectCatalog()
         self._driver: RgbDriver | None = None
         self._devices: dict[str, RgbDevice] = {}
@@ -49,6 +50,12 @@ class RgbEngine:
         self._last_tick_monotonic: float | None = None
         # diagnostics surfaced through the worker's signals (no Qt here)
         self.last_error: str = ""
+        # what the RGB tab's live preview shows: the exact (brightness-
+        # scaled) frame last handed to the driver, and the current problem
+        # per device ("" / missing = fine). A device that starts working
+        # again drops out of device_errors on its next good frame.
+        self.last_frames: dict[str, list] = {}
+        self.device_errors: dict[str, str] = {}
 
     # ── wiring ──────────────────────────────────────────────────────────
     def attach_driver(self, driver: RgbDriver) -> list[RgbDevice]:
@@ -66,6 +73,7 @@ class RgbEngine:
         self._close_driver()
 
     def _close_driver(self) -> None:
+        """Release the driver and forget everything tied to its devices."""
         if self._driver is not None:
             try:
                 self._driver.close()
@@ -73,6 +81,8 @@ class RgbEngine:
                 pass  # best-effort release, mirrors driver.close() contract
         self._driver = None
         self._devices = {}
+        self.last_frames = {}
+        self.device_errors = {}
 
     @property
     def attached(self) -> bool:
@@ -87,7 +97,26 @@ class RgbEngine:
         Returns the NEW device list when it did, None otherwise."""
         if self._driver is None or not self._driver.poll_changes():
             return None
+        return self._reload_devices()
+
+    def rescan_driver(self) -> list[RgbDevice] | None:
+        """Ask the driver to detect hardware again. Returns the NEW device
+        list, or None when there is no driver or the rescan failed."""
+        if self._driver is None or not self._driver.rescan():
+            return None
+        return self._reload_devices()
+
+    def _reload_devices(self) -> list[RgbDevice]:
+        """Re-read the driver's devices after its list changed."""
+        assert self._driver is not None
         self._devices = {d.device_id: d for d in self._driver.devices()}
+        # forget preview/error state of devices that went away
+        self.last_frames = {
+            k: v for k, v in self.last_frames.items() if k in self._devices
+        }
+        self.device_errors = {
+            k: v for k, v in self.device_errors.items() if k in self._devices
+        }
         return list(self._devices.values())
 
     def device_ids(self) -> list[str]:
@@ -100,8 +129,12 @@ class RgbEngine:
     def set_assignment(
         self, device_id: str, assignment: DeviceAssignment | None
     ) -> None:
+        """Set (or with None, remove) the effect one device should render."""
         if assignment is None:
             self._assignments.pop(device_id, None)
+            # not driven any more: nothing to preview, nothing failing
+            self.last_frames.pop(device_id, None)
+            self.device_errors.pop(device_id, None)
         else:
             self._assignments[device_id] = assignment
 
@@ -139,23 +172,31 @@ class RgbEngine:
         for device_id, device in self._devices.items():
             assignment = self._assignments.get(device_id)
             if not (assignment and assignment.enabled):
+                # not driven any more → forget its preview AND any old error,
+                # or the tab keeps showing PROBLEM for a device we don't touch
+                self.last_frames.pop(device_id, None)
+                self.device_errors.pop(device_id, None)
                 continue
             effect = self.catalog.get(assignment.effect_id)
             if effect is None:
                 continue  # unknown effect id (post-downgrade) → skip device
             try:
                 frame = self._render_frame(effect, device, assignment, now, dt)
+                self.last_frames[device_id] = frame
                 accepted = self._driver.set_frame(device_id, frame)
                 if accepted:
                     applied += 1
+                    self.device_errors.pop(device_id, None)
                 else:
                     detail = str(
                         getattr(self._driver, "last_error", "") or "frame rejected"
                     )
                     self.last_error = f"{device_id}: {detail}"
+                    self.device_errors[device_id] = detail
             except Exception as exc:
                 # a misbehaving device/effect must never stop the whole tick
                 self.last_error = f"{device_id}: {exc}"
+                self.device_errors[device_id] = str(exc)
         return applied
 
     def _render_frame(

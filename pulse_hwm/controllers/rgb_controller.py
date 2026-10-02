@@ -67,6 +67,9 @@ class RgbController(QObject):
         # a plan push is a signal emit → queued onto the rgb thread
         self.manager.apply_assignments = self.worker.assignments_requested.emit
         self.worker.devices_changed.connect(self.on_devices_changed)
+        # one automatic rescan per run when a device the user set up is
+        # missing (OpenRGB's startup detection sometimes misses the AULA)
+        self._auto_rescan_done = False
 
     # ── lifecycle ────────────────────────────────────────────────────────
     def start(self) -> None:
@@ -76,6 +79,10 @@ class RgbController(QObject):
         # would leave the render loop stopped (cross-thread timer).
         self.worker.attach_first_available_requested.emit(self.registry)
         self.worker.start_requested.emit(self._start_fps)
+
+    def request_rescan(self) -> None:
+        """Queued hardware re-detection on the rgb thread (RESCAN button)."""
+        self.worker.rescan_requested.emit()
 
     def request_shutdown(self) -> None:
         """Queued detach: the engine closes the driver on the rgb thread
@@ -91,6 +98,21 @@ class RgbController(QObject):
             [d.device_id for d in devices],
         )
         self.manager.reconsider()
+        self._maybe_auto_rescan(devices)
+
+    def _maybe_auto_rescan(self, devices: list) -> None:
+        """Rescan once if a device with a saved effect did not show up."""
+        if self._auto_rescan_done or not devices:
+            return
+        blob = app_settings.load(self._db).rgb_device_assignment
+        missing = missing_assigned_devices(
+            blob, devices[0].driver_id, [d.device_id for d in devices]
+        )
+        if not missing:
+            return
+        self._auto_rescan_done = True
+        log.info("saved RGB device(s) %s not found; rescanning once", missing)
+        self.request_rescan()
 
     @Slot(dict)
     def on_hardware_snapshot(self, snapshot: dict) -> None:
@@ -108,6 +130,23 @@ class RgbController(QObject):
         self.manager.set_alert_hold_ms(hold_ms)
         self.manager.handle_alert()
         QTimer.singleShot(hold_ms + _ALERT_EXPIRY_MARGIN_MS, self.manager.maintain)
+
+
+def missing_assigned_devices(
+    blob: str, driver_id: str, found_ids: list[str]
+) -> list[str]:
+    """Device ids the user saved an effect for under `driver_id` that the
+    driver did not report this time (sorted, for stable log lines)."""
+    from pulse_hwm.rgb import assignment_store
+
+    prefix = f"{driver_id}/"
+    saved = [
+        key[len(prefix) :]
+        for key in assignment_store.parse_blob(blob)
+        if key.startswith(prefix)
+    ]
+    found = set(found_ids)
+    return sorted(device_id for device_id in saved if device_id not in found)
 
 
 def _repair_legacy_assignment_keys(db) -> None:
